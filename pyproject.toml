@@ -23,7 +23,9 @@ contact = ["coal>=3.0.2,<3.1", "trimesh>=4.0"]
 test = ["pytest>=8", "coal==3.0.2", "trimesh>=4.0"]
 
 [tool.uv.sources]
-robot-msgs = { path = "../robot_msgs", editable = true }
+# WHY absolute (2026-11-12): a consumer's lock (sim2real) took this source over and wrote it relative to wherever it was locked
+# (a worktree's "../../robot_msgs" resolved to /home/robot_msgs from the main checkout); sim2real names it absolutely too.
+robot-msgs = { path = "/home/bam/robot_msgs", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/robot_models"]
