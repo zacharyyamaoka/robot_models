@@ -20,3 +20,11 @@
 No weighted sum: sort by reliability, then zero error, then time.
 
 3. **Ruler first.** `tests/test_metrics_ruler.py` was committed against a deliberately wrong `metrics.py` (unfinished episodes dropped from the denominator, stalls not checked against their stop, mean for p95, unidentified gaps read as 0) and recorded red before the real one went in.
+
+## Addendum 1 (2026-11-12): assembly-mode starts are judged on the MuJoCo rung
+
+**Ruling (the coordinator, per the decision report's "kinematic proves geometry, MuJoCo proves dynamics").** A start on the mirrored assembly - the flipped crank, and any start whose branch is the mirror grid of `loops.json` - is an *assembly-mode start*. Its reliability is judged on the MuJoCo rung. The kinematic rung's reliability gate is **100 % over working-assembly starts**; its assembly-mode cards are still computed and shown, labelled "judged on MuJoCo", with no verdict of their own. The strict xfail `test_recover_first_homes_from_the_flipped_crank` (sim2real) stays as the kinematic record: it is not removed, and it is expected to keep failing there.
+
+**WHY.** The kinematic plant has no gravity and no inertia, so nothing can carry the loop through the toggle between its two assemblies: from the flipped crank, recover_first's stalls land on mirror contacts and its step 7 times out (re-score 2026-11-12: 98.6 %, flipped_crank 0/15, every other start 100 %). That number measures the plant, not the procedure. On the MuJoCo rung gravity can swing the loop across (or fail to), which is exactly what an assembly-mode start asks.
+
+**Scorecard split.** Every bench result now carries `scorecards_by_scope = {working_assembly, assembly_mode}` beside the all-starts `scorecards` (sim2real `bench.split_scorecards`); each card names where its verdict is taken (`judged_on`). The metrics themselves are unchanged: the split is a choice of denominator per rung, made in the bench, not in `metrics.py`.
