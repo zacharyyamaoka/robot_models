@@ -399,7 +399,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "coal", marker = "extra == 'contact'", specifier = "==3.0.2" },
+    { name = "coal", marker = "extra == 'contact'", specifier = ">=3.0.2,<3.1" },
     { name = "coal", marker = "extra == 'test'", specifier = "==3.0.2" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8" },

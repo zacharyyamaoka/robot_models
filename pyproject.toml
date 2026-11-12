@@ -15,8 +15,11 @@ dependencies = ["robot-msgs>=0.2.0", "numpy>=1.26"]
 
 [project.optional-dependencies]
 # WHY coal (the hpp-fcl successor) and trimesh: the exact-mesh first contact of the kinematic homing
-# rung. coal is pinned to the version bam_pick_worlds already locks through pin 3.8.0.
-contact = ["coal==3.0.2", "trimesh>=4.0"]
+# rung. The ruler was frozen on 3.0.2, the version bam_pick_worlds locks through pin 3.8.0 (the test
+# extra keeps it). WHY the contact extra allows 3.0.x (2026-11-12, the homing bench): coal 3.0.2's
+# wheels hold numpy at 2.3.5, so sim2real (numpy 2.5.4) could not take this extra without moving its
+# whole lock; 3.0.3 is the same API on numpy 2.5, and sim2real's bench re-checks the ruler's angles on it.
+contact = ["coal>=3.0.2,<3.1", "trimesh>=4.0"]
 test = ["pytest>=8", "coal==3.0.2", "trimesh>=4.0"]
 
 [tool.uv.sources]
