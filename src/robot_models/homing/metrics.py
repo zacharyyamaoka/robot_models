@@ -1,6 +1,4 @@
-"""DELIBERATELY WRONG (the ruler commit, PEP 0002): four planted mistakes.
-
-The five black-box homing metrics (docs/peps/0002-homing-bench.md), from outputs and truth only (numpy-free stdlib).
+"""The five black-box homing metrics (docs/peps/0002-homing-bench.md), from outputs and truth only (numpy-free stdlib).
 
 A homing procedure is scored per episode (one start), never by reading its code:
 
@@ -110,22 +108,21 @@ def nearest_rank(values: Iterable[float], percentile: float) -> float:
 
 
 def reliable(episode: EpisodeRecord, tolerance_deg: float = STALL_TOLERANCE_DEG) -> bool:
-    return bool(episode.finished)  # WRONG ON PURPOSE: stalls never checked
+    return bool(episode.finished and episode.stalls and all(s.ok(tolerance_deg) for s in episode.stalls))
 
 
 def reliability_pct(episodes: Sequence[EpisodeRecord]) -> float | None:
     episodes = list(episodes)
     if not episodes:
         return None
-    finished = [e for e in episodes if e.finished] or episodes  # WRONG ON PURPOSE: unfinished dropped
-    return 100.0 * sum(reliable(e) for e in finished) / len(finished)
+    return 100.0 * sum(reliable(e) for e in episodes) / len(episodes)
 
 
 def time_to_home_s(episodes: Sequence[EpisodeRecord]) -> TimeStat | None:
     times = [e.time_s for e in episodes if e.finished and e.time_s is not None]
     if not times:
         return None
-    return TimeStat(statistics.median(times), statistics.mean(times), len(times))  # WRONG ON PURPOSE: mean
+    return TimeStat(statistics.median(times), nearest_rank(times, 95), len(times))
 
 
 def joint_angle_error_deg(episodes: Sequence[EpisodeRecord]) -> ErrorStat:
@@ -172,8 +169,10 @@ def backlash_error_deg(episodes: Sequence[EpisodeRecord]) -> BacklashStat:
         errors = []
         for joint in episode.joints:
             total += 1
-            identified += 1  # WRONG ON PURPOSE: None read as 0
-            errors.append(abs((joint.gap_identified_deg or 0.0) - joint.gap_truth_deg))
+            if joint.gap_identified_deg is None:
+                continue
+            identified += 1
+            errors.append(abs(joint.gap_identified_deg - joint.gap_truth_deg))
         if errors:
             worst.append(max(errors))
     observable = 100.0 * identified / total if total else 0.0
