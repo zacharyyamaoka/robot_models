@@ -32,4 +32,14 @@ def fit(
     rung: str | None = None,
 ) -> HomingResult:
     """Zero every joint the stalls touch; identify its backlash unless ``table`` gives it."""
-    raise NotImplementedError("contract only (docs/peps/0001): the implementation lands after the ruler")
+    # DELIBERATELY WRONG (the ruler's red demonstration, PEP 0001): B0 always -- the zero ignores
+    # the gap and the compliance, and nothing is identified. The next commit replaces it.
+    from robot_models.homing.types import BacklashModel, JointBacklash, JointZero
+
+    joints = list(dict.fromkeys(e.joint for e in evidence))
+    zeros = []
+    for joint in joints:
+        offsets = [stops.q_rad(joint, e.side) - e.motor_raw_rad for e in evidence if e.joint == joint]
+        zeros.append(JointZero(joint, sum(offsets) / len(offsets), max(offsets) - min(offsets), len(offsets)))
+    table_out = BacklashTable(tuple(JointBacklash(j, BacklashModel("B0")) for j in joints))
+    return HomingResult(tuple(zeros), table_out, stops, tuple(evidence), rung or "kinematic")
