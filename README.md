@@ -71,12 +71,13 @@ its own) are byte-pinned, so a downstream copy can be checked against them.
 ## Install
 
 ```bash
-pip install robot-models
-uv add robot-models
+pip install robot-model-ladders
+uv add robot-model-ladders
 ```
 
+- The PyPI name is robot-model-ladders (robot-models is taken by a near-identical name); you still `import robot_models`.
 - robot-msgs 0.3.0 or later comes with it. The ladders and the datasheets import neither robot_msgs nor numpy.
-- Mesh contact for homing: add the extra, `robot-models[contact]`.
+- Mesh contact for homing: add the extra, `robot-model-ladders[contact]`.
 - Python 3.11 to 3.14.
 
 ## Tests

@@ -4,7 +4,7 @@ requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
-name = "robot-models"
+name = "robot-model-ladders"
 version = "0.2.0"
 description = "Generic physical models of robot part types (no maker, no SKU): each type a ladder of models from ideal to learned, every rung with its parameters, equation and references."
 readme = "README.md"

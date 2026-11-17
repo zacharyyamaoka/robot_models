@@ -37,5 +37,5 @@ jobs:
         run: >-
           uv run --isolated --no-sources --python ${{ matrix.python }}
           python -c "import importlib.metadata, robot_models;
-          installed = importlib.metadata.version('robot-models');
+          installed = importlib.metadata.version('robot-model-ladders');
           assert robot_models.__version__ == installed, (robot_models.__version__, installed)"
