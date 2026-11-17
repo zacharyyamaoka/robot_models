@@ -16,12 +16,12 @@
 - **Required or optional.** `adds` are what the rung's model cannot run without; `optional` are what it reads when a
   source states them (a default or another route covers them otherwise). A name optional below may become required
   above (M1 states coulomb_friction, M2 needs it); nothing is added twice down one chain.
-- **Each rung shows its equation and its references** (Zach, Nov 5): `equation` and `references` on every rung.
+- **Each rung shows its equation and its references.** `equation` and `references` on every rung.
 - **Type data only.** Parameter names, units, definitions and equations: never a value measured on one unit, never a
   maker. What a deployment sets (gains, caps, the station's gravity) is listed as `DeploymentOnly`, not put on a rung.
 
 Each type folder holds one `ladder.py` with `LADDER = Ladder(...)`; `ladders()` finds them by walking the package, so no
-hand-kept registry exists for parallel lanes to collide on. Stdlib only, like robot_models.datasheet.
+hand-kept registry exists for concurrent edits to collide on. Stdlib only, like robot_models.datasheet.
 """
 
 from __future__ import annotations
@@ -570,7 +570,7 @@ class Found:
 def discover(root: Path | None = None, package: str = "robot_models") -> dict[str, Found]:
     """Every type's ladder, found by walking the package for `ladder.py` files, {type: Found}.
 
-    WHY a walk and not a registry (PEP 0004): each type's lane adds one folder and touches no shared file. The checks
+    WHY a walk and not a registry (PEP 0004): each new type adds one folder and touches no shared file. The checks
     that span ladders run here: one ladder per type, and every composed (type, rung) exists.
     """
     root = Path(__file__).resolve().parent if root is None else Path(root)

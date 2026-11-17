@@ -16,7 +16,7 @@ from robot_models import references
 from robot_models.actuators.servo.gearbox.gearbox import Gearbox
 from robot_models.ladder import Alias, Ladder, Parameter, Rung, Wear, datasheet_vocabulary
 
-# --- the vocabulary, grouped by the rung that first reads it -------------------------------------------------------------
+# --- the vocabulary, grouped by the rung that first reads it ----------------------------------------------------------
 
 # M0 and M1: the datasheet's typed fields, with their units and definitions taken from the class.
 # WHY not restated here (PEP 0003 §6, PEP 0004 decision 3): the datasheet and the ladder can then never hold two
@@ -77,7 +77,7 @@ VOCABULARY = (
     *M4_WEAR_PARAMETERS,
 )
 
-# --- the rungs, M0 upward ------------------------------------------------------------------------------------------------
+# --- the rungs, M0 upward ---------------------------------------------------------------------------------------------
 
 RUNGS = (
     Rung(
@@ -122,13 +122,14 @@ RUNGS = (
         adds=("efficiency", "output_friction_fraction"),
         optional=("friction_load_coefficient",),
         equation=("τ_out = efficiency·gear_ratio·τ_in; output_friction_fraction of the friction acts on the output "
-                  "side; with friction_load_coefficient μ the friction is "
-                  "coulomb_friction + μ·abs(τ_load)"),
+                  "side"),
         references=(references.KIRCANSKI_1997, references.OLSSON_1998),
-        # WHY efficiency or friction_load_coefficient, never both: they state one effect (load-dependent mesh loss)
-        # two ways, and driving forward they convert as μ = (1 − η)/η.
-        note=("sim2real's gearbox M3. A fit sets efficiency (η) or friction_load_coefficient (μ), never both: "
-              "driving forward μ = (1 − η)/η."),
+        # WHY efficiency needed and friction_load_coefficient only read when stated: they state one effect
+        # (load-dependent mesh loss) two ways. The rung runs on η, as sim2real's gearbox does; μ is read only when a
+        # source states μ, and then the two must agree, driving forward μ = (1 − η)/η. WHY no μ term in the equation:
+        # coulomb_friction + μ·abs(τ_load) on top of η would charge the same mesh loss twice.
+        note=("sim2real's gearbox M3. efficiency (η) is needed; friction_load_coefficient (μ) is read only when a "
+              "source states μ, and then the two agree: driving forward μ = (1 − η)/η."),
     ),
     Rung(
         level=4,
@@ -179,7 +180,7 @@ RUNGS = (
     ),
 )
 
-# --- other names for the same quantities (PEP 0004 §6.3) -----------------------------------------------------------------
+# --- other names for the same quantities (PEP 0004 §6.3) --------------------------------------------------------------
 
 ALIASES = (
     Alias(

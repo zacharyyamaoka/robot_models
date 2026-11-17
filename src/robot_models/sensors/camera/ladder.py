@@ -3,9 +3,9 @@
 Spec: PEP 0004 §5.7 and §6.6.
 
 The ladder climbs from the ideal pinhole (M0) through the lens (M1), the sensor's light response and the frame's delay
-(M2), a rolling shutter (M3) and a mount that loosens with vibration (M3.wear), to a grey-box correction of every pixel's
-ray (M6). There is no black-box rung: every rung stays a geometric pixel-to-ray model that a calibration target can
-measure, and a learned image-to-image black box gives no rays to check.
+(M2), a rolling shutter (M3) and a mount that loosens with vibration (M3.wear), to a grey-box correction of every
+pixel's ray (M6). There is no black-box rung: every rung stays a geometric pixel-to-ray model that a calibration target
+can measure, and a learned image-to-image black box gives no rays to check.
 
 Read it top down: the vocabulary, grouped by the rung that first reads each name; then the rungs, M0 upward; then the
 aliases. This type has no packed names and nothing deployment-only.
@@ -44,7 +44,7 @@ M3_WEAR = (
                           "loosening mount); no source states a rotation rate.")),
 )
 
-# --- the rungs, M0 upward ----------------------------------------------------------------------------------------------
+# --- the rungs, M0 upward ---------------------------------------------------------------------------------------------
 
 RUNGS = (
     Rung(
@@ -89,7 +89,7 @@ RUNGS = (
     ),
 )
 
-# --- other names for the same quantities (PEP 0004 §6.6) ----------------------------------------------------------------
+# --- other names for the same quantities (PEP 0004 §6.6) --------------------------------------------------------------
 
 ALIASES = (
     Alias(name="latency_s", canonical="latency"),

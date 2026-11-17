@@ -36,8 +36,10 @@ RUNG_CODE = "actuators/rungs"
 
 # WHY these usages: the servo card counts a deployment's hours, and backlash opens with the torque it carried over the
 # revolutions it turned (Archard), so its usage is their product (PEP 0004 §5.2, M5.wear).
-HOURS = ("deployment hours", "h")
-TORQUE_REVOLUTIONS = ("torque-weighted output revolutions", "N·m·rev")
+DEPLOYMENT_HOURS = "deployment hours"
+HOURS_UNIT = "h"
+TORQUE_REVOLUTIONS = "torque-weighted output revolutions"
+TORQUE_REVOLUTIONS_UNIT = "N·m·rev"
 
 # --- the vocabulary: the datasheet's fields, then the names each rung first reads ---------------------------
 
@@ -276,9 +278,9 @@ RUNGS = (
         base="M3.weakening_capture",
         adds=("harmonics", "backlash", "torsional_stiffness"),
         composes=(("foc_controller", "M1.delay_loop"),),
-        equation=("J q̈ = tau_drive − tau_r; tau_r = level(v)·sign(v) + viscous_friction·v + the harmonics; the "
-                  "output across a backlash gap and torsional_stiffness; tau_drive from foc_controller "
-                  "M1.delay_loop"),
+        equation=("output_inertia·q̈ = tau_drive − tau_r; tau_r = level(v)·sign(v) + viscous_friction·v + "
+                  "the harmonics; the output across a backlash gap and torsional_stiffness; tau_drive from "
+                  "foc_controller M1.delay_loop"),
         references=(references.JAHNS_1996, references.NORDIN_2002, references.TUTTLE_1996, references.KRISHNAN_2010),
         note="sim2real's servo M4, the rack twin (today's model), less its heat: that is M5.envelope's.",
     ),
@@ -303,9 +305,13 @@ RUNGS = (
         base="M4.drivetrain",
         adds=("kt", "resistance_line_to_line", "thermal_resistance", "thermal_time_constant"),
         composes=(("foc_controller", "M2.ceiling_heat"),),
+        # WHY 1.5·i²R: R is one phase's resistance and i the phase-current amplitude, so the three phases' copper loss
+        # is (3/2)·i²·R; the heat is the winding's rise ΔT over ambient, as the motor's M5.dcmotor has it.
         equation=("kt_out = kt·gear_ratio, R = resistance_line_to_line/2 per phase: motoring torque ≤ "
                   "kt_out·(voltage_available − |v|·kt_out/1.5)/R; any torque ≤ kt_out·I_max (the deployment's "
-                  "current cap); winding rise T: thermal_time_constant·dT/dt = thermal_resistance·i²R − T"),
+                  "current cap); winding rise ΔT over ambient: "
+                  "thermal_time_constant·dΔT/dt = thermal_resistance·1.5·i²R − ΔT "
+                  "(the three phases' copper loss, i the phase-current amplitude)"),
         references=(references.KRAUSE_2013, references.KRISHNAN_2010, references.MUJOCO_DCMOTOR),
         note=("sim2real's servo M5 (the envelope ladder): the rack twin plus the drive's ceiling and the motor's "
               "electrics; the heat the twin carries at its M4 sits here, robotparts' layer 5."),
@@ -317,11 +323,11 @@ RUNGS = (
         base="M5.envelope",
         adds=("friction_growth", "backlash_wear"),
         wears=(
-            Wear(parameter="breakaway_torque", usage=HOURS[0], usage_unit=HOURS[1], law="linear",
+            Wear(parameter="breakaway_torque", usage=DEPLOYMENT_HOURS, usage_unit=HOURS_UNIT, law="linear",
                  rate="friction_growth"),
-            Wear(parameter="coulomb_friction", usage=HOURS[0], usage_unit=HOURS[1], law="linear",
+            Wear(parameter="coulomb_friction", usage=DEPLOYMENT_HOURS, usage_unit=HOURS_UNIT, law="linear",
                  rate="friction_growth"),
-            Wear(parameter="backlash", usage=TORQUE_REVOLUTIONS[0], usage_unit=TORQUE_REVOLUTIONS[1], law="archard",
+            Wear(parameter="backlash", usage=TORQUE_REVOLUTIONS, usage_unit=TORQUE_REVOLUTIONS_UNIT, law="archard",
                  rate="backlash_wear"),
         ),
         equation=("backlash(u) = backlash + backlash_wear·Σ|τ|·Δrev; breakaway_torque and coulomb_friction both "

@@ -4,7 +4,7 @@
 
 A stereo depth camera: depth on top of a colour stream.
 
-**5 rungs** · 6 parameters · 2 aliases · 0 packed names · 0 deployment-only names · folder `sensors/rgbd/`.
+**5 rungs** · 7 parameters · 2 aliases · 0 packed names · 0 deployment-only names · folder `sensors/rgbd/`.
 
 In code: `ladders()["depth_camera"]` from [`robot_models.ladder`](../../ladder.py). Every type: [docs/TYPES.md](../../../../docs/TYPES.md). Spec: [PEP 0004](../../../../docs/peps/0004-model-ladders-by-type.md).
 Projects the notes below name, and what they are: [sim2real](../../../../docs/TYPES.md#name-sim2real).
@@ -15,14 +15,14 @@ From the docstring of [`ladder.py`](ladder.py):
 
 Spec: PEP 0004 §5.8 and §6.7.
 
-    z = f·baseline/d                    # M0: depth from disparity d, f the stereo pair's rectified focal length (px)
-    σ_z = z²·subpixel_sigma/(f·baseline)  # M1: the matcher's subpixel noise, growing with z²
-    z_true = z + b(u, v, z)             # M2: a bias that grows with depth and varies across the image
+    z = stereo_focal_length·baseline/d                     # M0: depth from the disparity d, in pixels
+    σ_z = z²·subpixel_sigma/(stereo_focal_length·baseline)  # M1: the matcher's subpixel noise, growing with z²
+    z_true = z + b(u, v, z)                                 # M2: a bias that grows with depth, varying over the image
 
 The colour stream itself is the camera type's (`sensors/camera`), so this ladder lists only what depth adds. Depth is
-triangulated with the stereo imagers' rectified focal length f in pixels (on a typical RGBD unit, the IR pair); the colour
-camera only receives depth after the `depth_to_color` transform. The vocabulary does not name f yet: a spec gap to raise
-against PEP 0004. sim2real's `camera_rgbd` card maps one to one onto all five rungs (PEP 0004's rung map).
+triangulated with `stereo_focal_length`, the stereo imagers' rectified focal length in pixels (on a typical unit, the IR
+pair): it is the f of triangulation, not the colour camera's, which only receives depth after the `depth_to_color`
+transform. sim2real's `camera_rgbd` card maps one to one onto all five rungs (PEP 0004's rung map).
 
 ## The ladder
 
@@ -53,8 +53,8 @@ Bottom up. *Needs* is what the rung's model cannot run without, new over its bas
 
 | rung | title | base | needs (adds) | reads when stated (optional) | code | equation | references |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| <a id="rung-m0-stereo"></a>`M0.stereo` | Ideal stereo | — | `baseline`, `depth_scale`, `depth_to_color` | — | — | `z = f·baseline/d, scaled by depth_scale` | [KHOSHELHAM_2012](#ref-khoshelham_2012) |
-| <a id="rung-m1-disparity_noise"></a>`M1.disparity_noise` | Disparity noise | [`M0.stereo`](#rung-m0-stereo) | `subpixel_sigma` | — | — | `σ_z = z²·subpixel_sigma/(f·baseline)` | [KHOSHELHAM_2012](#ref-khoshelham_2012) |
+| <a id="rung-m0-stereo"></a>`M0.stereo` | Ideal stereo | — | `stereo_focal_length`, `baseline`, `depth_scale`, `depth_to_color` | — | — | `z = stereo_focal_length·baseline/d, d the disparity, scaled by depth_scale` | [KHOSHELHAM_2012](#ref-khoshelham_2012) |
+| <a id="rung-m1-disparity_noise"></a>`M1.disparity_noise` | Disparity noise | [`M0.stereo`](#rung-m0-stereo) | `subpixel_sigma` | — | — | `σ_z = z²·subpixel_sigma/(stereo_focal_length·baseline)` | [KHOSHELHAM_2012](#ref-khoshelham_2012) |
 | <a id="rung-m2-depth_bias"></a>`M2.depth_bias` | Depth bias | [`M1.disparity_noise`](#rung-m1-disparity_noise) | `depth_bias_coeffs` | — | — | `z_true = z + b(u, v, z), b from depth_bias_coeffs` | [HERRERA_2012](#ref-herrera_2012) |
 | <a id="rung-m2-wear"></a>`M2.wear` | A depth-to-colour mount that loosens over vibration hours<br>wears `depth_to_color`: see [Wear](#wear) | [`M2.depth_bias`](#rung-m2-depth_bias) | `depth_to_color_drift` | — | — | `translation offset(h) = e + depth_to_color_drift·√h, e the depth_to_color translation` | [JUNKER_1969](#ref-junker_1969), [WHITMORE_1995](#ref-whitmore_1995) |
 | <a id="rung-m6-residual"></a>`M6.residual` | Grey-box residual on M2.wear | [`M2.wear`](#rung-m2-wear) | — | — | — | `M2.wear + a B-spline grid of depth corrections over (u, v, measured depth)` | [SCHOPS_2020](#ref-schops_2020), [HERRERA_2012](#ref-herrera_2012) |
@@ -73,6 +73,7 @@ Every parameter the ladder holds, by the rung that first reads it. — as a unit
 
 | parameter | SI unit | shape | definition | first read on |
 | --- | --- | --- | --- | --- |
+| <a id="param-stereo_focal_length"></a>`stereo_focal_length` | px | scalar | The stereo imagers' rectified focal length (on a typical unit the IR pair): the f of triangulation, not the colour camera's. | [`M0.stereo`](#rung-m0-stereo) |
 | <a id="param-baseline"></a>`baseline` | m | scalar | Distance between the stereo pair's optical centres. | [`M0.stereo`](#rung-m0-stereo) |
 | <a id="param-depth_scale"></a>`depth_scale` | m | scalar | Metres per unit of the depth image. | [`M0.stereo`](#rung-m0-stereo) |
 | <a id="param-depth_to_color"></a>`depth_to_color` | m, rad | pose | The depth frame's pose in the colour camera's frame. | [`M0.stereo`](#rung-m0-stereo) |

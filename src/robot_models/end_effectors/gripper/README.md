@@ -54,7 +54,7 @@ Bottom up. *Needs* is what the rung's model cannot run without, new over its bas
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | <a id="rung-m0-tcp"></a>`M0.tcp` | A rigid gripper at the tool centre point | — | `tcp_offset` | — | — | `tool = flange · tcp_offset` | [SICILIANO_2009](#ref-siciliano_2009) |
 | <a id="rung-m1-width_map"></a>`M1.width_map` | Finger width map | [`M0.tcp`](#rung-m0-tcp) | `finger_width_map` | — | — | `width = finger_width_map(command)` | [PRATTICHIZZO_2016](#ref-prattichizzo_2016) |
-| <a id="rung-m2-contact"></a>`M2.contact` | Grip force and contact friction | [`M1.width_map`](#rung-m1-width_map) | `grip_force_map`, `contact_friction` | — | — | `force = grip_force_map(command, width); the object holds while \|tangential\| ≤ contact_friction·force` | [PRATTICHIZZO_2016](#ref-prattichizzo_2016), [MUJOCO_CONTACT](#ref-mujoco_contact) |
+| <a id="rung-m2-contact"></a>`M2.contact` | Grip force and contact friction | [`M1.width_map`](#rung-m1-width_map) | `grip_force_map`, `contact_friction` | — | — | `force = grip_force_map(command, width), each pad's normal force; the object holds while, at each contact, \|tangential\| ≤ contact_friction·force (two pads hold about twice one pad's)` | [PRATTICHIZZO_2016](#ref-prattichizzo_2016), [MUJOCO_CONTACT](#ref-mujoco_contact) |
 | <a id="rung-m2-wear"></a>`M2.wear` | Finger pads that glaze with grasps<br>wears `contact_friction`: see [Wear](#wear) | [`M2.contact`](#rung-m2-contact) | `contact_friction_change` | — | — | `contact_friction(n) = contact_friction + contact_friction_change·n, n the grasp cycles so far` | [ARCHARD_1953](#ref-archard_1953), [LU_MEEKER_1993](#ref-lu_meeker_1993) |
 | <a id="rung-m6-residual"></a>`M6.residual` | Grey-box residual on M2.wear | [`M2.wear`](#rung-m2-wear) | — | — | — | `M2.wear + an MLP residual width from 3 samples of width command, measured width and finger current` | [NGUYEN_TUONG_2010](#ref-nguyen_tuong_2010) |
 | <a id="rung-m7-learned"></a>`M7.learned` | Black-box network | — | — | — | — | `an MLP over 5 samples of width command, width and finger current → finger force` | [HWANGBO_2019](#ref-hwangbo_2019) |
@@ -75,7 +75,7 @@ Every parameter the ladder holds, by the rung that first reads it. — as a unit
 | --- | --- | --- | --- | --- |
 | <a id="param-tcp_offset"></a>`tcp_offset` | m | pose | The tool centre point's offset from the flange the gripper mounts on. | [`M0.tcp`](#rung-m0-tcp) |
 | <a id="param-finger_width_map"></a>`finger_width_map` | m | map | Finger opening as a function of the width command. | [`M1.width_map`](#rung-m1-width_map) |
-| <a id="param-grip_force_map"></a>`grip_force_map` | N | map | Grip force as a function of the command and the width. | [`M2.contact`](#rung-m2-contact) |
+| <a id="param-grip_force_map"></a>`grip_force_map` | N | map | The normal force each finger pad presses the object with, as a function of the command and the width: what a gauge squeezed between two jaws reads. A datasheet's gripping force summed over the jaws is twice it on a two-jaw gripper. | [`M2.contact`](#rung-m2-contact) |
 | <a id="param-contact_friction"></a>`contact_friction` | — | scalar | Coefficient of friction between the finger pads and the object. | [`M2.contact`](#rung-m2-contact) |
 | <a id="param-contact_friction_change"></a>`contact_friction_change` | 1/cycle | scalar | How much contact_friction changes per grasp cycle (pad wear and glazing). | [`M2.wear`](#rung-m2-wear) |
 

@@ -1,8 +1,10 @@
 """A chain of rigid links and joints, open or closed: a whole arm, a sub-assembly, a wrist, a five-bar. Its ladder of
 models (PEP 0004).
 
-Spec: PEP 0004 §5.10 and §6.9 (and §0 flag 2: arm is folded into this type, per Zach Nov 6 "the 6 DOF robot arm is
-not a type").
+Spec: PEP 0004 §5.10 and §6.9.
+
+An arm is not a type of its own: a whole arm is a rigid_body_chain whose joints are their own types (an integrated
+servo, a gearbox, an encoder), so one ladder serves an arm, a sub-assembly, a wrist and a closed five-bar (PEP 0004 §0).
 
 The ladder forks after M1.zero_offsets into two branches that both fall back on it:
 
@@ -171,7 +173,10 @@ RUNGS = (
         title="Grey-box residual on M3.wear",
         base="M3.wear",
         kind="residual",
-        equation=f"M3.wear + an MLP residual of joint torques from {RESIDUAL_INPUTS}",
+        # WHY through the compliance: the kinematic branch's tool pose depends on τ only through M3.compliance, so a
+        # torque residual moves the tool only once it is added to that τ.
+        equation=(f"M3.wear + an MLP residual of joint torques from {RESIDUAL_INPUTS}, added to M3.compliance's τ, "
+                  "so it moves the tool through the compliance"),
         references=(refs.NGUYEN_TUONG_2010, refs.ZENG_2020),
     ),
     Rung(

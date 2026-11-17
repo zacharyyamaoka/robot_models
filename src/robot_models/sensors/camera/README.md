@@ -15,9 +15,9 @@ From the docstring of [`ladder.py`](ladder.py), less a paragraph on the order th
 Spec: PEP 0004 §5.7 and §6.6.
 
 The ladder climbs from the ideal pinhole (M0) through the lens (M1), the sensor's light response and the frame's delay
-(M2), a rolling shutter (M3) and a mount that loosens with vibration (M3.wear), to a grey-box correction of every pixel's
-ray (M6). There is no black-box rung: every rung stays a geometric pixel-to-ray model that a calibration target can
-measure, and a learned image-to-image black box gives no rays to check.
+(M2), a rolling shutter (M3) and a mount that loosens with vibration (M3.wear), to a grey-box correction of every
+pixel's ray (M6). There is no black-box rung: every rung stays a geometric pixel-to-ray model that a calibration target
+can measure, and a learned image-to-image black box gives no rays to check.
 
 ## The ladder
 

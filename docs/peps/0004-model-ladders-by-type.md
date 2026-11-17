@@ -5,6 +5,8 @@
   (`robot_models.references`), the five group packages, `.gitattributes`, and their contract tests. To build: the 12
   type ladders and the rung move, by the implementation lanes, judged by `tests/test_ladders_acceptance.py`
   (committed red before they start; off-limits to them).
+- **Amended:** 2026-11-16, amendment 1 (§14): the physics errors the v1 check agents found in the frozen spec, fixed
+  in the ruler first (`87db875`) and then in the ladders, this PEP and the generated docs. 83 → 84 rungs.
 - **Ask:** Zach, 2026-11-16: "please start an ultracode workflow to implement robot_models as discussed. It can be a
   public repo." "As discussed" means the vault note `Projects/robot_msgs/Robot Models — Thinking to Date (2026-11-16).md`
   (its open questions, each with its default) and `Robot Models Layering — Decision (2026-11-12).md`.
@@ -61,7 +63,7 @@
    Thinking-to-Date note). `Rung.equation` and `Rung.references` are on every rung of the ruler's spec, citing
    `robot_models.references`: 55 works copied from sim2real's Crossref- and web-checked list, less a maker's manual,
    a maker's page and one rig's code (decision 4).
-4. **12 types, 83 rungs** (§5), each in a folder that mirrors `user/parts`.
+4. **12 types, 84 rungs** (§5), each in a folder that mirrors `user/parts`.
 5. **A type with a Datasheet class states its typed fields at M1.** On the three servo types `M1.datasheet` holds
    exactly the typed fields, as optional names, and needs nothing beyond M0; the core refuses a ladder where it does not.
 6. **Every other name is one of 117 aliases or 9 packed names** (§6). 43 aliases are not the same quantity one for
@@ -279,7 +281,7 @@ non-empty equation and at least the references named here; the equation shown is
 | type | folder (under `src/robot_models/`) | Datasheet class | sim2real card(s) | robotparts category | rungs |
 |---|---|---|---|---|---:|
 | `integrated_servo` | `actuators/servo/` | `IntegratedServo` | `servo` | `actuator` | 14 |
-| `bldc_motor` | `actuators/servo/bldc/` | `BldcMotor` | `motor` | `actuator` | 8 |
+| `bldc_motor` | `actuators/servo/bldc/` | `BldcMotor` | `motor` | `actuator` | 9 |
 | `gearbox` | `actuators/servo/gearbox/` | `Gearbox` | `gearbox` | `gearbox` | 8 |
 | `foc_controller` | `actuators/servo/foc_controller/` | — | `driver` | `driver` | 6 |
 | `encoder` | `sensors/encoder/` | — | `encoder` | `sensor` | 4 |
@@ -290,7 +292,7 @@ non-empty equation and at least the references named here; the equation shown is
 | `gripper` | `end_effectors/gripper/` | — | `arm_6dof_gripper` | `gripper` | 6 |
 | `conveyor` | `conveyors/conveyor/` | — | `conveyor` | — | 7 |
 | `aruco_marker` | `markers/aruco_marker/` | — | `aruco_marker` | — | 4 |
-| | | | | **total** | **83** |
+| | | | | **total** | **84** |
 
 ### 5.2 `integrated_servo`: `actuators/servo/`
 
@@ -306,9 +308,9 @@ A joint in one housing: a motor, its drive, a reducer or none, and an encoder. �
 | `M3.lugre`: LuGre dynamic friction | `M3.stribeck` | physics | `sigma0`, `sigma1` | — | `actuators/rungs/lugre/` | — | dz/dt = v − sigma0·\|v\|·z/g(v), g(v) the Stribeck level of M3.stribeck; tau_r = sigma0·z + sigma1·dz/dt + viscous_friction·v (LuGre's sigma2) | CANUDAS_1995 |
 | `M3.weakening_capture`: Stribeck with weakening and a capture level at rest. *sim2real's servo M3, the rack twin's friction: its structure only, the twin is never published.* | `M3.stribeck` | physics | `friction_weakening`, `friction_weakening_limit`, `friction_capture`, `friction_capture_speed`, `friction_capture_dwell` | — | — | — | level(v) = breakaway_torque − friction_weakening·min(\|v\|, friction_weakening_limit) − (breakaway_torque − coulomb_friction)·(1 − exp(−(\|v\|/stribeck_velocity)²)); friction_capture holds below friction_capture_speed until friction_capture_dwell has passed | ARMSTRONG_1994, CANUDAS_1995 |
 | `M4.ripple`: Rotor ripple on Coulomb and viscous friction | `M2.coulomb_viscous` | physics | `harmonics` | — | `actuators/rungs/ripple/` | — | tau_r = Σ_k amplitude_k·sin(rotor_harmonic_k·gear_ratio·θ + phase_k) + coulomb_friction·sign(v) + viscous_friction·v | JAHNS_1996 |
-| `M4.drivetrain`: The drivetrain: ripple, backlash and compliance on the full friction model. *sim2real's servo M4, the rack twin (today's model), less its heat: that is M5.envelope's.* | `M3.weakening_capture` | physics | `harmonics`, `backlash`, `torsional_stiffness` | — | — | `foc_controller` `M1.delay_loop` | J q̈ = tau_drive − tau_r; tau_r = level(v)·sign(v) + viscous_friction·v + the harmonics; the output across a backlash gap and torsional_stiffness; tau_drive from foc_controller M1.delay_loop | JAHNS_1996, NORDIN_2002, TUTTLE_1996, KRISHNAN_2010 |
+| `M4.drivetrain`: The drivetrain: ripple, backlash and compliance on the full friction model. *sim2real's servo M4, the rack twin (today's model), less its heat: that is M5.envelope's.* | `M3.weakening_capture` | physics | `harmonics`, `backlash`, `torsional_stiffness` | — | — | `foc_controller` `M1.delay_loop` | output_inertia·q̈ = tau_drive − tau_r; tau_r = level(v)·sign(v) + viscous_friction·v + the harmonics; the output across a backlash gap and torsional_stiffness; tau_drive from foc_controller M1.delay_loop | JAHNS_1996, NORDIN_2002, TUTTLE_1996, KRISHNAN_2010 |
 | `M5.dcmotor`: MuJoCo's DC motor: electrics, heat, cogging and LuGre friction. *robotparts' rung: its terms are MuJoCo's arrays (the packed names); motorconst and resistance required, the rest optional, as its model.json marks them.* | `M3.lugre` | physics | `kt`, `resistance_line_to_line` | `harmonics`, `thermal_resistance`, `thermal_time_constant` | `actuators/rungs/dcmotor/` | — | MuJoCo's own: mjDYN_DCMOTOR (electrical dynamics), mjGAIN_DCMOTOR (K or K/R), mjBIAS_DCMOTOR (back-EMF, cogging, LuGre friction) | KRAUSE_2013, MUJOCO_DCMOTOR |
-| `M5.envelope`: The drive's ceiling, the motor's electrics and heat on the drivetrain. *sim2real's servo M5 (the envelope ladder): the rack twin plus the drive's ceiling and the motor's electrics; the heat the twin carries at its M4 sits here, robotparts' layer 5.* | `M4.drivetrain` | physics | `kt`, `resistance_line_to_line`, `thermal_resistance`, `thermal_time_constant` | — | — | `foc_controller` `M2.ceiling_heat` | kt_out = kt·gear_ratio, R = resistance_line_to_line/2 per phase: motoring torque ≤ kt_out·(voltage_available − \|v\|·kt_out/1.5)/R; any torque ≤ kt_out·I_max (the deployment's current cap); winding rise T: thermal_time_constant·dT/dt = thermal_resistance·i²R − T | KRAUSE_2013, KRISHNAN_2010, MUJOCO_DCMOTOR |
+| `M5.envelope`: The drive's ceiling, the motor's electrics and heat on the drivetrain. *sim2real's servo M5 (the envelope ladder): the rack twin plus the drive's ceiling and the motor's electrics; the heat the twin carries at its M4 sits here, robotparts' layer 5.* | `M4.drivetrain` | physics | `kt`, `resistance_line_to_line`, `thermal_resistance`, `thermal_time_constant` | — | — | `foc_controller` `M2.ceiling_heat` | kt_out = kt·gear_ratio, R = resistance_line_to_line/2 per phase: motoring torque ≤ kt_out·(voltage_available − \|v\|·kt_out/1.5)/R; any torque ≤ kt_out·I_max (the deployment's current cap); winding rise ΔT over ambient: thermal_time_constant·dΔT/dt = thermal_resistance·1.5·i²R − ΔT (the three phases' copper loss, i the phase-current amplitude) | KRAUSE_2013, KRISHNAN_2010, MUJOCO_DCMOTOR |
 | `M5.wear`: Wear: friction grows with hours, backlash opens with load. wears `breakaway_torque` by linear in deployment hours (h) at `friction_growth`; wears `coulomb_friction` by linear in deployment hours (h) at `friction_growth`; wears `backlash` by archard in torque-weighted output revolutions (N·m·rev) at `backlash_wear` | `M5.envelope` | physics | `friction_growth`, `backlash_wear` | — | — | — | backlash(u) = backlash + backlash_wear·Σ\|τ\|·Δrev; breakaway_torque and coulomb_friction both grow by friction_growth·h (the Stribeck drop stays) | ARCHARD_1953, FLODIN_1997, LU_MEEKER_1993 |
 | `M6.residual`: Grey-box residual on M5.wear | `M5.wear` | residual | — | — | — | — | M5.wear + an MLP residual torque from 3 samples of position error, velocity and torque command | NGUYEN_TUONG_2010, ZENG_2020, KOVALEV_2026 |
 | `M7.learned`: Black-box network | — | learned | — | — | — | — | an MLP over 3 samples of position error and velocity → output torque | HWANGBO_2019, HWANGBO_2019_ARXIV, ZHU_2025 |
@@ -342,14 +344,18 @@ A brushless motor alone, at its shaft. · M1 states every `BldcMotor` field (28)
 | `M0.ideal`: An ideal torque source: kt·i on the rotor inertia. *robotparts' M0.ideal read as a 1:1 actuator, whose output is the rotor.* | — | physics | `kt`, `rotor_inertia` | — | — | — | τ = kt·i; rotor_inertia·ω̇ = τ − τ_load | SICILIANO_2009, KRAUSE_2013 |
 | `M1.datasheet`: The datasheet: the stated values, nothing fitted | `M0.ideal` | physics | — | every other typed field | — | — | τ = kt·i on rotor_inertia, less coulomb_friction·sign(ω) + viscous_friction·ω when stated | KRAUSE_2013, ARMSTRONG_1994 |
 | `M2.coulomb_viscous`: Coulomb and viscous bearing friction. *the actuator's M2 on a bare motor: robotparts' actuator rungs cover its category, and its coverage ruler asks a BLDC motor's M2 for both.* | `M1.datasheet` | physics | `coulomb_friction`, `viscous_friction` | — | — | — | τ_r = coulomb_friction·sign(ω) + viscous_friction·ω | ARMSTRONG_1994, OLSSON_1998 |
-| `M4.ripple`: Cogging: rotor-periodic ripple. *sim2real's motor M4; a datasheet's torque_ripple states one amplitude of it.* | `M2.coulomb_viscous` | physics | `harmonics` | — | — | — | τ = kt·i − Σ_k amplitude_k·sin(k·θ + phase_k) | JAHNS_1996 |
-| `M5.dcmotor`: DC motor electrics and heat. *sim2real's motor M5 (today's model): the actuator's M5 on a bare motor, without LuGre friction.* | `M4.ripple` | physics | `resistance_line_to_line`, `inductance_line_to_line`, `thermal_resistance`, `thermal_time_constant` | — | — | — | τ = kt·i; V = R·i + L·di/dt + back_emf_constant·ω, R and L per phase (half the line-to-line values on a wye winding); thermal_time_constant·dT/dt = thermal_resistance·i²R − T | KRAUSE_2013, KRISHNAN_2010, MUJOCO_DCMOTOR |
-| `M5.wear`: Bearing friction that grows with hours. wears `coulomb_friction` by linear in deployment hours (h) at `friction_growth` | `M5.dcmotor` | physics | `friction_growth` | — | — | — | coulomb_friction(h) = coulomb_friction + friction_growth·h | LU_MEEKER_1993, ARMSTRONG_1994 |
+| `M3.stribeck`: Stribeck friction: breakaway falling to Coulomb with shaft speed. *the actuator's M3.stribeck on a bare motor, whose output is the shaft: robotparts' coverage ruler asks a BLDC motor's M3 for both.* | `M2.coulomb_viscous` | physics | `breakaway_torque`, `stribeck_velocity` | `stribeck_exponent` | — | — | τ_r = (coulomb_friction + (breakaway_torque − coulomb_friction)·exp(−(\|ω\|/stribeck_velocity)^stribeck_exponent))·sign(ω) + viscous_friction·ω | ARMSTRONG_1994, OLSSON_1998 |
+| `M4.ripple`: Cogging: rotor-periodic ripple. *sim2real's motor M4; a datasheet's torque_ripple states one amplitude of it.* | `M3.stribeck` | physics | `harmonics` | — | — | — | τ = kt·i − Σ_k amplitude_k·sin(k·θ + phase_k) | JAHNS_1996 |
+| `M5.dcmotor`: DC motor electrics and heat. *sim2real's motor M5 (today's model): the actuator's M5 on a bare motor, without LuGre friction.* | `M4.ripple` | physics | `resistance_line_to_line`, `inductance_line_to_line`, `thermal_resistance`, `thermal_time_constant` | — | — | — | τ = kt·i, i the phase-current amplitude; per phase on a wye winding: V = (resistance_line_to_line/2)·i + (inductance_line_to_line/2)·di/dt + (kt/1.5)·ω, the per-phase EMF amplitude; thermal_time_constant·dΔT/dt = thermal_resistance·(3/4)·resistance_line_to_line·i² − ΔT, ΔT the winding's rise over ambient (the three phases' copper loss) | KRAUSE_2013, KRISHNAN_2010, MUJOCO_DCMOTOR |
+| `M5.wear`: Bearing friction that grows with hours. wears `breakaway_torque` by linear in deployment hours (h) at `friction_growth`; wears `coulomb_friction` by linear in deployment hours (h) at `friction_growth` | `M5.dcmotor` | physics | `friction_growth` | — | — | — | breakaway_torque and coulomb_friction both grow by friction_growth·h (the Stribeck drop stays) | LU_MEEKER_1993, ARMSTRONG_1994 |
 | `M6.residual`: Grey-box residual on M5.wear | `M5.wear` | residual | — | — | — | — | M5.wear + an MLP residual shaft torque from 3 samples of q-axis current, rotor speed and winding temperature | NGUYEN_TUONG_2010, ZENG_2020 |
 | `M7.learned`: Black-box network | — | learned | — | — | — | — | an MLP over 3 samples of q-axis current command and rotor speed → shaft torque | HWANGBO_2019, HWANGBO_2019_ARXIV |
 
 | parameter | SI unit | shape | first on | definition |
 |---|---|---|---|---|
+| `breakaway_torque` | N·m | scalar | `M3.stribeck` | Static friction at the output: the torque that starts it moving from rest, the top of the Stribeck curve. |
+| `stribeck_velocity` | rad/s | scalar | `M3.stribeck` | Output speed over which friction falls from breakaway_torque to coulomb_friction. |
+| `stribeck_exponent` | — | scalar | `M3.stribeck` | Shape exponent of the Stribeck curve, how sharply friction falls with speed; 2 when absent. |
 | `harmonics` | N·m | list | `M4.ripple` | Rotor-periodic torque harmonics at the output, a list of (rotor_harmonic, amplitude, phase): cogging and commutation ripple. |
 | `thermal_resistance` | K/W | scalar | `M5.dcmotor` | Winding-to-ambient thermal resistance: winding temperature rise per watt of copper loss. |
 | `thermal_time_constant` | s | scalar | `M5.dcmotor` | Time constant of the winding temperature's first-order rise. |
@@ -364,7 +370,7 @@ A gear stage between a motor and its load. · M1 states every `Gearbox` field (1
 | `M0.ideal`: An ideal ratio and its reflected inertia. *the actuator's M0.ideal for a reducer.* | — | physics | `gear_ratio`, `gearbox_input_inertia` | — | — | — | q_out = q_in/gear_ratio; reflected inertia = gear_ratio²·gearbox_input_inertia | SICILIANO_2009, MUJOCO_ARMATURE |
 | `M1.datasheet`: The datasheet: the stated values, nothing fitted | `M0.ideal` | physics | — | every other typed field | — | — | the ideal ratio, with τ_out = efficiency·gear_ratio·τ_in when efficiency is stated | SICILIANO_2009 |
 | `M2.coulomb_viscous`: Coulomb and viscous friction at the output. *the actuator's M2 on a reducer, its no-load running torque: robotparts' load rung requires both, and its coverage ruler asks a gearbox's M2 for coulomb_friction.* | `M1.datasheet` | physics | `coulomb_friction`, `viscous_friction` | — | — | — | τ_r = coulomb_friction·sign(v) + viscous_friction·v at the output | ARMSTRONG_1994, OLSSON_1998 |
-| `M3.load`: Mesh friction that grows with the transmitted load. *sim2real's gearbox M3. A fit sets efficiency (η) or friction_load_coefficient (μ), never both: driving forward μ = (1 − η)/η.* | `M2.coulomb_viscous` | physics | `efficiency`, `output_friction_fraction` | `friction_load_coefficient` | — | — | τ_out = efficiency·gear_ratio·τ_in; output_friction_fraction of the friction acts on the output side | KIRCANSKI_1997, OLSSON_1998 |
+| `M3.load`: Mesh friction that grows with the transmitted load. *sim2real's gearbox M3. efficiency (η) is needed; friction_load_coefficient (μ) is read only when a source states μ, and then the two agree: driving forward μ = (1 − η)/η.* | `M2.coulomb_viscous` | physics | `efficiency`, `output_friction_fraction` | `friction_load_coefficient` | — | — | τ_out = efficiency·gear_ratio·τ_in; output_friction_fraction of the friction acts on the output side | KIRCANSKI_1997, OLSSON_1998 |
 | `M4.drivetrain`: Backlash and torsional stiffness | `M3.load` | physics | `backlash`, `torsional_stiffness` | — | — | — | q_out = q_in/gear_ratio + lash(τ, backlash) + τ/torsional_stiffness | KIRCANSKI_1997, NORDIN_2002, TUTTLE_1996 |
 | `M4.wear`: Backlash that opens with use (Archard). wears `backlash` by archard in torque-weighted output revolutions (N·m·rev) at `backlash_wear` | `M4.drivetrain` | physics | `backlash_wear` | — | — | — | backlash(u) = backlash + backlash_wear·Σ\|τ\|·Δrev | ARCHARD_1953, FLODIN_1997 |
 | `M6.residual`: Grey-box residual on M4.wear | `M4.wear` | residual | — | — | — | — | M4.wear + an MLP residual transmission error from 3 samples of input angle, output torque and input speed | NGUYEN_TUONG_2010, ZENG_2020 |
@@ -387,7 +393,7 @@ A field-oriented-control motor drive board. · sim2real `driver`
 |---|---|---|---|---|---|---|---|---|
 | `M0.ideal`: An ideal drive: the commanded current | — | physics | — | — | — | — | i_q = i_cmd (a deployment's torque cap clamps it) | KRISHNAN_2010 |
 | `M1.delay_loop`: Transport delay, a first-order current loop and its torque scale | `M0.ideal` | physics | `command_latency`, `current_loop_bandwidth`, `torque_scale` | — | — | — | i_q = torque_scale·LPF(current_loop_bandwidth)[i_cmd(t − command_latency)] | KRISHNAN_2010 |
-| `M2.ceiling_heat`: Voltage ceiling and board heating | `M1.delay_loop` | physics | `voltage_available`, `board_thermal_resistance`, `board_thermal_time_constant` | — | — | — | M1.delay_loop clamped to the voltage ceiling (voltage_available − ω·kt/1.5)/R of the motor it drives; board_thermal_time_constant·dT/dt = board_thermal_resistance·P_loss − T | KRAUSE_2013, KRISHNAN_2010 |
+| `M2.ceiling_heat`: Voltage ceiling and board heating | `M1.delay_loop` | physics | `voltage_available`, `board_thermal_resistance`, `board_thermal_time_constant` | — | — | — | M1.delay_loop clamped to the voltage ceiling (voltage_available − ω·kt/1.5)/R of the motor it drives; board_thermal_time_constant·dΔT/dt = board_thermal_resistance·P_loss − ΔT, ΔT the board's rise over ambient | KRAUSE_2013, KRISHNAN_2010 |
 | `M2.wear`: Board cooling that ages with hours. wears `board_thermal_resistance` by linear in deployment hours (h) at `board_thermal_growth` | `M2.ceiling_heat` | physics | `board_thermal_growth` | — | — | — | board_thermal_resistance(h) = board_thermal_resistance + board_thermal_growth·h | LU_MEEKER_1993, MEEKER_1998 |
 | `M6.residual`: Grey-box residual on M2.wear | `M2.wear` | residual | — | — | — | — | M2.wear + an MLP residual q-current from 3 samples of current command, rotor speed and bus voltage | NGUYEN_TUONG_2010 |
 | `M7.learned`: Black-box network | — | learned | — | — | — | — | an MLP over 3 samples of current command, rotor speed, bus voltage and board temperature → q-current | HWANGBO_2019 |
@@ -402,6 +408,8 @@ A field-oriented-control motor drive board. · sim2real `driver`
 | `board_thermal_time_constant` | s | scalar | `M2.ceiling_heat` | Time constant of the board temperature's first-order rise. |
 | `board_thermal_growth` | K/W/h | scalar | `M2.wear` | How fast board_thermal_resistance grows per deployment hour (its cooling ageing). |
 
+`voltage_available` is the type's own limit, which a deployment's `max_voltage_factor` (§7) can only lower.
+
 ### 5.6 `encoder`: `sensors/encoder/`
 
 An angle sensor on a shaft, such as a drive's rotor encoder. · sim2real `encoder`
@@ -411,7 +419,7 @@ An angle sensor on a shaft, such as a drive's rotor encoder. · sim2real `encode
 | `M0.quantiser`: An ideal quantiser | — | physics | `counts_per_rev` | — | — | — | q_reported = round(q/lsb)·lsb, lsb = 2π/counts_per_rev | WIDROW_2008 |
 | `M1.noise_latency`: Noise and latency | `M0.quantiser` | physics | `noise_sigma`, `latency` | — | — | — | q_reported(t) = round((q(t − latency) + n)/lsb)·lsb, n ~ N(0, noise_sigma²) | MERRY_2010 |
 | `M2.eccentricity`: Eccentricity harmonics | `M1.noise_latency` | physics | `eccentricity_harmonics` | — | — | — | q_reported = round((q + e(q) + n)/lsb)·lsb, delayed; e(q) the eccentricity harmonics | ZHAO_2024 |
-| `M2.wear`: A mount that loosens over vibration hours. wears `eccentricity_harmonics` by sqrt in vibration hours (h) at `eccentricity_growth` | `M2.eccentricity` | physics | `eccentricity_growth` | — | — | — | e(h) = e + eccentricity_growth·√h | JUNKER_1969, WHITMORE_1995 |
+| `M2.wear`: A mount that loosens over vibration hours. wears `eccentricity_harmonics` by sqrt in vibration hours (h) at `eccentricity_growth` | `M2.eccentricity` | physics | `eccentricity_growth` | — | — | — | amplitude_k(h) = amplitude_k + eccentricity_growth·√h for each eccentricity harmonic (its harmonic and phase stay) | JUNKER_1969, WHITMORE_1995 |
 
 | parameter | SI unit | shape | first on | definition |
 |---|---|---|---|---|
@@ -451,14 +459,15 @@ A stereo depth camera: depth on top of a colour stream. · sim2real `camera_rgbd
 
 | rung | base | kind | adds (needed) | optional (read when stated) | code | composes | equation | references |
 |---|---|---|---|---|---|---|---|---|
-| `M0.stereo`: Ideal stereo | — | physics | `baseline`, `depth_scale`, `depth_to_color` | — | — | — | z = f·baseline/d, scaled by depth_scale | KHOSHELHAM_2012 |
-| `M1.disparity_noise`: Disparity noise | `M0.stereo` | physics | `subpixel_sigma` | — | — | — | σ_z = z²·subpixel_sigma/(f·baseline) | KHOSHELHAM_2012 |
+| `M0.stereo`: Ideal stereo | — | physics | `stereo_focal_length`, `baseline`, `depth_scale`, `depth_to_color` | — | — | — | z = stereo_focal_length·baseline/d, d the disparity, scaled by depth_scale | KHOSHELHAM_2012 |
+| `M1.disparity_noise`: Disparity noise | `M0.stereo` | physics | `subpixel_sigma` | — | — | — | σ_z = z²·subpixel_sigma/(stereo_focal_length·baseline) | KHOSHELHAM_2012 |
 | `M2.depth_bias`: Depth bias | `M1.disparity_noise` | physics | `depth_bias_coeffs` | — | — | — | z_true = z + b(u, v, z), b from depth_bias_coeffs | HERRERA_2012 |
 | `M2.wear`: A depth-to-colour mount that loosens over vibration hours. wears `depth_to_color` by sqrt in vibration hours (h) at `depth_to_color_drift` | `M2.depth_bias` | physics | `depth_to_color_drift` | — | — | — | translation offset(h) = e + depth_to_color_drift·√h | JUNKER_1969, WHITMORE_1995 |
 | `M6.residual`: Grey-box residual on M2.wear | `M2.wear` | residual | — | — | — | — | M2.wear + a B-spline grid of depth corrections over (u, v, measured depth) | SCHOPS_2020, HERRERA_2012 |
 
 | parameter | SI unit | shape | first on | definition |
 |---|---|---|---|---|
+| `stereo_focal_length` | px | scalar | `M0.stereo` | The stereo imagers' rectified focal length (on a typical unit the IR pair): the f of triangulation, not the colour camera's. |
 | `baseline` | m | scalar | `M0.stereo` | Distance between the stereo pair's optical centres. |
 | `depth_scale` | m | scalar | `M0.stereo` | Metres per unit of the depth image. |
 | `depth_to_color` | m, rad | pose | `M0.stereo` | The depth frame's pose in the colour camera's frame. |
@@ -472,20 +481,21 @@ A line-scan spectral camera over a belt. · sim2real `camera_hsi`
 
 | rung | base | kind | adds (needed) | optional (read when stated) | code | composes | equation | references |
 |---|---|---|---|---|---|---|---|---|
-| `M0.bands`: Ideal spectral bands | — | physics | `band_centres`, `dark_white_refs` | — | — | — | R(λ) = (DN − dark)/(white − dark) | BURGER_2011 |
+| `M0.bands`: Ideal spectral bands | — | physics | `band_centres`, `dark_reference`, `white_reference` | — | — | — | R(λ) = (DN − dark_reference)/(white_reference − dark_reference) | BURGER_2011 |
 | `M1.band_widths`: Band widths | `M0.bands` | physics | `band_fwhm` | — | — | — | each band a Gaussian of its band_fwhm about its band_centres | BURGER_2011, KRUSE_1993 |
 | `M2.smile_keystone`: Smile and keystone | `M1.band_widths` | physics | `smile_keystone_map` | — | — | — | the cube resampled through smile_keystone_map, then R(λ) per band | MOUROULIS_2000 |
 | `M3.pushbroom`: Pushbroom line geometry | `M2.smile_keystone` | physics | `line_geometry` | — | — | — | a line camera swept by the belt: line k sees the belt at k·(belt distance per line) | GUPTA_1997 |
-| `M3.wear`: References that drift with hours. wears `dark_white_refs` by linear in deployment hours (h) at `reference_drift` | `M3.pushbroom` | physics | `reference_drift` | — | — | — | white(h) = white + reference_drift·h | LU_MEEKER_1993 |
+| `M3.wear`: A white reference that drifts with hours. wears `white_reference` by linear in deployment hours (h) at `reference_drift` | `M3.pushbroom` | physics | `reference_drift` | — | — | — | white_reference(h) = white_reference + reference_drift·h; dark_reference stays | LU_MEEKER_1993 |
 
 | parameter | SI unit | shape | first on | definition |
 |---|---|---|---|---|
 | `band_centres` | m | list | `M0.bands` | Centre wavelength of each spectral band. |
-| `dark_white_refs` | DN | pair | `M0.bands` | The dark and white reference frames that turn raw counts into reflectance. |
+| `dark_reference` | DN | map | `M0.bands` | The dark reference frame (shutter closed): each pixel's and band's counts at zero light. |
+| `white_reference` | DN | map | `M0.bands` | The white reference frame: each pixel's and band's counts over a white tile of known reflectance. |
 | `band_fwhm` | m | list | `M1.band_widths` | Full width at half maximum of each band's spectral response. |
 | `smile_keystone_map` | px | map | `M2.smile_keystone` | The spectral (smile) and spatial (keystone) distortion map the cube is resampled with. |
 | `line_geometry` | m, rad | pair | `M3.pushbroom` | The scan line's pose, and the belt distance per line. |
-| `reference_drift` | DN/h | scalar | `M3.wear` | How fast the dark and white references drift per deployment hour (lamp ageing, dark current). |
+| `reference_drift` | DN/h | scalar | `M3.wear` | How fast the white reference's DN drifts per deployment hour (lamp ageing). The dark reference drifts the other way (dark current) and is not modelled by this rate. |
 
 ### 5.10 `rigid_body_chain`: `arms/rigid_body_chain/`
 
@@ -495,12 +505,12 @@ A chain of rigid links and joints, open or closed: a whole arm, a sub-assembly, 
 |---|---|---|---|---|---|---|---|---|
 | `M0.nominal`: Nominal kinematics | — | physics | `link_geometry` | — | — | — | tool = FK(q; link_geometry) | SICILIANO_2009, DH_1955 |
 | `M1.zero_offsets`: Joint zero offsets | `M0.nominal` | physics | `joint_zero_offsets` | — | — | — | tool = FK(q + joint_zero_offsets; link_geometry) | HOLLERBACH_WAMPLER_1996 |
-| `M2.geometric`: Geometric (DH) errors. *sim2real's arm M2: the kinematic branch of an open chain.* | `M1.zero_offsets` | physics | `dh_errors` | — | — | — | tool = FK(q + joint_zero_offsets; DH + dh_errors) | HAYATI_1983, OKAMURA_1996, HOLLERBACH_2016 |
-| `M2.inertial`: Link inertials and loop closure. *sim2real's arm sub-assembly M2: the dynamic branch, which needs no DH errors.* | `M1.zero_offsets` | physics | `link_inertials`, `closure_tolerance` | — | — | — | tip = FK(q + joint_zero_offsets); dynamics from link_inertials with each joint's own type; a closed loop may stay open by closure_tolerance | ATKESON_1986, GAUTIER_1990, SWEVERS_1997 |
+| `M2.geometric`: Geometric (DH) errors. *sim2real's arm M2: the kinematic branch of an open chain.* | `M1.zero_offsets` | physics | `dh_errors` | — | — | — | tool = FK(q + joint_zero_offsets; link_geometry + dh_errors) | HAYATI_1983, OKAMURA_1996, HOLLERBACH_2016 |
+| `M2.inertial`: Link inertials and loop closure. *sim2real's arm sub-assembly M2: the dynamic branch, which needs no DH errors.* | `M1.zero_offsets` | physics | `link_inertials`, `closure_tolerance` | — | — | — | tool = FK(q + joint_zero_offsets; link_geometry); dynamics from link_inertials with each joint's own type; a closed loop may stay open by closure_tolerance | ATKESON_1986, GAUTIER_1990, SWEVERS_1997 |
 | `M2.wear`: Joint zeros that drift over vibration hours. wears `joint_zero_offsets` by sqrt in vibration hours (h) at `joint_zero_drift` | `M2.inertial` | physics | `joint_zero_drift` | — | — | — | joint_zero_offsets(h) = joint_zero_offsets + joint_zero_drift·√h | JUNKER_1969, WHITMORE_1995 |
-| `M3.compliance`: Joint compliance and link inertials | `M2.geometric` | physics | `joint_compliance`, `link_inertials` | — | — | — | tool = FK(q + joint_zero_offsets + joint_compliance·τ; DH + dh_errors); joints are their types | SPONG_1987, ATKESON_1986, GAUTIER_1990, SWEVERS_1997 |
+| `M3.compliance`: Joint compliance and link inertials | `M2.geometric` | physics | `joint_compliance`, `link_inertials` | — | — | — | tool = FK(q + joint_zero_offsets + joint_compliance·τ; link_geometry + dh_errors); τ from link_inertials, each joint its own type | SPONG_1987, ATKESON_1986, GAUTIER_1990, SWEVERS_1997 |
 | `M3.wear`: Joint compliance that grows with use (Archard). wears `joint_compliance` by archard in torque-weighted joint revolutions (N·m·rev) at `compliance_wear` | `M3.compliance` | physics | `compliance_wear` | — | — | — | joint_compliance(u) = joint_compliance + compliance_wear·Σ\|τ\|·Δrev | ARCHARD_1953, FLODIN_1997 |
-| `M6.residual`: Grey-box residual on M3.wear | `M3.wear` | residual | — | — | — | — | M3.wear + an MLP residual of joint torques from 3 samples of each joint's error, speed and torque | NGUYEN_TUONG_2010, ZENG_2020 |
+| `M6.residual`: Grey-box residual on M3.wear | `M3.wear` | residual | — | — | — | — | M3.wear + an MLP residual of joint torques from 3 samples of each joint's error, speed and torque, added to M3.compliance's τ, so it moves the tool through the compliance | NGUYEN_TUONG_2010, ZENG_2020 |
 | `M6.inertial_residual`: Grey-box residual on M2.wear. *the residual of the dynamic branch (sim2real's arm sub-assembly M6).* | `M2.wear` | residual | — | — | — | — | M2.wear + an MLP residual of joint torques from 3 samples of each joint's error, speed and torque | NGUYEN_TUONG_2010, ZENG_2020 |
 | `M7.learned`: Black-box network | — | learned | — | — | — | — | an MLP over 3 samples of each joint's error and speed → joint torques | HWANGBO_2019 |
 
@@ -523,7 +533,7 @@ An end effector that grasps, on a chain's flange. · sim2real `arm_6dof_gripper`
 |---|---|---|---|---|---|---|---|---|
 | `M0.tcp`: A rigid gripper at the tool centre point | — | physics | `tcp_offset` | — | — | — | tool = flange · tcp_offset | SICILIANO_2009 |
 | `M1.width_map`: Finger width map | `M0.tcp` | physics | `finger_width_map` | — | — | — | width = finger_width_map(command) | PRATTICHIZZO_2016 |
-| `M2.contact`: Grip force and contact friction | `M1.width_map` | physics | `grip_force_map`, `contact_friction` | — | — | — | force = grip_force_map(command, width); the object holds while \|tangential\| ≤ contact_friction·force | PRATTICHIZZO_2016, MUJOCO_CONTACT |
+| `M2.contact`: Grip force and contact friction | `M1.width_map` | physics | `grip_force_map`, `contact_friction` | — | — | — | force = grip_force_map(command, width), each pad's normal force; the object holds while, at each contact, \|tangential\| ≤ contact_friction·force (two pads hold about twice one pad's) | PRATTICHIZZO_2016, MUJOCO_CONTACT |
 | `M2.wear`: Finger pads that glaze with grasps. wears `contact_friction` by linear in grasp cycles (cycle) at `contact_friction_change` | `M2.contact` | physics | `contact_friction_change` | — | — | — | contact_friction(n) = contact_friction + contact_friction_change·n | ARCHARD_1953, LU_MEEKER_1993 |
 | `M6.residual`: Grey-box residual on M2.wear | `M2.wear` | residual | — | — | — | — | M2.wear + an MLP residual width from 3 samples of width command, measured width and finger current | NGUYEN_TUONG_2010 |
 | `M7.learned`: Black-box network | — | learned | — | — | — | — | an MLP over 5 samples of width command, width and finger current → finger force | HWANGBO_2019 |
@@ -532,7 +542,7 @@ An end effector that grasps, on a chain's flange. · sim2real `arm_6dof_gripper`
 |---|---|---|---|---|
 | `tcp_offset` | m | pose | `M0.tcp` | The tool centre point's offset from the flange the gripper mounts on. |
 | `finger_width_map` | m | map | `M1.width_map` | Finger opening as a function of the width command. |
-| `grip_force_map` | N | map | `M2.contact` | Grip force as a function of the command and the width. |
+| `grip_force_map` | N | map | `M2.contact` | The normal force each finger pad presses the object with, as a function of the command and the width: what a gauge squeezed between two jaws reads. A datasheet's gripping force summed over the jaws is twice it on a two-jaw gripper. |
 | `contact_friction` | — | scalar | `M2.contact` | Coefficient of friction between the finger pads and the object. |
 | `contact_friction_change` | 1/cycle | scalar | `M2.wear` | How much contact_friction changes per grasp cycle (pad wear and glazing). |
 
@@ -545,8 +555,8 @@ A belt driven through a drum. · sim2real `conveyor`
 | `M0.ideal`: An ideal belt: kinematics and a rigid mass. *numbered by the actuator's layers (sim2real's decision); no M1: no Datasheet class yet.* | — | physics | `drum_radius`, `gear_ratio`, `moving_mass` | — | — | — | x = θ_motor·drum_radius/gear_ratio; (moving_mass + load)·ẍ = F | ZHANG_XIA_2011 |
 | `M2.coulomb_viscous`: Coulomb and viscous friction on the belt | `M0.ideal` | physics | `coulomb_friction`, `viscous_friction` | — | — | — | F_f = coulomb_friction·sign(ẋ) + viscous_friction·ẋ | ARMSTRONG_1994, ZHANG_XIA_2011 |
 | `M3.stribeck`: Static friction (Stribeck). *the actuator's M3.stribeck as forces on the belt.* | `M2.coulomb_viscous` | physics | `breakaway_force`, `stribeck_velocity` | — | — | — | F_f = (coulomb_friction + (breakaway_force − coulomb_friction)·exp(−(\|ẋ\|/stribeck_velocity)²))·sign(ẋ) + viscous_friction·ẋ | ARMSTRONG_1994 |
-| `M4.stretch`: Belt stretch: drum and load as two masses | `M3.stribeck` | physics | `stretch_stiffness`, `stretch_damping` | — | — | — | load: (moving_mass + load)·ẍ_l = stretch_stiffness·(x_d − x_l) + stretch_damping·(ẋ_d − ẋ_l) − F_f; drum: m_d·ẍ_d = gear_ratio·τ/drum_radius − the same stretch force | SPONG_1987, HE_2017 |
-| `M4.wear`: Friction that grows with belt distance. wears `coulomb_friction` by linear in belt distance (km) at `friction_growth` | `M4.stretch` | physics | `friction_growth` | — | — | — | coulomb_friction(s) = coulomb_friction + friction_growth·s | LU_MEEKER_1993, ZHANG_XIA_2011 |
+| `M4.stretch`: Belt stretch: drum and load as two masses. *M4 splits moving_mass: drum_mass on the drive side of the stretch, the rest moves with the load.* | `M3.stribeck` | physics | `stretch_stiffness`, `stretch_damping`, `drum_mass` | — | — | — | drum: drum_mass·ẍ_d = gear_ratio·τ/drum_radius − stretch_stiffness·(x_d − x_l) − stretch_damping·(ẋ_d − ẋ_l); load: (moving_mass − drum_mass + load)·ẍ_l = the same stretch force − F_f | SPONG_1987, HE_2017 |
+| `M4.wear`: Friction that grows with belt distance. wears `breakaway_force` by linear in belt distance (km) at `friction_growth`; wears `coulomb_friction` by linear in belt distance (km) at `friction_growth` | `M4.stretch` | physics | `friction_growth` | — | — | — | breakaway_force and coulomb_friction both grow by friction_growth·s (the Stribeck drop stays) | LU_MEEKER_1993, ZHANG_XIA_2011 |
 | `M6.residual`: Grey-box residual on M4.wear | `M4.wear` | residual | — | — | — | — | M4.wear + an MLP residual drive force from 3 samples of belt speed error, belt speed and motor current | NGUYEN_TUONG_2010, ZENG_2020 |
 | `M7.learned`: Black-box network | — | learned | — | — | — | — | an MLP over 3 samples of position error and belt speed → drive force | HWANGBO_2019, HWANGBO_2019_ARXIV |
 
@@ -561,7 +571,8 @@ A belt driven through a drum. · sim2real `conveyor`
 | `stribeck_velocity` | m/s | scalar | `M3.stribeck` | Belt speed over which friction falls from breakaway_force to coulomb_friction. |
 | `stretch_stiffness` | N/m | scalar | `M4.stretch` | The belt's stiffness along its length, between drum and load. |
 | `stretch_damping` | N·s/m | scalar | `M4.stretch` | Damping of the belt's stretch between drum and load. |
-| `friction_growth` | N/km | scalar | `M4.wear` | How fast coulomb_friction grows per kilometre of belt travel (idlers and slider bed wearing). |
+| `drum_mass` | kg | scalar | `M4.stretch` | The drive side's mass referred to the belt, read from M4: the drum and the reflected rotor; moving_mass less drum_mass moves with the load. |
+| `friction_growth` | N/km | scalar | `M4.wear` | How fast the friction level grows per kilometre of belt travel (idlers and slider bed wearing); breakaway_force and coulomb_friction grow together. |
 
 ### 5.13 `aruco_marker`: `markers/aruco_marker/`
 
@@ -748,6 +759,10 @@ quantities.
 |---|---|---|---|
 | `reference_drift_per_h` | `reference_drift` | (SI) |  |
 
+| packed name | carries | ordered | note |
+|---|---|---|---|
+| `dark_white_refs` | `dark_reference`, `white_reference` | yes | sim2real's camera_hsi card: (dark, white) as its name reads, both in DN. |
+
 ### 6.9 `rigid_body_chain`
 
 | alias | canonical | unit as written | note |
@@ -930,13 +945,14 @@ env -u VIRTUAL_ENV uv run --project /home/bam/robot_models --extra test pytest -
 6. **The eight code folders belong to `integrated_servo` only.** The motor, gearbox and conveyor number their rungs by
    the same layers, and each rung's note says which actuator rung it specialises. A bare motor and a reducer keep an
    `M2.coulomb_viscous` (robotparts' actuator rungs cover their category, and its coverage ruler asks both for it); the
-   motor's M4 builds on it.
+   motor's `M3.stribeck` builds on it and its M4 on that (amendment 1, §14).
 7. **The rack twin's friction is a type rung with all its terms:** `M3.weakening_capture` adds the weakening limit and
    the capture speed and dwell its equation reads, from the twin's own term list.
 8. **The servo's friction wear moves both levels:** `M5.wear` wears `breakaway_torque` and `coulomb_friction` at one
    rate, as the twin grows its static level with the Stribeck drop fixed.
-9. **The gearbox's load loss is efficiency or μ, never both** (`M3.load` needs `efficiency`, as sim2real's gearbox
-   does; `friction_load_coefficient` is optional; μ = (1 − η)/η driving forward).
+9. **The gearbox's load loss runs on efficiency; μ is read only when stated** (`M3.load` needs `efficiency`, as
+   sim2real's gearbox does; `friction_load_coefficient` is optional, and when a source states it the two agree:
+   μ = (1 − η)/η driving forward). Amendment 1 (§14) replaced "η or μ, never both", which the needed η contradicted.
 10. **A board's thermal pair is two parameters** (`board_thermal_resistance`, `board_thermal_time_constant`), so its
     wear grows the resistance alone; sim2real's `board_thermal` is a packed name.
 11. **References are a shared module written now** (`robot_models.references`), not ported per lane; maker documents
@@ -998,3 +1014,79 @@ env -u VIRTUAL_ENV uv run --project /home/bam/robot_models --extra test pytest -
 group packages, `.gitattributes`, `tests/test_ladder.py` and `tests/test_ladders_acceptance.py`, and restores the two
 docstrings; nothing imports them yet. After the lanes land, reverting their commits removes the type folders and the
 rung copies. robotparts and sim2real are not touched in v1.
+
+## 14. Amendment 1 (2026-11-16)
+
+The v1 check agents, run over the landed ladders, found physics errors in the frozen spec itself. The ruler moved
+first, at `87db875` ("PEP 0004 amendment 1, the ruler first"); a review of the amendment then moved the ruler again
+(the motor's EMF from kt, the board's rise ΔT, the gripper's per-pad force, the hyperspectral references split); the
+ladders, the tables of §5 (regenerated from the ruler's spec) and the generated type docs followed. *Structural* means
+the ruler asserts it (keys, bases, needed and optional names, wears, the vocabulary); *text* means the ruler records
+the equation or note as the spec's form and asks only for a non-empty one.
+
+- **`bldc_motor` gains `M3.stribeck`** (structural). Wrong: robotparts' coverage ruler asks a BLDC motor's M3 for
+  `breakaway_torque` and `stribeck_velocity`, and the bare motor had no M3 and neither name. Fix: `M3.stribeck` on
+  `M2.coulomb_viscous` needs both, reads `stribeck_exponent` when stated, has no code folder (the eight are the
+  servo's, §11 call 6); `M4.ripple` now sits on it; the three names join the vocabulary with the servo's definitions,
+  word for word, at the output, which on a bare motor is its shaft (the datasheet's `coulomb_friction` and
+  `viscous_friction` read there too, so the motor's whole friction curve reads at one point). 83 → 84 rungs.
+- **`bldc_motor` `M5.wear` grows breakaway with Coulomb** (structural). Wrong: with a Stribeck curve below it,
+  growing `coulomb_friction` alone past `breakaway_torque` makes the Stribeck term negative. Fix: both wear linearly
+  in deployment hours at `friction_growth`, as the servo's `M5.wear` already did; the Stribeck drop stays.
+- **`conveyor` `M4.stretch` adds `drum_mass`** (structural). Wrong: its equation used a drum mass `m_d` no name held,
+  and counted the drum twice (`moving_mass` already holds the drum and the reflected rotor, and the load side used
+  `moving_mass + load`). Fix: `drum_mass` (kg) is the drive side, `moving_mass − drum_mass + load` the load side.
+- **`conveyor` `M4.wear` grows `breakaway_force` with `coulomb_friction`** (structural). Wrong: growing Coulomb alone
+  past breakaway made M3's Stribeck term negative (friction rising with speed, no static peak). Fix: both grow at
+  `friction_growth`, whose definition now says the friction level, both together.
+- **`depth_camera` `M0.stereo` adds `stereo_focal_length`** (structural). Wrong: z = f·baseline/d used an f no name
+  held, and that f is the stereo imagers' rectified focal length (on a typical unit the IR pair), not the colour
+  camera's `fx_fy`. Fix: `stereo_focal_length` (px, scalar) on M0; the M0 and M1 equations use it.
+- **Three-phase copper loss, the rise over ambient, and per-phase EMF** (text). Wrong: the servo's `M5.envelope`
+  heated the winding by thermal_resistance·i²R with R one phase's resistance (one phase's loss) and called the rise a
+  temperature T, and `foc_controller`'s `M2.ceiling_heat` called the board's rise T the same way (read as a
+  temperature, both drop ambient); the motor's `M5.dcmotor` wrote V = R·i + L·di/dt + back_emf_constant·ω per phase
+  with a line-to-line EMF constant. Fix: 1.5·i²R (= 3/4·resistance_line_to_line·i², i the phase-current amplitude),
+  ΔT the rise over ambient (the winding's and the board's), and the per-phase EMF amplitude (kt/1.5)·ω. The EMF is
+  written from `kt`, a name the rung needs, as the servo's `M5.envelope` and the drive's `M2.ceiling_heat` already
+  write it; it equals back_emf_constant/√3 only for a line-to-line peak constant, while `back_emf_constant` is read at
+  M1 alone, when stated, and does not say rms or peak (a datasheet Ke in V_rms/krpm is off by √2). The v1 motor ladder
+  already had the copper loss; its text now matches the spec.
+- **`output_inertia` for J** (text): the servo's `M4.drivetrain` equation named a J no name held.
+- **The gearbox's η is needed, μ read only when stated** (text): `M3.load`'s note said a fit sets η or μ, never
+  both, while the rung needs `efficiency`; now μ is read only when a source states it, and then the two agree
+  (§11 call 9). The ladder's equation is the spec's, η alone: it no longer adds coulomb_friction + μ·abs(τ_load) on
+  top of η, which charged the same mesh loss twice.
+- **The encoder's amplitudes grow per harmonic** (text): `M2.wear` grew a list of (harmonic, amplitude, phase) as one
+  scalar e; now each amplitude grows with √h and its harmonic and phase stay.
+- **The hyperspectral references are two frames, and only the white one drifts** (structural). Wrong:
+  `reference_drift` said the dark and white references drift at one rate, but dark current moves the dark frame the
+  other way; and `M3.wear` wore the whole `dark_white_refs` pair, so a consumer that applied the Wear grew the dark
+  frame too. Fix: `dark_reference` and `white_reference` (DN, map) replace the pair, `M0.bands` needs both,
+  `M3.wear` ("A white reference that drifts with hours") wears `white_reference` alone at `reference_drift` (lamp
+  ageing), and sim2real's `dark_white_refs` is a packed name holding the two (§6.8).
+- **`rigid_body_chain` on `link_geometry`, one output** (text): `M2.geometric` and `M3.compliance` wrote "DH +
+  dh_errors" for geometry the type holds as `link_geometry` (a URDF, a DH table or a CAD export), and `M2.inertial`
+  named its output "tip" where every other rung says "tool"; `M3.compliance` now says τ comes from `link_inertials`,
+  and `M6.residual` says its torques enter at that τ, so they move the tool through the compliance.
+- **The gripper's hold is per contact** (text): `M2.contact`'s friction cone applies at each contact, so two pads
+  hold about twice one pad's. That is right only when `force` is the normal force at each pad, so `grip_force_map` is
+  now defined as that force (what a gauge squeezed between two jaws reads), and a datasheet's gripping force summed
+  over the jaws is twice it on a two-jaw gripper; read as one pad's, the summed figure would hold twice too much.
+- **Ladder-side only, no contract change:** the type ladders' docstrings, which the generated READMEs quote, read as
+  public text (no working provenance); the servo's wear usages are named constants; the `foc_controller` M0 comment
+  names the deployment's `torque_cap_nm`.
+
+**Raised, not taken** (each needs a contract change or another type's data first):
+
+- **`noload_speed`'s unit:** the alias's source unit is the part file's own and unknown, and `Alias.unit` can only
+  say a unit or "the SI unit"; saying "the source's own, unknown" needs a contract sentinel. Its note says to check.
+- **`encoder_lines` / `encoder_bits` → `counts_per_rev`:** each needs a conversion (4 × lines, 2^bits), and `Alias`
+  has no conversion field; that is a contract question. Their notes say how.
+- **`voltage_available` against the deployment's `max_voltage_factor`:** settled as text only (one clause in §5.5:
+  the type's own limit, which a deployment can only lower); no new name or rung.
+- **robotparts' coverage M1 keys for `foc_controller` and `depth_camera`** (`voltage_min`, `fov_h`, …): they wait on
+  Datasheet classes for those types (§12), not on the ladders.
+
+Undo: `git revert` the commits after `87db875` that apply this amendment, then `87db875` itself; the ruler, the
+ladders and the docs go back together.

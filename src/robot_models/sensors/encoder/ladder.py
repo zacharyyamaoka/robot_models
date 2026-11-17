@@ -89,7 +89,8 @@ RUNGS = (
         base="M2.eccentricity",
         adds=("eccentricity_growth",),
         # WHY square root (PEP 0004 §5.6): a loosening mount drifts diffusively, so the harmonics' expected size grows
-        # with the square root of vibration hours (Whitmore 1995) rather than linearly.
+        # with the square root of vibration hours (Whitmore 1995) rather than linearly. WHY per amplitude: the
+        # harmonics are a list of (harmonic, amplitude, phase); a loosening mount grows the error, not its period.
         wears=(
             Wear(
                 parameter="eccentricity_harmonics",
@@ -99,7 +100,8 @@ RUNGS = (
                 rate="eccentricity_growth",
             ),
         ),
-        equation="e(h) = e + eccentricity_growth·√h",
+        equation=("amplitude_k(h) = amplitude_k + eccentricity_growth·√h for each eccentricity harmonic "
+                  "(its harmonic and phase stay)"),
         references=(references.JUNKER_1969, references.WHITMORE_1995),
     ),
 )

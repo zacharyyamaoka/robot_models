@@ -13,8 +13,10 @@ Projects the notes below name, and what they are: [sim2real](../../../../docs/TY
 
 From the docstring of [`ladder.py`](ladder.py), less a paragraph on the order that file reads in (this page shows the ladder, then the rungs, then the names):
 
-Spec: PEP 0004 §5.10 and §6.9 (and §0 flag 2: arm is folded into this type, per Zach Nov 6 "the 6 DOF robot arm is
-not a type").
+Spec: PEP 0004 §5.10 and §6.9.
+
+An arm is not a type of its own: a whole arm is a rigid_body_chain whose joints are their own types (an integrated
+servo, a gearbox, an encoder), so one ladder serves an arm, a sub-assembly, a wrist and a closed five-bar (PEP 0004 §0).
 
 The ladder forks after M1.zero_offsets into two branches that both fall back on it:
 
@@ -69,7 +71,7 @@ Bottom up. *Needs* is what the rung's model cannot run without, new over its bas
 | <a id="rung-m2-wear"></a>`M2.wear` | Joint zeros that drift over vibration hours<br>wears `joint_zero_offsets`: see [Wear](#wear) | [`M2.inertial`](#rung-m2-inertial) | `joint_zero_drift` | — | — | `joint_zero_offsets(h) = joint_zero_offsets + joint_zero_drift·√h` | [JUNKER_1969](#ref-junker_1969), [WHITMORE_1995](#ref-whitmore_1995) |
 | <a id="rung-m3-compliance"></a>`M3.compliance` | Joint compliance and link inertials | [`M2.geometric`](#rung-m2-geometric) | `joint_compliance`, `link_inertials` | — | — | `tool = FK(q + joint_zero_offsets + joint_compliance·τ; link_geometry + dh_errors); τ from link_inertials, each joint its own type` | [SPONG_1987](#ref-spong_1987), [ATKESON_1986](#ref-atkeson_1986), [GAUTIER_1990](#ref-gautier_1990), [SWEVERS_1997](#ref-swevers_1997) |
 | <a id="rung-m3-wear"></a>`M3.wear` | Joint compliance that grows with use (Archard)<br>wears `joint_compliance`: see [Wear](#wear) | [`M3.compliance`](#rung-m3-compliance) | `compliance_wear` | — | — | `joint_compliance(u) = joint_compliance + compliance_wear·Σ\|τ\|·Δrev` | [ARCHARD_1953](#ref-archard_1953), [FLODIN_1997](#ref-flodin_1997) |
-| <a id="rung-m6-residual"></a>`M6.residual` | Grey-box residual on M3.wear | [`M3.wear`](#rung-m3-wear) | — | — | — | `M3.wear + an MLP residual of joint torques from 3 samples of each joint's error, speed and torque` | [NGUYEN_TUONG_2010](#ref-nguyen_tuong_2010), [ZENG_2020](#ref-zeng_2020) |
+| <a id="rung-m6-residual"></a>`M6.residual` | Grey-box residual on M3.wear | [`M3.wear`](#rung-m3-wear) | — | — | — | `M3.wear + an MLP residual of joint torques from 3 samples of each joint's error, speed and torque, added to M3.compliance's τ, so it moves the tool through the compliance` | [NGUYEN_TUONG_2010](#ref-nguyen_tuong_2010), [ZENG_2020](#ref-zeng_2020) |
 | <a id="rung-m6-inertial_residual"></a>`M6.inertial_residual` | Grey-box residual on M2.wear<br>*the residual of the dynamic branch (sim2real's arm sub-assembly M6).* | [`M2.wear`](#rung-m2-wear) | — | — | — | `M2.wear + an MLP residual of joint torques from 3 samples of each joint's error, speed and torque` | [NGUYEN_TUONG_2010](#ref-nguyen_tuong_2010), [ZENG_2020](#ref-zeng_2020) |
 | <a id="rung-m7-learned"></a>`M7.learned` | Black-box network | — | — | — | — | `an MLP over 3 samples of each joint's error and speed → joint torques` | [HWANGBO_2019](#ref-hwangbo_2019) |
 

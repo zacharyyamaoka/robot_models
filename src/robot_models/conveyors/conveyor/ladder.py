@@ -1,9 +1,10 @@
 """A belt driven through a drum: the conveyor that carries parcels past an arm, as a ladder of models (PEP 0004).
 
 The ladder climbs from an ideal belt (the drum's turns become belt travel, a rigid mass moves under a force) through
-friction on the belt, the belt's stretch between drum and load, and friction that grows with the belt's distance, to a
-grey-box residual and a black-box network. Its rungs are numbered by the actuator's layers (sim2real's decision, the
-same M2 and M3 friction rungs, here as forces on the belt); there is no M1 because the type has no Datasheet class yet.
+friction on the belt, the belt's stretch between drum and load (where the moving mass splits into the drive side's and
+the load side's), and friction that grows with the belt's distance, to a grey-box residual and a black-box network. Its
+rungs are numbered by the actuator's layers (sim2real's decision, the same M2 and M3 friction rungs, here as forces on
+the belt); there is no M1 because the type has no Datasheet class yet.
 
 Spec: PEP 0004 §5.12 and §6.11.
 """
@@ -56,15 +57,24 @@ VOCABULARY = (
         name="stretch_damping", unit="N·s/m",
         definition="Damping of the belt's stretch between drum and load.",
     ),
+    Parameter(
+        name="drum_mass", unit="kg",
+        definition=("The drive side's mass referred to the belt, read from M4: the drum and the reflected rotor; "
+                    "moving_mass less drum_mass moves with the load."),
+    ),
     # M4.wear
     Parameter(
         name="friction_growth", unit="N/km",
-        definition=("How fast coulomb_friction grows per kilometre of belt travel (idlers and slider bed "
-                    "wearing)."),
+        definition=("How fast the friction level grows per kilometre of belt travel (idlers and slider bed wearing); "
+                    "breakaway_force and coulomb_friction grow together."),
     ),
 )
 
-# --- the rungs, M0 upward ---------------------------------------------------------------------------------------------
+# --- the rungs, M0 upward --------------------------------------------------------------------------------------------
+
+# WHY belt distance: idlers and the slider bed wear with the belt's travel, not its hours (M4.wear).
+BELT_DISTANCE = "belt distance"
+KILOMETRES = "km"
 
 RUNGS = (
     Rung(
@@ -96,7 +106,8 @@ RUNGS = (
         adds=("breakaway_force", "stribeck_velocity"),
         # WHY the equation squares the Stribeck velocity ratio and has no exponent parameter (PEP 0004 §5.12): no
         # conveyor source (sim2real's conveyor card, robotparts' stribeck rung it points at) states an exponent, so it
-        # is held at the actuator's default of 2 instead of being an optional parameter as in the actuator's M3.stribeck.
+        # is held at the actuator's default of 2 instead of being an optional parameter as in the actuator's
+        # M3.stribeck.
         equation=("F_f = (coulomb_friction + (breakaway_force − coulomb_friction)·exp(−(|ẋ|/stribeck_velocity)²))"
                   "·sign(ẋ) + viscous_friction·ẋ"),
         references=(references.ARMSTRONG_1994,),
@@ -107,10 +118,14 @@ RUNGS = (
         name="stretch",
         title="Belt stretch: drum and load as two masses",
         base="M3.stribeck",
-        adds=("stretch_stiffness", "stretch_damping"),
-        equation=("load: (moving_mass + load)·ẍ_l = stretch_stiffness·(x_d − x_l) + stretch_damping·(ẋ_d − ẋ_l) "
-                  "− F_f; drum: m_d·ẍ_d = gear_ratio·τ/drum_radius − the same stretch force"),
+        adds=("stretch_stiffness", "stretch_damping", "drum_mass"),
+        # WHY drum_mass splits moving_mass rather than adding to it: M0's moving_mass already counts the drum and the
+        # reflected rotor, so a drum mass on top of it would count the drum twice.
+        equation=("drum: drum_mass·ẍ_d = gear_ratio·τ/drum_radius − stretch_stiffness·(x_d − x_l) "
+                  "− stretch_damping·(ẋ_d − ẋ_l); load: (moving_mass − drum_mass + load)·ẍ_l = the same "
+                  "stretch force − F_f"),
         references=(references.SPONG_1987, references.HE_2017),
+        note="M4 splits moving_mass: drum_mass on the drive side of the stretch, the rest moves with the load.",
     ),
     Rung(
         level=4,
@@ -118,11 +133,16 @@ RUNGS = (
         title="Friction that grows with belt distance",
         base="M4.stretch",
         adds=("friction_growth",),
+        # WHY both levels at one rate: growing coulomb_friction alone would pass breakaway_force and turn M3's Stribeck
+        # term negative (friction rising with speed, no static peak); the drop between them stays as fitted.
         wears=(
-            Wear(parameter="coulomb_friction", usage="belt distance", usage_unit="km", law="linear",
+            Wear(parameter="breakaway_force", usage=BELT_DISTANCE, usage_unit=KILOMETRES, law="linear",
+                 rate="friction_growth"),
+            Wear(parameter="coulomb_friction", usage=BELT_DISTANCE, usage_unit=KILOMETRES, law="linear",
                  rate="friction_growth"),
         ),
-        equation="coulomb_friction(s) = coulomb_friction + friction_growth·s",
+        equation=("breakaway_force and coulomb_friction both grow by friction_growth·s "
+                  "(the Stribeck drop stays)"),
         references=(references.LU_MEEKER_1993, references.ZHANG_XIA_2011),
     ),
     Rung(

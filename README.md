@@ -36,12 +36,12 @@ needs(ladders(), "integrated_servo", "M4.drivetrain")  # {type: names}, the comp
   `Packed` array; what a deployment sets (gains, caps) is `DeploymentOnly`, never on a rung.
 - Spec: [PEP 0004](docs/peps/0004-model-ladders-by-type.md).
 
-## The 12 types (83 rungs)
+## The 12 types (84 rungs)
 
 | type | folder (`src/robot_models/…`) | rungs | what it is |
 |---|---|---:|---|
 | `integrated_servo` | `actuators/servo/` | 14 | A joint in one housing: motor, drive, reducer or none, encoder |
-| `bldc_motor` | `actuators/servo/bldc/` | 8 | A brushless motor alone, at its shaft |
+| `bldc_motor` | `actuators/servo/bldc/` | 9 | A brushless motor alone, at its shaft |
 | `gearbox` | `actuators/servo/gearbox/` | 8 | A gear stage between a motor and its load |
 | `foc_controller` | `actuators/servo/foc_controller/` | 6 | A field-oriented-control motor drive board |
 | `encoder` | `sensors/encoder/` | 4 | An angle sensor on a shaft |

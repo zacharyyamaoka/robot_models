@@ -45,7 +45,7 @@ Bottom up. *Needs* is what the rung's model cannot run without, new over its bas
 | <a id="rung-m0-quantiser"></a>`M0.quantiser` | An ideal quantiser | — | `counts_per_rev` | — | — | `q_reported = round(q/lsb)·lsb, lsb = 2π/counts_per_rev` | [WIDROW_2008](#ref-widrow_2008) |
 | <a id="rung-m1-noise_latency"></a>`M1.noise_latency` | Noise and latency | [`M0.quantiser`](#rung-m0-quantiser) | `noise_sigma`, `latency` | — | — | `q_reported(t) = round((q(t − latency) + n)/lsb)·lsb, n ~ N(0, noise_sigma²)` | [MERRY_2010](#ref-merry_2010) |
 | <a id="rung-m2-eccentricity"></a>`M2.eccentricity` | Eccentricity harmonics | [`M1.noise_latency`](#rung-m1-noise_latency) | `eccentricity_harmonics` | — | — | `q_reported = round((q + e(q) + n)/lsb)·lsb, delayed; e(q) the eccentricity harmonics` | [ZHAO_2024](#ref-zhao_2024) |
-| <a id="rung-m2-wear"></a>`M2.wear` | A mount that loosens over vibration hours<br>wears `eccentricity_harmonics`: see [Wear](#wear) | [`M2.eccentricity`](#rung-m2-eccentricity) | `eccentricity_growth` | — | — | `e(h) = e + eccentricity_growth·√h` | [JUNKER_1969](#ref-junker_1969), [WHITMORE_1995](#ref-whitmore_1995) |
+| <a id="rung-m2-wear"></a>`M2.wear` | A mount that loosens over vibration hours<br>wears `eccentricity_harmonics`: see [Wear](#wear) | [`M2.eccentricity`](#rung-m2-eccentricity) | `eccentricity_growth` | — | — | `amplitude_k(h) = amplitude_k + eccentricity_growth·√h for each eccentricity harmonic (its harmonic and phase stay)` | [JUNKER_1969](#ref-junker_1969), [WHITMORE_1995](#ref-whitmore_1995) |
 
 ## Wear
 

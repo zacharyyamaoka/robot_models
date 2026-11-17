@@ -2,22 +2,29 @@
 
 Spec: PEP 0004 §5.8 and §6.7.
 
-    z = f·baseline/d                    # M0: depth from disparity d, f the stereo pair's rectified focal length (px)
-    σ_z = z²·subpixel_sigma/(f·baseline)  # M1: the matcher's subpixel noise, growing with z²
-    z_true = z + b(u, v, z)             # M2: a bias that grows with depth and varies across the image
+    z = stereo_focal_length·baseline/d                     # M0: depth from the disparity d, in pixels
+    σ_z = z²·subpixel_sigma/(stereo_focal_length·baseline)  # M1: the matcher's subpixel noise, growing with z²
+    z_true = z + b(u, v, z)                                 # M2: a bias that grows with depth, varying over the image
 
 The colour stream itself is the camera type's (`sensors/camera`), so this ladder lists only what depth adds. Depth is
-triangulated with the stereo imagers' rectified focal length f in pixels (on a typical RGBD unit, the IR pair); the colour
-camera only receives depth after the `depth_to_color` transform. The vocabulary does not name f yet: a spec gap to raise
-against PEP 0004. sim2real's `camera_rgbd` card maps one to one onto all five rungs (PEP 0004's rung map).
+triangulated with `stereo_focal_length`, the stereo imagers' rectified focal length in pixels (on a typical unit, the IR
+pair): it is the f of triangulation, not the colour camera's, which only receives depth after the `depth_to_color`
+transform. sim2real's `camera_rgbd` card maps one to one onto all five rungs (PEP 0004's rung map).
 """
 
 from robot_models import references as refs
 from robot_models.ladder import Alias, Ladder, Parameter, Rung, Wear
 
-# --- vocabulary, grouped by the rung that first reads it ---------------------------------------------------------------
+# --- vocabulary, grouped by the rung that first reads it --------------------------------------------------------------
 
 # M0.stereo
+# WHY its own name and not the colour camera's fx_fy: depth is triangulated on the stereo imagers' rectified focal
+# length, which on a typical unit is the IR pair's and differs from the colour camera's (PEP 0004 amendment 1).
+STEREO_FOCAL_LENGTH = Parameter(
+    name="stereo_focal_length", unit="px", shape="scalar",
+    definition=("The stereo imagers' rectified focal length (on a typical unit the IR pair): the f of triangulation, "
+                "not the colour camera's."),
+)
 BASELINE = Parameter(
     name="baseline", unit="m", shape="scalar",
     definition="Distance between the stereo pair's optical centres.",
@@ -50,18 +57,18 @@ DEPTH_TO_COLOR_DRIFT = Parameter(
                 "states a rotation rate."),
 )
 
-# --- the rungs, M0 upward ----------------------------------------------------------------------------------------------
+# --- the rungs, M0 upward ---------------------------------------------------------------------------------------------
 
 M0_STEREO = Rung(
     level=0, name="stereo", title="Ideal stereo", base=None,
-    adds=("baseline", "depth_scale", "depth_to_color"),
-    equation="z = f·baseline/d, scaled by depth_scale",
+    adds=("stereo_focal_length", "baseline", "depth_scale", "depth_to_color"),
+    equation="z = stereo_focal_length·baseline/d, d the disparity, scaled by depth_scale",
     references=(refs.KHOSHELHAM_2012,),
 )
 M1_DISPARITY_NOISE = Rung(
     level=1, name="disparity_noise", title="Disparity noise", base=M0_STEREO.key,
     adds=("subpixel_sigma",),
-    equation="σ_z = z²·subpixel_sigma/(f·baseline)",
+    equation="σ_z = z²·subpixel_sigma/(stereo_focal_length·baseline)",
     references=(refs.KHOSHELHAM_2012,),
 )
 M2_DEPTH_BIAS = Rung(
@@ -86,7 +93,7 @@ M6_RESIDUAL = Rung(
     references=(refs.SCHOPS_2020, refs.HERRERA_2012),
 )
 
-# --- other names -------------------------------------------------------------------------------------------------------
+# --- other names ------------------------------------------------------------------------------------------------------
 
 # Names that carry their unit (sim2real's cards, the exporter's columns); the unit on the alias converts them.
 ALIASES = (
@@ -97,7 +104,10 @@ ALIASES = (
 LADDER = Ladder(
     type="depth_camera",
     title="A stereo depth camera: depth on top of a colour stream.",
-    vocabulary=(BASELINE, DEPTH_SCALE, DEPTH_TO_COLOR, SUBPIXEL_SIGMA, DEPTH_BIAS_COEFFS, DEPTH_TO_COLOR_DRIFT),
+    vocabulary=(
+        STEREO_FOCAL_LENGTH, BASELINE, DEPTH_SCALE, DEPTH_TO_COLOR, SUBPIXEL_SIGMA, DEPTH_BIAS_COEFFS,
+        DEPTH_TO_COLOR_DRIFT,
+    ),
     rungs=(M0_STEREO, M1_DISPARITY_NOISE, M2_DEPTH_BIAS, M2_WEAR, M6_RESIDUAL),
     aliases=ALIASES,
 )

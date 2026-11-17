@@ -366,7 +366,7 @@ TYPES: dict[str, T] = {
               ("resistance_line_to_line", "inductance_line_to_line", "thermal_resistance", "thermal_time_constant"),
               equation=("τ = kt·i, i the phase-current amplitude; per phase on a wye winding: "
                         "V = (resistance_line_to_line/2)·i + (inductance_line_to_line/2)·di/dt "
-                        "+ (back_emf_constant/√3)·ω; "
+                        "+ (kt/1.5)·ω, the per-phase EMF amplitude; "
                         "thermal_time_constant·dΔT/dt = thermal_resistance·(3/4)·resistance_line_to_line·i² − ΔT, "
                         "ΔT the winding's rise over ambient (the three phases' copper loss)"),
               refs=("KRAUSE_2013", "KRISHNAN_2010", "MUJOCO_DCMOTOR"),
@@ -477,7 +477,8 @@ TYPES: dict[str, T] = {
             R("M2.ceiling_heat", "Voltage ceiling and board heating", "M1.delay_loop",
               ("voltage_available", "board_thermal_resistance", "board_thermal_time_constant"),
               equation=("M1.delay_loop clamped to the voltage ceiling (voltage_available − ω·kt/1.5)/R of the motor "
-                        "it drives; board_thermal_time_constant·dT/dt = board_thermal_resistance·P_loss − T"),
+                        "it drives; board_thermal_time_constant·dΔT/dt = board_thermal_resistance·P_loss − ΔT, ΔT "
+                        "the board's rise over ambient"),
               refs=("KRAUSE_2013", "KRISHNAN_2010")),
             R("M2.wear", "Board cooling that ages with hours", "M2.ceiling_heat", ("board_thermal_growth",),
               wears=(("board_thermal_resistance", *HOURS, "linear", "board_thermal_growth"),),
@@ -641,8 +642,8 @@ TYPES: dict[str, T] = {
         title="A line-scan spectral camera over a belt.",
         cards=("camera_hsi",), category="camera", datasheet=None,
         rungs=(
-            R("M0.bands", "Ideal spectral bands", None, ("band_centres", "dark_white_refs"),
-              equation="R(λ) = (DN − dark)/(white − dark)", refs=("BURGER_2011",)),
+            R("M0.bands", "Ideal spectral bands", None, ("band_centres", "dark_reference", "white_reference"),
+              equation="R(λ) = (DN − dark_reference)/(white_reference − dark_reference)", refs=("BURGER_2011",)),
             R("M1.band_widths", "Band widths", "M0.bands", ("band_fwhm",),
               equation="each band a Gaussian of its band_fwhm about its band_centres",
               refs=("BURGER_2011", "KRUSE_1993")),
@@ -651,14 +652,19 @@ TYPES: dict[str, T] = {
             R("M3.pushbroom", "Pushbroom line geometry", "M2.smile_keystone", ("line_geometry",),
               equation="a line camera swept by the belt: line k sees the belt at k·(belt distance per line)",
               refs=("GUPTA_1997",)),
-            R("M3.wear", "References that drift with hours", "M3.pushbroom", ("reference_drift",),
-              wears=(("dark_white_refs", *HOURS, "linear", "reference_drift"),),
-              equation="white(h) = white + reference_drift·h", refs=("LU_MEEKER_1993",)),
+            # WHY the white frame alone (PEP 0004 amendment 1, the review): lamp ageing lowers the white frame's DN
+            # while dark current raises the dark frame's, so one rate on the pair grew the dark frame the wrong way.
+            R("M3.wear", "A white reference that drifts with hours", "M3.pushbroom", ("reference_drift",),
+              wears=(("white_reference", *HOURS, "linear", "reference_drift"),),
+              equation="white_reference(h) = white_reference + reference_drift·h; dark_reference stays",
+              refs=("LU_MEEKER_1993",)),
         ),
         parameters={
             "band_centres": ("m", "list", "Centre wavelength of each spectral band."),
-            "dark_white_refs": ("DN", "pair", ("The dark and white reference frames that turn raw counts into "
-                                               "reflectance.")),
+            "dark_reference": ("DN", "map", ("The dark reference frame (shutter closed): each pixel's and band's "
+                                             "counts at zero light.")),
+            "white_reference": ("DN", "map", ("The white reference frame: each pixel's and band's counts over a white "
+                                              "tile of known reflectance.")),
             "band_fwhm": ("m", "list", "Full width at half maximum of each band's spectral response."),
             "smile_keystone_map": ("px", "map", ("The spectral (smile) and spatial (keystone) distortion map the cube "
                                                  "is resampled with.")),
@@ -668,6 +674,8 @@ TYPES: dict[str, T] = {
                                                    "(dark current) and is not modelled by this rate.")),
         },
         aliases={"reference_drift_per_h": a("reference_drift")},
+        packed={"dark_white_refs": (("dark_reference", "white_reference"), True,
+                                    "sim2real's camera_hsi card: (dark, white) as its name reads, both in DN.")},
     ),
     "rigid_body_chain": T(
         folder="arms/rigid_body_chain",
@@ -748,8 +756,9 @@ TYPES: dict[str, T] = {
             R("M1.width_map", "Finger width map", "M0.tcp", ("finger_width_map",),
               equation="width = finger_width_map(command)", refs=("PRATTICHIZZO_2016",)),
             R("M2.contact", "Grip force and contact friction", "M1.width_map", ("grip_force_map", "contact_friction"),
-              equation=("force = grip_force_map(command, width); the object holds while, at each contact, "
-                        "|tangential| ≤ contact_friction·force (two pads hold about twice one pad's)"),
+              equation=("force = grip_force_map(command, width), each pad's normal force; the object holds while, "
+                        "at each contact, |tangential| ≤ contact_friction·force (two pads hold about twice one "
+                        "pad's)"),
               refs=("PRATTICHIZZO_2016", "MUJOCO_CONTACT")),
             R("M2.wear", "Finger pads that glaze with grasps", "M2.contact", ("contact_friction_change",),
               wears=(("contact_friction", "grasp cycles", "cycle", "linear", "contact_friction_change"),),
@@ -763,7 +772,10 @@ TYPES: dict[str, T] = {
         parameters={
             "tcp_offset": ("m", "pose", "The tool centre point's offset from the flange the gripper mounts on."),
             "finger_width_map": ("m", "map", "Finger opening as a function of the width command."),
-            "grip_force_map": ("N", "map", "Grip force as a function of the command and the width."),
+            "grip_force_map": ("N", "map", ("The normal force each finger pad presses the object with, as a "
+                                            "function of the command and the width: what a gauge squeezed between "
+                                            "two jaws reads. A datasheet's gripping force summed over the jaws is "
+                                            "twice it on a two-jaw gripper.")),
             "contact_friction": ("", "scalar", "Coefficient of friction between the finger pads and the object."),
             "contact_friction_change": ("1/cycle", "scalar", ("How much contact_friction changes per grasp cycle (pad "
                                                               "wear and glazing).")),

@@ -11,7 +11,7 @@ from __future__ import annotations
 from robot_models import references
 from robot_models.ladder import Alias, Ladder, Parameter, Rung
 
-# --- the vocabulary, grouped by the rung that first reads it -----------------------------------------------------------
+# --- the vocabulary, grouped by the rung that first reads it ----------------------------------------------------------
 
 # M0.nominal: the sheet as designed
 DICTIONARY = Parameter(
@@ -77,7 +77,7 @@ VOCABULARY = (
     FLATNESS,
 )
 
-# --- the rungs, M0 upward ----------------------------------------------------------------------------------------------
+# --- the rungs, M0 upward ---------------------------------------------------------------------------------------------
 
 # WHY each rung adds one thing over the last (PEP 0004 §5.13): the fallback chain is the order a sheet is trusted less
 # and fitted more, so a sheet with no measured offset still reaches M0 and places its corners where CAD put them.
@@ -120,7 +120,7 @@ RUNGS = (
     ),
 )
 
-# --- the other names ---------------------------------------------------------------------------------------------------
+# --- the other names --------------------------------------------------------------------------------------------------
 
 # WHY plain aliases with no note or unit (PEP 0004 §6.12): each is the canonical quantity one for one, only spelled with
 # the SI unit its sim2real card wrote in the name.

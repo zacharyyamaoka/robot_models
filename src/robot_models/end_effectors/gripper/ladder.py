@@ -38,11 +38,16 @@ VOCABULARY = (
         definition="Finger opening as a function of the width command.",
     ),
     # M2.contact
+    # WHY each pad's normal force, not the jaws' sum: M2.contact's cone is per contact, so the force it reads is the
+    # one at each pad; a datasheet that sums the jaws' forces states twice it, and read as one pad's it would make
+    # the rung hold twice what it can.
     Parameter(
         name="grip_force_map",
         unit="N",
         shape="map",
-        definition="Grip force as a function of the command and the width.",
+        definition=("The normal force each finger pad presses the object with, as a function of the command and the "
+                    "width: what a gauge squeezed between two jaws reads. A datasheet's gripping force summed over "
+                    "the jaws is twice it on a two-jaw gripper."),
     ),
     Parameter(
         name="contact_friction",
@@ -85,9 +90,10 @@ RUNGS = (
         base="M1.width_map",
         adds=("grip_force_map", "contact_friction"),
         # WHY the Coulomb friction cone as the holding test: a pad grips while the tangential load stays inside it
-        # (PEP 0004 §5.11); MUJOCO_CONTACT is the simulator's own statement of the same cone.
-        equation=("force = grip_force_map(command, width); the object holds while |tangential| ≤ "
-                  "contact_friction·force"),
+        # (PEP 0004 §5.11); MUJOCO_CONTACT is the simulator's own statement of the same cone. WHY per contact: each
+        # pad carries its own cone, so two pads hold about twice what one does.
+        equation=("force = grip_force_map(command, width), each pad's normal force; the object holds while, at "
+                  "each contact, |tangential| ≤ contact_friction·force (two pads hold about twice one pad's)"),
         references=(PRATTICHIZZO_2016, MUJOCO_CONTACT),
     ),
     Rung(

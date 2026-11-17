@@ -85,7 +85,8 @@ RUNGS = (
         base=None,
         equation="i_q = i_cmd (a deployment's torque cap clamps it)",
         references=(references.KRISHNAN_2010,),
-        # WHY no adds: the cap that clamps i_cmd is the deployment's (torque_cap, see `deployment`), never the type's.
+        # WHY no adds: the cap that clamps i_cmd is the deployment's (torque_cap_nm, see `deployment`), never the
+        # type's.
     ),
     Rung(
         level=1,
@@ -103,10 +104,13 @@ RUNGS = (
         base="M1.delay_loop",
         adds=("voltage_available", "board_thermal_resistance", "board_thermal_time_constant"),
         equation="M1.delay_loop clamped to the voltage ceiling (voltage_available − ω·kt/1.5)/R of the motor it "
-                 "drives; board_thermal_time_constant·dT/dt = board_thermal_resistance·P_loss − T",
+                 "drives; board_thermal_time_constant·dΔT/dt = board_thermal_resistance·P_loss − ΔT, ΔT the "
+                 "board's rise over ambient",
         references=(references.KRAUSE_2013, references.KRISHNAN_2010),
         # WHY kt and R are not added here: they are the motor's own (bldc_motor), read through the servo rung that
         # composes this one; ω is the rotor speed and the 1.5 is sim2real's driver-card form of the back-EMF term.
+        # WHY ΔT, not T: board_thermal_resistance is a rise per watt, so the state is the rise over ambient, as the
+        # winding's is on the servo's M5.envelope and the motor's M5.dcmotor (PEP 0004 amendment 1).
     ),
     Rung(
         level=2,

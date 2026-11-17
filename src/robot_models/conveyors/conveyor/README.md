@@ -4,7 +4,7 @@
 
 A belt driven through a drum.
 
-**7 rungs** · 10 parameters · 9 aliases · 0 packed names · 2 deployment-only names · folder `conveyors/conveyor/`.
+**7 rungs** · 11 parameters · 9 aliases · 0 packed names · 2 deployment-only names · folder `conveyors/conveyor/`.
 
 In code: `ladders()["conveyor"]` from [`robot_models.ladder`](../../ladder.py). Every type: [docs/TYPES.md](../../../../docs/TYPES.md). Spec: [PEP 0004](../../../../docs/peps/0004-model-ladders-by-type.md).
 Projects the notes below name, and what they are: [sim2real](../../../../docs/TYPES.md#name-sim2real).
@@ -14,9 +14,10 @@ Projects the notes below name, and what they are: [sim2real](../../../../docs/TY
 From the docstring of [`ladder.py`](ladder.py):
 
 The ladder climbs from an ideal belt (the drum's turns become belt travel, a rigid mass moves under a force) through
-friction on the belt, the belt's stretch between drum and load, and friction that grows with the belt's distance, to a
-grey-box residual and a black-box network. Its rungs are numbered by the actuator's layers (sim2real's decision, the
-same M2 and M3 friction rungs, here as forces on the belt); there is no M1 because the type has no Datasheet class yet.
+friction on the belt, the belt's stretch between drum and load (where the moving mass splits into the drive side's and
+the load side's), and friction that grows with the belt's distance, to a grey-box residual and a black-box network. Its
+rungs are numbered by the actuator's layers (sim2real's decision, the same M2 and M3 friction rungs, here as forces on
+the belt); there is no M1 because the type has no Datasheet class yet.
 
 Spec: PEP 0004 §5.12 and §6.11.
 
@@ -58,8 +59,8 @@ Bottom up. *Needs* is what the rung's model cannot run without, new over its bas
 | <a id="rung-m0-ideal"></a>`M0.ideal` | An ideal belt: kinematics and a rigid mass<br>*numbered by the actuator's layers (sim2real's decision); no M1: no Datasheet class yet.* | — | `drum_radius`, `gear_ratio`, `moving_mass` | — | — | `x = θ_motor·drum_radius/gear_ratio; (moving_mass + load)·ẍ = F` | [ZHANG_XIA_2011](#ref-zhang_xia_2011) |
 | <a id="rung-m2-coulomb_viscous"></a>`M2.coulomb_viscous` | Coulomb and viscous friction on the belt | [`M0.ideal`](#rung-m0-ideal) | `coulomb_friction`, `viscous_friction` | — | — | `F_f = coulomb_friction·sign(ẋ) + viscous_friction·ẋ` | [ARMSTRONG_1994](#ref-armstrong_1994), [ZHANG_XIA_2011](#ref-zhang_xia_2011) |
 | <a id="rung-m3-stribeck"></a>`M3.stribeck` | Static friction (Stribeck)<br>*the actuator's M3.stribeck as forces on the belt.* | [`M2.coulomb_viscous`](#rung-m2-coulomb_viscous) | `breakaway_force`, `stribeck_velocity` | — | — | `F_f = (coulomb_friction + (breakaway_force − coulomb_friction)·exp(−(\|ẋ\|/stribeck_velocity)²))·sign(ẋ) + viscous_friction·ẋ` | [ARMSTRONG_1994](#ref-armstrong_1994) |
-| <a id="rung-m4-stretch"></a>`M4.stretch` | Belt stretch: drum and load as two masses | [`M3.stribeck`](#rung-m3-stribeck) | `stretch_stiffness`, `stretch_damping` | — | — | `load: (moving_mass + load)·ẍ_l = stretch_stiffness·(x_d − x_l) + stretch_damping·(ẋ_d − ẋ_l) − F_f; drum: m_d·ẍ_d = gear_ratio·τ/drum_radius − the same stretch force` | [SPONG_1987](#ref-spong_1987), [HE_2017](#ref-he_2017) |
-| <a id="rung-m4-wear"></a>`M4.wear` | Friction that grows with belt distance<br>wears `coulomb_friction`: see [Wear](#wear) | [`M4.stretch`](#rung-m4-stretch) | `friction_growth` | — | — | `coulomb_friction(s) = coulomb_friction + friction_growth·s` | [LU_MEEKER_1993](#ref-lu_meeker_1993), [ZHANG_XIA_2011](#ref-zhang_xia_2011) |
+| <a id="rung-m4-stretch"></a>`M4.stretch` | Belt stretch: drum and load as two masses<br>*M4 splits moving_mass: drum_mass on the drive side of the stretch, the rest moves with the load.* | [`M3.stribeck`](#rung-m3-stribeck) | `stretch_stiffness`, `stretch_damping`, `drum_mass` | — | — | `drum: drum_mass·ẍ_d = gear_ratio·τ/drum_radius − stretch_stiffness·(x_d − x_l) − stretch_damping·(ẋ_d − ẋ_l); load: (moving_mass − drum_mass + load)·ẍ_l = the same stretch force − F_f` | [SPONG_1987](#ref-spong_1987), [HE_2017](#ref-he_2017) |
+| <a id="rung-m4-wear"></a>`M4.wear` | Friction that grows with belt distance<br>wears `breakaway_force`, `coulomb_friction`: see [Wear](#wear) | [`M4.stretch`](#rung-m4-stretch) | `friction_growth` | — | — | `breakaway_force and coulomb_friction both grow by friction_growth·s (the Stribeck drop stays)` | [LU_MEEKER_1993](#ref-lu_meeker_1993), [ZHANG_XIA_2011](#ref-zhang_xia_2011) |
 | <a id="rung-m6-residual"></a>`M6.residual` | Grey-box residual on M4.wear | [`M4.wear`](#rung-m4-wear) | — | — | — | `M4.wear + an MLP residual drive force from 3 samples of belt speed error, belt speed and motor current` | [NGUYEN_TUONG_2010](#ref-nguyen_tuong_2010), [ZENG_2020](#ref-zeng_2020) |
 | <a id="rung-m7-learned"></a>`M7.learned` | Black-box network | — | — | — | — | `an MLP over 3 samples of position error and belt speed → drive force` | [HWANGBO_2019](#ref-hwangbo_2019), [HWANGBO_2019_ARXIV](#ref-hwangbo_2019_arxiv) |
 
@@ -69,6 +70,7 @@ Which parameter grows with use, with what, by which law, at which rate.
 
 | rung | parameter that wears | grows with | law | rate |
 | --- | --- | --- | --- | --- |
+| [`M4.wear`](#rung-m4-wear) | [`breakaway_force`](#param-breakaway_force) | belt distance (km) | linear: `p(u) = p0 + k·u` | [`friction_growth`](#param-friction_growth) |
 | [`M4.wear`](#rung-m4-wear) | [`coulomb_friction`](#param-coulomb_friction) | belt distance (km) | linear: `p(u) = p0 + k·u` | [`friction_growth`](#param-friction_growth) |
 
 ## Vocabulary
@@ -86,7 +88,8 @@ Every parameter the ladder holds, by the rung that first reads it. — as a unit
 | <a id="param-stribeck_velocity"></a>`stribeck_velocity` | m/s | scalar | Belt speed over which friction falls from breakaway_force to coulomb_friction. | [`M3.stribeck`](#rung-m3-stribeck) |
 | <a id="param-stretch_stiffness"></a>`stretch_stiffness` | N/m | scalar | The belt's stiffness along its length, between drum and load. | [`M4.stretch`](#rung-m4-stretch) |
 | <a id="param-stretch_damping"></a>`stretch_damping` | N·s/m | scalar | Damping of the belt's stretch between drum and load. | [`M4.stretch`](#rung-m4-stretch) |
-| <a id="param-friction_growth"></a>`friction_growth` | N/km | scalar | How fast coulomb_friction grows per kilometre of belt travel (idlers and slider bed wearing). | [`M4.wear`](#rung-m4-wear) |
+| <a id="param-drum_mass"></a>`drum_mass` | kg | scalar | The drive side's mass referred to the belt, read from M4: the drum and the reflected rotor; moving_mass less drum_mass moves with the load. | [`M4.stretch`](#rung-m4-stretch) |
+| <a id="param-friction_growth"></a>`friction_growth` | N/km | scalar | How fast the friction level grows per kilometre of belt travel (idlers and slider bed wearing); breakaway_force and coulomb_friction grow together. | [`M4.wear`](#rung-m4-wear) |
 
 ## Aliases
 
