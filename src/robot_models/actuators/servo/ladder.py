@@ -10,7 +10,7 @@ The ladder climbs the way a joint's torque model grows:
 - M5 is the electrics and heat (MuJoCo's DC motor, and the drive's ceiling) and the wear that grows with use.
 - M6 is a learned residual on the wear rung and M7 a black-box network.
 
-Torques, speeds and inertias are at the OUTPUT, after the reducer, as `IntegratedServo`'s datasheet states them; kt,
+Torques, speeds and inertias are at the OUTPUT, after the reducer, as `IntegratedServoDatasheet` states them; kt,
 kv and rotor_inertia stay on the rotor. Every name below is a canonical one: sim2real's twin names, the registry's
 keys and the exporter's fields are aliases (a unit never appears in a canonical name), and MuJoCo's arrays are packed
 names. What a deployment sets (gains, current limit) is `deployment`, never a rung's parameter.
@@ -19,7 +19,7 @@ names. What a deployment sets (gains, current limit) is `deployment`, never a ru
 from __future__ import annotations
 
 from robot_models import references
-from robot_models.actuators.servo.integrated_servo import IntegratedServo
+from robot_models.actuators.servo.integrated_servo import IntegratedServoDatasheet
 from robot_models.ladder import (
     Alias,
     DeploymentOnly,
@@ -45,7 +45,7 @@ TORQUE_REVOLUTIONS_UNIT = "N·m·rev"
 
 # WHY from the class (PEP 0003 §6): M1.datasheet's names, units and definitions are the typed fields', never a second
 # spelling of them.
-DATASHEET_VOCABULARY = datasheet_vocabulary(IntegratedServo)
+DATASHEET_VOCABULARY = datasheet_vocabulary(IntegratedServoDatasheet)
 
 # M3: state-dependent friction.
 FRICTION_VOCABULARY = (
@@ -168,7 +168,7 @@ M0_ADDS = ("output_inertia", "gear_ratio")
 
 # WHY every typed field and none needed (PEP 0004 decision 3; robotparts' M1 marks all its terms required: false): the
 # datasheet rung states what the source states, so a part with no friction figure still reaches M1.
-DATASHEET_OPTIONAL = tuple(name for name in IntegratedServo.typed_fields() if name not in M0_ADDS)
+DATASHEET_OPTIONAL = tuple(name for name in IntegratedServoDatasheet.typed_fields() if name not in M0_ADDS)
 
 RUNGS = (
     Rung(
@@ -589,5 +589,5 @@ LADDER = Ladder(
     aliases=ALIASES,
     packed=PACKED,
     deployment=DEPLOYMENT,
-    datasheet=IntegratedServo,
+    datasheet=IntegratedServoDatasheet,
 )

@@ -1,0 +1,175 @@
+
+# 1 · browse: the type, its models, its ladder and tree
+>>> from robot_models import IntegratedServo
+>>> IntegratedServo
+<PartType IntegratedServo · integrated_servo · 14 models>
+>>> IntegratedServo.models
+<Models IntegratedServo.models · 14: M0.ideal, M1.datasheet, M2.coulomb_viscous, M3.stribeck, M3.load, M3.lugre, M3.weakening_capture, M4.ripple, M4.drivetrain, M5.dcmotor, M5.envelope, M5.wear, M6.residual, M7.learned>
+>>> IntegratedServo.models["M3.stribeck"]
+<Model M3.stribeck · class Stribeck · 6 params>
+>>> IntegratedServo.models.m3
+<Models IntegratedServo.models.m3 · 4: stribeck, load, lugre, weakening_capture>
+>>> IntegratedServo.models.m3.stribeck is IntegratedServo.models["M3.stribeck"]
+True
+>>> IntegratedServo.ladder()[0]
+<Model M0.ideal · class Ideal · 2 params>
+>>> IntegratedServo.tree().print()
+integrated_servo · IntegratedServo.models · 14 models (a -> b: b subclasses a)
+├── M0.ideal -> M1.datasheet -> M2.coulomb_viscous
+│   ├── M3.stribeck
+│   │   ├── M3.lugre -> M5.dcmotor
+│   │   └── M3.weakening_capture -> M4.drivetrain -> M5.envelope -> M5.wear -> M6.residual
+│   ├── M3.load
+│   └── M4.ripple
+└── M7.learned
+>>> IntegratedServo.tree().show().name
+'IntegratedServo_models_tree.html'
+>>> IntegratedServo.models.m3.tree().print()
+integrated_servo · IntegratedServo.models.m3 · 4 models (a -> b: b subclasses a)
+├── M3.stribeck
+│   ├── M3.lugre
+│   └── M3.weakening_capture
+└── M3.load
+>>> IntegratedServo.Datasheet, IntegratedServo.models.m1.datasheet
+(<class 'robot_models.actuators.servo.integrated_servo.IntegratedServoDatasheet'>, <Model M1.datasheet · class DatasheetModel · 2 params>)
+>>> for model in IntegratedServo: print(f"{model.key:<22}{model.param_count:>3}  {'runs' if model.runnable() else 'declared'}")
+M0.ideal                2  runs
+M1.datasheet            2  runs
+M2.coulomb_viscous      4  runs
+M3.stribeck             6  runs
+M3.load                 5  runs
+M3.lugre                8  runs
+M3.weakening_capture   11  declared
+M4.ripple               5  runs
+M4.drivetrain          14  declared
+M5.dcmotor             10  declared
+M5.envelope            18  declared
+M5.wear                20  declared
+M6.residual            20  declared
+M7.learned              8  runs
+
+# 2 · one source, additive vocabulary
+>>> from robot_models.ladder import ladders
+>>> today, derived = ladders()["integrated_servo"], IntegratedServo.v1_ladder()
+>>> derived.keys == today.keys
+True
+>>> all((d.base, d.adds, d.optional) == (t.base, t.adds, t.optional) for d, t in zip(derived.rungs, today.rungs))
+True
+>>> derived == today
+True
+>>> from robot_models.part_type import Parameter
+>>> try:
+...     class Newtons(IntegratedServo.models.m3.stribeck, level=3, name="newtons"):
+...         coulomb_friction = Parameter("N", "Coulomb friction, in newtons.")
+... except TypeError as error:
+...     print(error)
+M3.newtons: coulomb_friction redefines inherited [N·m] 'Coulomb friction torque at the output.'; vocabulary only grows: write `coulomb_friction = Parameter()` to require it
+>>> try:
+...     class Forgetful(IntegratedServo.models.m3.stribeck, level=3, name="forgetful"):
+...         breakaway_torque = None
+... except TypeError as error:
+...     print(error)
+M3.forgetful: `breakaway_torque = None` removes an inherited parameter; vocabulary only grows
+>>> len(IntegratedServo)
+14
+
+# 3 · pick M3.stribeck
+>>> Stribeck = IntegratedServo.models.m3.stribeck
+>>> print(Stribeck.describe())
+M3.stribeck · class Stribeck(CoulombViscous) · Stribeck friction: breakaway falling to Coulomb with speed
+  tau_r = (coulomb_friction + (breakaway_torque − coulomb_friction)·exp(−(|v|/stribeck_velocity)^stribeck_exponent))·sign(v) + viscous_friction·v
+  adds breakaway_torque [N·m] required: Static friction at the output: the torque that starts it moving from rest, the top of the Stribeck curve.
+  adds stribeck_velocity [rad/s] required: Output speed over which friction falls from breakaway_torque to coulomb_friction.
+  adds stribeck_exponent [1] optional: Shape exponent of the Stribeck curve, how sharply friction falls with speed; 2 when absent.
+  inherits output_inertia [kg·m²], gear_ratio [1], coulomb_friction [N·m], viscous_friction [N·m·s/rad]; + 31 optional, read when stated
+  param_count 6 · runs actuators/rungs/stribeck/model.py, numpy-vectorized · also at M3: load, lugre, weakening_capture
+  cites Armstrong-Hélouvry, Dupont, Canudas de Wit (1994); Olsson, Åström, Canudas de Wit, Gäfvert, Lischinsky (1998)
+>>> Stribeck.breakaway_torque
+Parameter(breakaway_torque [N·m], required: Static friction at the output: the torque that starts it moving from rest, the top of the Stribeck curve.)
+>>> Stribeck.fallback()
+('M3.stribeck', 'M2.coulomb_viscous', 'M1.datasheet', 'M0.ideal')
+>>> IntegratedServo.canonical("frictionloss_nm")
+'coulomb_friction'
+
+# 4 · datasheet to M1, predict
+>>> import numpy as np
+>>> from fixture import datasheet, rig_log
+>>> m1 = IntegratedServo.models.m1.datasheet.from_datasheet(datasheet())
+>>> m1
+DatasheetModel(peak_torque=3.5, rated_torque=1.05, max_output_speed=24.0855, coulomb_friction=0.3, viscous_friction=0.02, gear_ratio=10, output_inertia=4.2e-05)
+>>> m1.predict(1.0)
+0.32
+>>> m1.predict(np.array([-1.0, 0.0, 0.5]))
+array([-0.32,  0.  ,  0.31])
+
+# 5 · fit: one model, then the type, then a level
+>>> fit, test = rig_log("A", "fit"), rig_log("A", "test")
+>>> m3 = Stribeck.fit(fit, start=m1)
+>>> m3.breakaway_torque, m3.stribeck_velocity
+(0.6500489870858078, 0.24901459904254533)
+>>> m3.params["stribeck_velocity"]
+Parameter(stribeck_velocity = 0.24901459904254533 [rad/s], required: Output speed over which friction falls from breakaway_torque to coulomb_friction.)
+>>> m3.predict(np.linspace(-3, 3, 100_000)).shape
+(100000,)
+>>> fits = IntegratedServo.fit(fit, start=m1)
+>>> print(fits)
+IntegratedServo.models.fit · 250 samples · 5 fitted, 9 skipped
+model                  params fitted  fit rms  [mN·m]
+M0.ideal                    2      0   543.70
+M1.datasheet                2      0   242.00
+M2.coulomb_viscous          4      2    80.12
+M3.stribeck                 6      4     3.95
+M3.load                     5      -        -  skipped: needs input tau_load, which the log lacks
+M3.lugre                    8      -        -  skipped: this log cannot identify sigma0, sigma1
+M3.weakening_capture       11      -        -  skipped: declared, no reference physics here
+M4.ripple                   5      -        -  skipped: needs input theta_rotor, which the log lacks
+M4.drivetrain              14      -        -  skipped: declared, no reference physics here
+M5.dcmotor                 10      -        -  skipped: declared, no reference physics here
+M5.envelope                18      -        -  skipped: declared, no reference physics here
+M5.wear                    20      -        -  skipped: declared, no reference physics here
+M6.residual                20      -        -  skipped: declared, no reference physics here
+M7.learned                  8      8    10.13
+>>> print(IntegratedServo.models.m3.fit(fit, start=m1))
+IntegratedServo.models.m3.fit · 250 samples · 1 fitted, 3 skipped
+model                  params fitted  fit rms  [mN·m]
+M3.stribeck                 6      4     3.95
+M3.load                     5      -        -  skipped: needs input tau_load, which the log lacks
+M3.lugre                    8      -        -  skipped: this log cannot identify sigma0, sigma1
+M3.weakening_capture       11      -        -  skipped: declared, no reference physics here
+
+# 6 · held out, choose
+>>> best = IntegratedServo.select_best(test, fits)
+>>> print(best)
+held-out plateaus · floor 4.17 mN·m · the lowest rung within 1.5× floor
+model                  params  held-out rms  ÷ floor
+M0.ideal                    2        531.92   127.54
+M1.datasheet                2        221.97    53.22
+M2.coulomb_viscous          4         71.64    17.18
+M3.stribeck                 6          4.18     1.00  <- chosen
+M7.learned                  8        763.78   183.14
+>>> IntegratedServo.models.m3.select_best(test, fits).chosen
+Stribeck(output_inertia=4.2e-05, gear_ratio=10, coulomb_friction=0.419463, viscous_friction=0.0352846, breakaway_torque=0.650049, stribeck_velocity=0.249015, peak_torque=3.5, rated_torque=1.05, max_output_speed=24.0855)
+>>> chosen = best.chosen
+>>> chosen.key, chosen.mujoco()
+('M3.stribeck', {'armature': 4.2e-05, 'frictionloss': 0.6500489870858078, 'damping': 0.03528456582498042})
+
+# 7 · black box, same calls
+>>> Learned = IntegratedServo.models.m7.learned
+>>> net = Learned.fit(fit)
+>>> net, net.param_count
+(Learned(8 weights, a degree-3 polynomial per direction), 8)
+>>> round(net.predict(1.0), 4), round(fits["M3.stribeck"].predict(1.0), 4)
+(0.4835, 0.4547)
+>>> round(net.score(fit) * 1e3, 2), round(net.score(test) * 1e3, 2)
+(10.13, 763.78)
+
+# 8 · servo B: simpler wins
+>>> fit, test = rig_log("B", "fit"), rig_log("B", "test")
+>>> print(IntegratedServo.fit(fit, start=m1).select_best(test))
+held-out plateaus · floor 4.22 mN·m · the lowest rung within 1.5× floor
+model                  params  held-out rms  ÷ floor
+M0.ideal                    2        412.01    97.64
+M1.datasheet                2         91.28    21.63
+M2.coulomb_viscous          4          4.33     1.03  <- chosen
+M3.stribeck                 6          6.62     1.57
+M7.learned                  8         26.34     6.24
