@@ -3,9 +3,9 @@
     /home/bam/robot_models/.venv/bin/python /home/bam/robot_models/docs/proposals/api-2026-11-17/package_v6/scenario.py
     /home/bam/robot_models/.venv/bin/python /home/bam/robot_models/docs/proposals/api-2026-11-17/check_scenario.py package_v6
 
-The same steps as the v6 prototype's scenario.py, with `from robot_models import IntegratedServo` (a PartType) in place
-of the prototype's package, and the round-2 group calls on a level (`IntegratedServo.models.m3.fit`). No prototype code
-is on the path: only this folder's parent, for the shared fixture.
+The same steps as the v6 prototype's scenario.py, with `from robot_models import IntegratedServo` (a ModelFamily) in
+place of the prototype's package, and the round-2 group calls on a level (`IntegratedServo.m3.fit`, a ModelFamily too).
+No prototype code is on the path: only this folder's parent, for the shared fixture.
 
 Each step is the lines a user types at the REPL; the runner executes them in one namespace and echoes each
 expression's value the way the REPL does, so the printed session is exactly what these lines produce. `<case>` is the
@@ -27,18 +27,17 @@ if str(HERE.parent) not in sys.path:  # the shared fixture only: the API under t
 
 STEPS = (
     # 1. Zach's access shape (ROUND2.md), as written.
-    ("browse: the type, its models, its ladder and tree", """
+    ("browse: the family, its models, its ladder and tree", """
 >>> from robot_models import IntegratedServo
 >>> IntegratedServo
->>> IntegratedServo.models
->>> IntegratedServo.models["M3.stribeck"]
->>> IntegratedServo.models.m3
->>> IntegratedServo.models.m3.stribeck is IntegratedServo.models["M3.stribeck"]
+>>> IntegratedServo["M3.stribeck"]
+>>> IntegratedServo.m3
+>>> IntegratedServo.m3.stribeck is IntegratedServo["M3.stribeck"]
 >>> IntegratedServo.ladder()[0]
 >>> IntegratedServo.tree().print()
 >>> IntegratedServo.tree().show().name
->>> IntegratedServo.models.m3.tree().print()
->>> IntegratedServo.Datasheet, IntegratedServo.models.m1.datasheet
+>>> IntegratedServo.m3.tree().print()
+>>> IntegratedServo.m1.datasheet
 >>> for model in IntegratedServo: print(f"{model.key:<22}{model.param_count:>3}  {'runs' if model.runnable() else 'declared'}")
 """),
     # 2. The classes are the one source: today's Ladder record is derived from them; vocabulary only grows.
@@ -48,14 +47,14 @@ STEPS = (
 >>> derived.keys == today.keys
 >>> all((d.base, d.adds, d.optional) == (t.base, t.adds, t.optional) for d, t in zip(derived.rungs, today.rungs))
 >>> derived == today
->>> from robot_models.part_type import Parameter
+>>> from robot_models.model_family import Parameter
 >>> try:
-...     class Newtons(IntegratedServo.models.m3.stribeck, level=3, name="newtons"):
+...     class Newtons(IntegratedServo.m3.stribeck, level=3, name="newtons"):
 ...         coulomb_friction = Parameter("N", "Coulomb friction, in newtons.")
 ... except TypeError as error:
 ...     print(error)
 >>> try:
-...     class Forgetful(IntegratedServo.models.m3.stribeck, level=3, name="forgetful"):
+...     class Forgetful(IntegratedServo.m3.stribeck, level=3, name="forgetful"):
 ...         breakaway_torque = None
 ... except TypeError as error:
 ...     print(error)
@@ -63,7 +62,7 @@ STEPS = (
 """),
     # 3. Pick M3.stribeck: the class is the type; its Parameters carry unit and definition; fallback is the MRO.
     ("pick M3.stribeck", """
->>> Stribeck = IntegratedServo.models.m3.stribeck
+>>> Stribeck = IntegratedServo.m3.stribeck
 >>> print(Stribeck.describe())
 >>> Stribeck.breakaway_torque
 >>> Stribeck.fallback()
@@ -73,12 +72,12 @@ STEPS = (
     ("datasheet to M1, predict", """
 >>> import numpy as np
 >>> from fixture import datasheet, rig_log
->>> m1 = IntegratedServo.models.m1.datasheet.from_datasheet(datasheet())
+>>> m1 = IntegratedServo.m1.datasheet.from_datasheet(datasheet())
 >>> m1
 >>> m1.predict(1.0)
 >>> m1.predict(np.array([-1.0, 0.0, 0.5]))
 """),
-    # 5. Fit: one model (returns an instance), then the whole type, then one level (any Models group fits).
+    # 5. Fit: one model (returns an instance), then the whole family, then one level (every family fits).
     ("fit: one model, then the type, then a level", """
 >>> fit, test = rig_log("<case>", "fit"), rig_log("<case>", "test")
 >>> m3 = Stribeck.fit(fit, start=m1)
@@ -87,19 +86,19 @@ STEPS = (
 >>> m3.predict(np.linspace(-3, 3, 100_000)).shape
 >>> fits = IntegratedServo.fit(fit, start=m1)
 >>> print(fits)
->>> print(IntegratedServo.models.m3.fit(fit, start=m1))
+>>> print(IntegratedServo.m3.fit(fit, start=m1))
 """),
     # 6. Choose on the held-out plateaus: the lowest rung within 1.5x the rig's noise floor (sim2real's rule).
     ("held out, choose", """
 >>> best = IntegratedServo.select_best(test, fits)
 >>> print(best)
->>> IntegratedServo.models.m3.select_best(test, fits).chosen
+>>> IntegratedServo.m3.select_best(test, fits).chosen
 >>> chosen = best.chosen
 >>> chosen.key, chosen.mujoco()
 """),
     # 7. The black box has the same outside: fit, predict, param_count, and it competes in select_best above.
     ("black box, same calls", """
->>> Learned = IntegratedServo.models.m7.learned
+>>> Learned = IntegratedServo.m7.learned
 >>> net = Learned.fit(fit)
 >>> net, net.param_count
 >>> round(net.predict(1.0), 4), round(fits["M3.stribeck"].predict(1.0), 4)
@@ -139,11 +138,11 @@ def session(case: str = "A", show: bool = True, steps: tuple = STEPS) -> dict:
 
 def run(case: str = "A", show: bool = False) -> dict:
     ns = session(case, show)
-    part_type, fits = ns["IntegratedServo"], ns["fits"]
+    family, fits = ns["IntegratedServo"], ns["fits"]
     return {
-        "ladder": tuple(model.key for model in part_type.ladder()),
+        "ladder": tuple(model.key for model in family.ladder()),
         "fallback": ns["Stribeck"].fallback(),
-        "alias": part_type.canonical("frictionloss_nm"),
+        "alias": family.canonical("frictionloss_nm"),
         "m1_at_1": ns["m1"].predict(1.0),
         "fits": {key: {"params": {n: fits[key].values()[n] for n in fits[key].needs() if n in fits[key].values()}}
                  for key in ("M2.coulomb_viscous", "M3.stribeck")},

@@ -1,6 +1,6 @@
 """The round-2 access shape (docs/proposals/api-2026-11-17/ROUND2.md) on the real package, named as PEP 0004
-amendment 2 records: `class IntegratedServo(PartType)`, `IntegratedServo.models` a `Models` group at every level,
-`IntegratedServo.Datasheet` the datasheet class, M1's class `DatasheetModel`.
+amendment 2 records: `class IntegratedServo(ModelFamily)`, every level of it a ModelFamily too (`IntegratedServo.m3`),
+no `.models` and no `.Datasheet` on it, M1's class `DatasheetModel` reading `IntegratedServoDatasheet`'s fields.
 
 The logs here are synthetic velocity-plateau sweeps generated in this file from the package's own rung physics; the
 round-2 fixture and its hidden truths stay in docs/proposals (check_scenario.py package_v6 runs that scenario).
@@ -22,7 +22,7 @@ from robot_models.actuators.servo import IntegratedServo as ServoDatasheetAlias
 from robot_models.actuators.servo import IntegratedServoDatasheet
 from robot_models.datasheet import Datasheet, Stated
 from robot_models.ladder import Ladder, ladders
-from robot_models.part_type import BlackBox, Fits, Model, Models, Parameter, PartType, Selection, Tree
+from robot_models.model_family import BlackBox, Fits, Model, ModelFamily, Parameter, Selection, Tree
 
 SRC = Path(robot_models.__file__).resolve().parent
 PLATEAUS = (0.03, 0.06, 0.1, 0.18, 0.3, 0.5, 0.8, 1.3, 2.0, 3.0)
@@ -36,7 +36,7 @@ def sweep(truth: dict, split: str, seed: int = 7, noise: float = 0.004) -> dict[
     index = np.repeat(np.arange(len(PLATEAUS)), 25)
     v = np.concatenate([np.array(PLATEAUS)[index], -np.array(PLATEAUS)[index]])
     plateau = np.concatenate([index + 1, -(index + 1)])
-    rung = IntegratedServo.models.m3.stribeck if "breakaway_torque" in truth else IntegratedServo.models.m2.coulomb_viscous
+    rung = IntegratedServo.m3.stribeck if "breakaway_torque" in truth else IntegratedServo.m2.coulomb_viscous
     tau = rung._of(truth).predict(v) + rng.normal(0.0, noise, v.shape)
     keep = (np.abs(plateau) % 2 == 1) == (split == "fit")
     return {"v": v[keep], "tau": tau[keep], "plateau": plateau[keep]}
@@ -45,19 +45,21 @@ def sweep(truth: dict, split: str, seed: int = 7, noise: float = 0.004) -> dict[
 # --- the names -----------------------------------------------------------------------------------------------------
 
 
-def test_the_type_is_a_part_type_and_no_class_is_called_model_family():
-    assert issubclass(IntegratedServo, PartType) and IntegratedServo.id == "integrated_servo"
+def test_the_servo_is_a_model_family_and_robot_models_knows_no_part_type():
+    assert issubclass(IntegratedServo, ModelFamily) and IntegratedServo.id == "integrated_servo"
+    assert issubclass(IntegratedServo.m3, ModelFamily) and issubclass(IntegratedServo["M3"], ModelFamily)
+    assert not hasattr(IntegratedServo, "models") and not hasattr(IntegratedServo, "Datasheet")
+    assert not hasattr(robot_models, "PartType")
     for path in SRC.rglob("*.py"):
-        assert "class ModelFamily" not in path.read_text(encoding="utf-8"), path
+        assert "class PartType" not in path.read_text(encoding="utf-8"), path
 
 
-def test_the_datasheet_hangs_off_the_type_and_m1_is_datasheet_model():
-    assert IntegratedServo.Datasheet is IntegratedServoDatasheet
-    assert issubclass(IntegratedServo.Datasheet, Datasheet)
-    m1 = IntegratedServo.models.m1.datasheet
+def test_m1_is_datasheet_model_reading_the_datasheet_class():
+    m1 = IntegratedServo.m1.datasheet
     assert m1.__name__ == "DatasheetModel" and m1.key == "M1.datasheet"
-    sheet = IntegratedServo.Datasheet(peak_torque=Stated(3.5, "N·m"), gear_ratio=Stated(10, ":1"))
-    assert isinstance(sheet, IntegratedServoDatasheet)
+    assert set(IntegratedServoDatasheet.typed_fields()) <= set(m1.parameters)
+    assert IntegratedServo.v1_ladder().datasheet is IntegratedServoDatasheet
+    assert issubclass(IntegratedServoDatasheet, Datasheet)
 
 
 def test_the_old_datasheet_name_stays_an_alias_where_robotparts_imports_it():
@@ -67,14 +69,16 @@ def test_the_old_datasheet_name_stays_an_alias_where_robotparts_imports_it():
     assert ladders()["integrated_servo"].datasheet is IntegratedServoDatasheet
 
 
-def test_calling_the_type_refuses_and_names_both_spellings():
-    with pytest.raises(TypeError, match=r"IntegratedServo\.Datasheet\(\.\.\.\).*IntegratedServo\.models"):
+def test_calling_the_family_refuses_and_names_where_values_live():
+    with pytest.raises(TypeError, match=r"model family, not a value.*IntegratedServo\.m<level>\.<word>\(\.\.\.\)"):
         IntegratedServo(peak_torque=Stated(3.5, "N·m"))
+    with pytest.raises(TypeError, match=r"IntegratedServo\.m3 is a model family"):
+        IntegratedServo.m3()
 
 
 def test_a_datasheet_refusal_still_names_the_field_on_the_type():
     with pytest.raises(ValueError, match=r"^IntegratedServo\.rated_torque: unit 'N' "):
-        IntegratedServo.Datasheet(rated_torque=Stated(1.05, "N"))
+        IntegratedServoDatasheet(rated_torque=Stated(1.05, "N"))
     assert IntegratedServoDatasheet.type_name() == "IntegratedServo" and Datasheet.type_name() == "Datasheet"
 
 
@@ -82,9 +86,9 @@ def test_a_datasheet_refusal_still_names_the_field_on_the_type():
 
 
 def test_models_by_key_by_attribute_and_by_level():
-    models = IntegratedServo.models
-    assert isinstance(models, Models) and isinstance(models.m3, Models) and isinstance(models["M3"], Models)
-    assert models["M3.stribeck"] is models.m3.stribeck is IntegratedServo.Stribeck
+    models = IntegratedServo
+    assert models.m3 is models["M3"] is models.m3  # one family object per level
+    assert models["M3.stribeck"] is models.m3.stribeck is models.stribeck is IntegratedServo.Stribeck
     assert models.m3.keys() == ("M3.stribeck", "M3.load", "M3.lugre", "M3.weakening_capture")
     assert models["M3"].keys() == models.m3.keys()
     assert models.m3["M3.load"] is models.m3.load
@@ -96,23 +100,23 @@ def test_models_by_key_by_attribute_and_by_level():
         models.m2.stribeck  # noqa: B018
 
 
-@pytest.mark.parametrize("group", ["models", "m3"])
-def test_every_group_has_fit_select_best_ladder_and_tree(group):
-    models = IntegratedServo.models if group == "models" else IntegratedServo.models.m3
+@pytest.mark.parametrize("level", [None, "m3"])
+def test_every_family_has_fit_select_best_ladder_and_tree(level):
+    family = IntegratedServo if level is None else getattr(IntegratedServo, level)
     for call in ("fit", "select_best", "ladder", "tree"):
-        assert callable(getattr(models, call)), call
-    assert isinstance(models.tree(), Tree) and models.ladder() == tuple(models)
+        assert callable(getattr(family, call)), call
+    assert isinstance(family.tree(), Tree) and family.ladder() == tuple(family)
 
 
-def test_the_type_forwards_fit_select_best_ladder_tree_and_iteration_to_its_models():
-    assert list(IntegratedServo) == list(IntegratedServo.models) and len(IntegratedServo) == len(IntegratedServo.models)
-    assert IntegratedServo.ladder() == IntegratedServo.models.ladder()
+def test_the_family_iterates_ladders_and_fits_its_own_models():
+    assert list(IntegratedServo) == list(IntegratedServo.values()) and len(IntegratedServo) == 14
     assert IntegratedServo.ladder()[0].key == "M0.ideal"
-    assert [m.key for m in IntegratedServo.ladder(IntegratedServo.models.m3.stribeck)] == [
+    assert [m.key for m in IntegratedServo.ladder(IntegratedServo.m3.stribeck)] == [
         "M3.stribeck", "M2.coulomb_viscous", "M1.datasheet", "M0.ideal"]
-    assert IntegratedServo.tree().text() == IntegratedServo.models.tree().text()
+    assert IntegratedServo.tree().text().splitlines()[0].startswith("integrated_servo · IntegratedServo · 14 models")
+    assert IntegratedServo.m3.tree().text().splitlines()[0].startswith("integrated_servo · IntegratedServo.m3 · 4 models")
     log = sweep(COULOMB_VISCOUS, "fit")
-    assert dict(IntegratedServo.fit(log)).keys() == dict(IntegratedServo.models.fit(log)).keys()
+    assert set(IntegratedServo.fit(log)) | set(IntegratedServo.fit(log).skipped) == set(IntegratedServo.keys())
 
 
 def test_iterating_the_type_gives_each_model_with_its_param_count():
@@ -126,7 +130,7 @@ def test_the_tree_is_one_line_up_and_down_and_branches_where_the_type_does(tmp_p
     assert lines[1] == "├── M0.ideal -> M1.datasheet -> M2.coulomb_viscous"
     assert "│   │   └── M3.weakening_capture -> M4.drivetrain -> M5.envelope -> M5.wear -> M6.residual" in lines
     assert lines[-1] == "└── M7.learned"
-    level = IntegratedServo.models.m3.tree().text().splitlines()
+    level = IntegratedServo.m3.tree().text().splitlines()
     assert level[1:] == ["├── M3.stribeck", "│   ├── M3.lugre", "│   └── M3.weakening_capture", "└── M3.load"]
     page = IntegratedServo.tree().show(tmp_path / "tree.html")
     assert "graph BT" in page.read_text(encoding="utf-8") and "M3_lugre --> M3_stribeck" in page.read_text()
@@ -141,7 +145,7 @@ def test_the_derived_ladder_equals_todays_record():
 
 
 def test_a_rung_cannot_redefine_remove_or_invent_an_inherited_parameter():
-    stribeck = IntegratedServo.models.m3.stribeck
+    stribeck = IntegratedServo.m3.stribeck
     with pytest.raises(TypeError, match="redefines inherited"):
         type("Newtons", (stribeck,), {"coulomb_friction": Parameter("N", "Coulomb friction, in newtons.")},
              level=3, name="newtons")
@@ -155,7 +159,7 @@ def test_a_rung_cannot_redefine_remove_or_invent_an_inherited_parameter():
 
 
 def _scratch_type():
-    class Gear(PartType, id="scratch_gear"):
+    class Gear(ModelFamily, id="scratch_gear"):
         """A scratch type: two rungs."""
 
         class Ideal(Model, level=0, name="ideal"):
@@ -173,18 +177,19 @@ def test_a_rung_declared_later_joins_its_type_and_the_derived_record():
     gear = _scratch_type()
     before = gear.v1_ladder().keys
 
-    class Worn(gear.models.m1.lossy, level=2, name="worn"):
+    class Worn(gear.m1.lossy, level=2, name="worn"):
         """Worn"""
         wear_rate = Parameter("1/h", "How fast efficiency falls per hour.")
 
-    assert gear.models.m2.worn is Worn and Worn.part_type is gear
+    assert gear.m2.worn is Worn and Worn.family is gear
     assert before == ("M0.ideal", "M1.lossy") and gear.v1_ladder().keys == ("M0.ideal", "M1.lossy", "M2.worn")
 
 
 def test_a_rung_word_that_shadows_a_group_call_refuses():
     gear = _scratch_type()
-    with pytest.raises(TypeError, match="'fit' is a Models call"):
-        type("Fit", (gear.models.m1.lossy,), {"__doc__": "x"}, level=2, name="fit")
+    for word in ("fit", "keys", "id", "aliases"):
+        with pytest.raises(TypeError, match=f"'{word}' is a ModelFamily call"):
+            type("Clash", (gear.m1.lossy,), {"__doc__": "x"}, level=2, name=word)
 
 
 # --- per model and batch: analytical and black box with one interface -------------------------------------------------
@@ -192,7 +197,7 @@ def test_a_rung_word_that_shadows_a_group_call_refuses():
 
 def test_a_model_fit_returns_an_instance_that_predicts_numpy_and_is_frozen():
     log = sweep(STRIBECK, "fit")
-    m3 = IntegratedServo.models.m3.stribeck.fit(log)
+    m3 = IntegratedServo.m3.stribeck.fit(log)
     assert isinstance(m3, IntegratedServo.Stribeck) and m3.fitted_count == 4
     assert m3.breakaway_torque == pytest.approx(STRIBECK["breakaway_torque"], rel=0.05)
     assert IntegratedServo.Stribeck.breakaway_torque.unit == "N·m"  # the class holds the Parameter, the instance its value
@@ -204,10 +209,10 @@ def test_a_model_fit_returns_an_instance_that_predicts_numpy_and_is_frozen():
 
 
 def test_the_black_box_has_the_physics_outside():
-    learned = IntegratedServo.models.m7.learned
+    learned = IntegratedServo.m7.learned
     assert issubclass(learned, BlackBox) and learned.param_count == 8
     log = sweep(STRIBECK, "fit")
-    net, m3 = learned.fit(log), IntegratedServo.models.m3.stribeck.fit(log)
+    net, m3 = learned.fit(log), IntegratedServo.m3.stribeck.fit(log)
     for model in (net, m3):
         assert isinstance(model.predict(1.0), float) and model.predict(log["v"]).shape == log["v"].shape
         assert model.score(log) < 0.05 and model.param_count > 0
@@ -232,18 +237,18 @@ def test_the_simpler_rung_wins_when_the_held_out_plateaus_do_not_need_more():
 
 def test_a_level_group_fits_and_chooses_only_its_own_models():
     log, held_out = sweep(STRIBECK, "fit"), sweep(STRIBECK, "test")
-    level = IntegratedServo.models.m3.fit(log)
+    level = IntegratedServo.m3.fit(log)
     assert set(level) == {"M3.stribeck"} and set(level.skipped) == {"M3.load", "M3.lugre", "M3.weakening_capture"}
     every = IntegratedServo.fit(log)
-    assert [m.key for m in IntegratedServo.models.m2.select_best(held_out, every).models] == ["M2.coulomb_viscous"]
-    assert IntegratedServo.models.m3.select_best(held_out, every).chosen.key == "M3.stribeck"
+    assert [m.key for m in IntegratedServo.m2.select_best(held_out, every).models] == ["M2.coulomb_viscous"]
+    assert IntegratedServo.m3.select_best(held_out, every).chosen.key == "M3.stribeck"
 
 
 # --- the stack ----------------------------------------------------------------------------------------------------
 
 
 def test_values_hand_to_mujoco_and_sim2real_in_canonical_si_names():
-    m3 = IntegratedServo.models.m3.stribeck.fit(sweep(STRIBECK, "fit"))
+    m3 = IntegratedServo.m3.stribeck.fit(sweep(STRIBECK, "fit"))
     assert set(m3.values()) >= {"coulomb_friction", "breakaway_torque", "stribeck_velocity", "viscous_friction"}
     assert m3.mujoco()["frictionloss"] == m3.breakaway_torque and m3.mujoco()["damping"] == m3.viscous_friction
 
@@ -258,10 +263,10 @@ def test_the_ladders_and_datasheets_still_import_without_numpy():
 
 
 def test_fitting_leaves_no_bytecode_beside_the_vendored_rung_code(monkeypatch):
-    from robot_models import part_type
+    from robot_models import model_family
 
     monkeypatch.setattr(sys, "dont_write_bytecode", False)  # as a plain `python` run would
     before = set((SRC / "actuators" / "rungs").rglob("__pycache__"))
-    part_type._reference.cache_clear()  # load every rung's model.py again
+    model_family._reference.cache_clear()  # load every rung's model.py again
     IntegratedServo.fit(sweep(STRIBECK, "fit"))
     assert set((SRC / "actuators" / "rungs").rglob("__pycache__")) == before

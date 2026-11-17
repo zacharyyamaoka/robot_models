@@ -4,7 +4,8 @@ Every BldcMotor field, plus the reducer's. Torques and speeds are at the OUTPUT,
 inertia stay on the rotor (registry definitions), so a source that states them after the reducer says at='output'
 and the datasheet carries them through gear_ratio, marked derived.
 
-The part type is `robot_models.IntegratedServo` (PEP 0004 amendment 2); this class is its `IntegratedServo.Datasheet`.
+The servo's models are the ModelFamily `robot_models.IntegratedServo` (PEP 0004 amendment 2); its M1 rung reads this
+class's fields. The type that joins the two is robotparts' follow-up.
 """
 
 from __future__ import annotations
@@ -38,5 +39,5 @@ class IntegratedServoDatasheet(BldcMotor):
 # WHY a back-compat alias (PEP 0004 amendment 2): robotparts' part file, its six sources/*.py and test_datasheets.py,
 # this repo's frozen rulers (test_ladders_acceptance.py pins `ladder.datasheet is IntegratedServo`) and the round-2
 # fixture all import `IntegratedServo` from here as the datasheet. It stays the datasheet at this path until they move
-# to `IntegratedServo.Datasheet(...)`; the bare `robot_models.IntegratedServo` is the part type.
+# to `IntegratedServoDatasheet`; the bare `robot_models.IntegratedServo` is the servo's ModelFamily.
 IntegratedServo = IntegratedServoDatasheet

@@ -108,8 +108,8 @@ class Datasheet:
     def type_name(cls) -> str:
         """The part type this datasheet states, as a message names it: `IntegratedServoDatasheet` -> "IntegratedServo".
 
-        WHY (PEP 0004 amendment 2): the datasheet class moved off the type's bare name to `<Type>Datasheet`, reached as
-        `<Type>.Datasheet`; a refusal still names the field the way the type's vocabulary does
+        WHY (PEP 0004 amendment 2): the datasheet class moved off the type's bare name to `<Type>Datasheet` (the bare
+        name is the type's ModelFamily); a refusal still names the field the way the type's vocabulary does
         (`IntegratedServo.rated_torque`), so the messages robotparts and its editor show did not change."""
         return cls.__name__.removesuffix("Datasheet") or cls.__name__
 
