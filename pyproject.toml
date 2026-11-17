@@ -39,7 +39,8 @@ classifiers = [
 requires-python = ">=3.11"
 # WHY robot_msgs + numpy only (Robot Models Layering decision, 2026-11-12; "dependency-free runtime
 # cores"): the models and the pure fits must import with nothing heavier. Mesh contact is an extra.
-dependencies = ["robot-msgs>=0.2.0", "numpy>=1.26"]
+# WHY >=0.3.0: robot_models.homing.protocols imports robot_msgs.control, first released in 0.3.0 (2026-11-17).
+dependencies = ["robot-msgs>=0.3.0", "numpy>=1.26"]
 
 [project.optional-dependencies]
 # WHY coal (the hpp-fcl successor) and trimesh: the exact-mesh first contact of the kinematic homing

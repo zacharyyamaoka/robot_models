@@ -71,13 +71,12 @@ its own) are byte-pinned, so a downstream copy can be checked against them.
 ## Install
 
 ```bash
-pip install "robot-msgs @ git+https://github.com/zacharyyamaoka/robot_msgs" "robot-models @ git+https://github.com/zacharyyamaoka/robot_models"
-uv add "robot-msgs @ git+https://github.com/zacharyyamaoka/robot_msgs" "robot-models @ git+https://github.com/zacharyyamaoka/robot_models"
+pip install robot-models
+uv add robot-models
 ```
 
-- robot_msgs comes from GitHub: PyPI's robot-msgs 0.2.0 lacks `robot_msgs.control`, which
-  `robot_models.homing.protocols` imports. The ladders and the datasheets import neither robot_msgs nor numpy.
-- Mesh contact for homing: add the extra, `robot-models[contact] @ git+…`.
+- robot-msgs 0.3.0 or later comes with it. The ladders and the datasheets import neither robot_msgs nor numpy.
+- Mesh contact for homing: add the extra, `robot-models[contact]`.
 - Python 3.11 to 3.14.
 
 ## Tests
@@ -85,7 +84,7 @@ uv add "robot-msgs @ git+https://github.com/zacharyyamaoka/robot_msgs" "robot-mo
 From a clone (`--no-sources` because `[tool.uv.sources]` names the author's local robot_msgs checkout):
 
 ```bash
-uv run --isolated --no-sources --with "robot-msgs @ git+https://github.com/zacharyyamaoka/robot_msgs@main" --extra test python -m pytest -q --ignore=tests/test_fit_ruler.py --ignore=tests/test_stop_ruler.py
+uv run --isolated --no-sources --extra test python -m pytest -q --ignore=tests/test_fit_ruler.py --ignore=tests/test_stop_ruler.py
 ```
 
 - That is what CI runs (`.github/workflows/test.yml`, Python 3.11–3.14).
