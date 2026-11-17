@@ -1,0 +1,125 @@
+
+# 1 · browse the family
+>>> from parameter_sets import IntegratedServo
+>>> IntegratedServo.tree().print()
+integrated_servo · 14 models (a -> b: b subclasses a; [n] param_count)
+├── M0.ideal [2] -> M1.datasheet [2] -> M2.coulomb_viscous [4]
+│   ├── M3.stribeck [6]
+│   │   ├── M3.lugre [8] -> M5.dcmotor [10]
+│   │   └── M3.weakening_capture [11] -> M4.drivetrain [14] -> M5.envelope [18] -> M5.wear [20] -> M6.residual [20]
+│   ├── M3.load [5]
+│   └── M4.ripple [5]
+└── M7.learned [8]
+>>> IntegratedServo.tree().show(here / "integrated_servo_tree.html").name
+'integrated_servo_tree.html'
+>>> for model in IntegratedServo: print(model.key, model.param_count, model.runnable())
+M0.ideal 2 True
+M1.datasheet 2 True
+M2.coulomb_viscous 4 True
+M3.stribeck 6 True
+M3.load 5 False
+M3.lugre 8 False
+M3.weakening_capture 11 False
+M4.ripple 5 False
+M4.drivetrain 14 False
+M5.dcmotor 10 False
+M5.envelope 18 False
+M5.wear 20 False
+M6.residual 20 False
+M7.learned 8 True
+>>> IntegratedServo.ladder()[0]
+<class 'parameter_sets.servo.IntegratedServo.Ideal'>
+>>> IntegratedServo.models.m3
+Models(M3.stribeck, M3.load, M3.lugre, M3.weakening_capture)
+
+# 2 · pick M3.stribeck
+>>> Stribeck = IntegratedServo.models["M3.stribeck"]
+>>> Stribeck is IntegratedServo.models.m3.stribeck
+True
+>>> print(Stribeck.describe())
+M3.stribeck · class Stribeck(CoulombViscous) · Stribeck friction: breakaway falling to Coulomb with speed
+  tau_r = (coulomb_friction + (breakaway_torque − coulomb_friction)·exp(−(|v|/stribeck_velocity)^stribeck_exponent))·sign(v) + viscous_friction·v
+  needs breakaway_torque [N·m]: Static friction at the output: the torque that starts it moving from rest, the top of the Stribeck curve.
+  needs stribeck_velocity [rad/s]: Output speed over which friction falls from breakaway_torque to coulomb_friction.
+  reads stribeck_exponent [1]: Shape exponent of the Stribeck curve, how sharply friction falls with speed; 2 when absent.
+  inherits output_inertia, gear_ratio, coulomb_friction, viscous_friction; param_count 6; reads 32 more when stated
+  physics: numpy, held to actuators/rungs/stribeck/model.py
+>>> Stribeck.breakaway_torque
+Parameter(unit='N·m', definition='Static friction at the output: the torque that starts it moving from rest, the top of the Stribeck curve.', optional=False, default=None, shape='scalar', positive=False, name='breakaway_torque')
+>>> Stribeck.fallback()
+('M3.stribeck', 'M2.coulomb_viscous', 'M1.datasheet', 'M0.ideal')
+>>> [klass.__qualname__ for klass in Stribeck.Parameters.__mro__[:4]]
+['IntegratedServo.Stribeck.Parameters', 'IntegratedServo.CoulombViscous.Parameters', 'IntegratedServo.Datasheet.Parameters', 'IntegratedServo.Ideal.Parameters']
+>>> IntegratedServo.canonical("frictionloss_nm")
+'coulomb_friction'
+
+# 3 · one source, additive only
+>>> from robot_models.ladder import ladders
+>>> IntegratedServo.drift(ladders()["integrated_servo"])
+[]
+>>> class Smoother(Stribeck, level=4, name="smoother"):
+...     coulomb_friction = None  # raises
+TypeError: Smoother: coulomb_friction is Stribeck's; vocabulary only grows. To need an inherited optional one here, pass requires=('coulomb_friction',)
+>>> len(IntegratedServo)
+14
+
+# 4 · datasheet to M1, predict
+>>> import numpy as np
+>>> from fixture import datasheet, rig_log
+>>> m1 = IntegratedServo.models.m1.datasheet.from_datasheet(datasheet())
+>>> m1
+Datasheet.Parameters(output_inertia=4.2e-05, gear_ratio=10.0, peak_torque=3.5, rated_torque=1.05, max_output_speed=24.085543677521745, coulomb_friction=0.3, viscous_friction=0.02)
+>>> m1.predict(1.0)
+0.32
+>>> IntegratedServo.Datasheet.predict(m1, np.array([-1.0, 0.0, 0.5]))
+array([-0.32,  0.  ,  0.31])
+
+# 5 · fit
+>>> fit_log, test_log = rig_log("A", "fit"), rig_log("A", "test")
+>>> m3 = Stribeck.fit(fit_log, start=m1)
+>>> m3.needed()
+{'output_inertia': 4.2e-05, 'gear_ratio': 10.0, 'coulomb_friction': 0.419463304255499, 'viscous_friction': 0.03528456569080982, 'breakaway_torque': 0.6500489871525192, 'stribeck_velocity': 0.24901459861515418}
+>>> m3.info
+FitInfo(fitted=('coulomb_friction', 'viscous_friction', 'breakaway_torque', 'stribeck_velocity'), count=4, samples=250, rms=0.003953122796678005, start='M1.datasheet')
+>>> fits = IntegratedServo.fit(fit_log, start=m1)
+>>> print(fits)
+model                fitted  fit rms mN·m  values (SI)
+M0.ideal                  0        543.70  (nothing the log moves)
+M1.datasheet              0        242.00  (nothing the log moves)
+M2.coulomb_viscous        2         64.69  coulomb_friction=0.5797, viscous_friction=-0.06487
+M3.stribeck               4          3.95  coulomb_friction=0.4195, viscous_friction=0.03528, breakaway_torque=0.65, stribeck_velocity=0.249
+M7.learned                8         14.63  forward=(4 weights), backward=(4 weights)
+skipped: M3.load, M3.lugre, M3.weakening_capture, M4.ripple, M4.drivetrain, M5.dcmotor, M5.envelope, M5.wear, M6.residual (declared, no physics attached)
+>>> fits["M3.stribeck"].diff(fits["M2.coulomb_viscous"])
+{'coulomb_friction': (0.4194633037590281, 0.5796651921887966), 'viscous_friction': (0.035284565973142, -0.06486525392562947), 'breakaway_torque': (0.6500489870074954, None), 'stribeck_velocity': (0.24901459954007518, None), 'stribeck_exponent': (2.0, None)}
+>>> IntegratedServo.load(fits["M3.stribeck"].to_json()) == fits["M3.stribeck"]
+True
+
+# 6 · held out, select_best
+>>> selection = IntegratedServo.select_best(fits, test_log)
+>>> print(selection)
+held-out plateaus · floor 4.17 mN·m · lowest rung within 1.5× floor
+model                params  fit rms  held-out  ÷ floor   [rms in mN·m]
+M0.ideal                  2   543.70    531.92   127.54
+M1.datasheet              2   242.00    221.97    53.22
+M2.coulomb_viscous        4    64.69     84.58    20.28
+M3.stribeck               6     3.95      4.18     1.00  <- chosen
+M7.learned                8    14.63     44.84    10.75
+>>> best = selection.best
+>>> best.model.key, best.mujoco()
+('M3.stribeck', {'armature': 4.2e-05, 'frictionloss': 0.6500489870074954, 'damping': 0.035284565973142})
+>>> best.predict(np.array([0.05, 0.5, 2.0]))
+array([0.64270156, 0.44119705, 0.49003244])
+
+# 7 · servo B: simpler wins
+>>> fits_b = IntegratedServo.fit(rig_log("B", "fit"), start=m1)
+>>> print(IntegratedServo.select_best(fits_b, rig_log("B", "test")))
+held-out plateaus · floor 4.22 mN·m · lowest rung within 1.5× floor
+model                params  fit rms  held-out  ÷ floor   [rms in mN·m]
+M0.ideal                  2   399.77    412.01    97.64
+M1.datasheet              2    86.62     91.28    21.63
+M2.coulomb_viscous        4     4.04      4.33     1.03  <- chosen
+M3.stribeck               6     3.97      6.62     1.57
+M7.learned                8     3.94      4.33     1.03
+>>> fits_b["M2.coulomb_viscous"].needed()
+{'output_inertia': 4.2e-05, 'gear_ratio': 10.0, 'coulomb_friction': 0.38016642120718813, 'viscous_friction': 0.02941921234064266}
