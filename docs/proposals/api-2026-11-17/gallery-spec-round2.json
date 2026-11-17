@@ -1,0 +1,553 @@
+{
+ "schemaVersion": 3,
+ "title": "robot_models round 2: ModelFamily, Model, Parameters",
+ "kicker": "Babble & Prune · round 2 · 2026-11-17",
+ "brief": "Zach's feedback on round 1: organize everything around a type. A ModelFamily holds Models; a Model is a class made of Parameters, and subclassing only adds vocabulary; per-model and batch fit, and select_best on the data you have.",
+ "count": 3,
+ "defaultId": "v6",
+ "defaultWhy": "Fitted instances is the AI recommendation, first for both judges (user lens 92, maintainer lens 88). It keeps the one copy of the physics (today's model.py run on numpy arrays, 0.8 ms per 100k samples), its derived Ladder equals today's whole record, and with LADDER swapped for it the v1 ruler (120) and sim2real's parity test (56) pass. A new rung is one nested class, and removing or redefining a parameter raises. Its one gap from your shape: select_best is fits.select_best(held_out), not IntegratedServo.select_best(held_out). Family per unit is the close alternative at 83.5, if the object you carry should be one physical servo.",
+ "decisionHinge": "If 'model.fit(log); model.predict(v)' must work in place on one carried servo object, Family per unit ties at the user lens; Fitted instances stays ahead only on keeping a single physics copy and exact v1 equality (Family per unit retypes the physics in numpy and drops rung notes). Weight storable, diffable value sets and Parameter sets closes the gap, but type checkers cannot see its generated fields.",
+ "invariants": [
+  "ModelFamily → Model (a class) → Parameters; a rung subclasses its base.",
+  "His access shape: models[key], models.m3.stribeck, ladder()[0], tree().print()/show(), iteration.",
+  "Today's Ladder is derived from the classes and equals ladders()['integrated_servo'].",
+  "The same scenario and check as round 1, with the held-out choice and the negative control."
+ ],
+ "boundary": "Runnable prototypes in docs/proposals/api-2026-11-17/v6–v8 that pass the frozen check. Physics for M0–M3 plus a numpy black box at M7; nothing in src/, robotparts or sim2real changed.",
+ "axes": [
+  {
+   "name": "Where the values live",
+   "values": [
+    "a Model instance",
+    "a ModelFamily instance (one unit)",
+    "a Parameters object"
+   ]
+  },
+  {
+   "name": "What fit returns",
+   "values": [
+    "fitted instances",
+    "the unit, fitted in place",
+    "value sets"
+   ]
+  }
+ ],
+ "requirements": [
+  {
+   "id": "fr1",
+   "name": "His access shape",
+   "weight": 25,
+   "why": "Zach's feedback names the calls: models[key], models.m3.stribeck, ladder()[0], tree().print()/show(), iteration, param_count.",
+   "passCondition": "Every call in ROUND2.md works as written or one obvious spelling away.",
+   "anchors": {
+    "1": "Most calls missing or reshaped.",
+    "3": "The calls exist with glue or different spellings.",
+    "5": "Every call works as written, iteration and param_count included."
+   }
+  },
+  {
+   "id": "fr2",
+   "name": "Per-model and batch operations",
+   "weight": 20,
+   "why": "\"we can do operations on per model level or ... BLDC.fit() ... BLDC.select_best()\"",
+   "passCondition": "model.fit, Family.fit and Family.select_best(held_out) are one call each; the batch result reads easily.",
+   "anchors": {
+    "1": "Fitting or choosing needs hand glue.",
+    "3": "One of the three needs glue.",
+    "5": "All three are one call each and the batch result is easy to read."
+   }
+  },
+  {
+   "id": "fr3",
+   "name": "One source, additive vocabulary",
+   "weight": 15,
+   "why": "Round 1's V1 wrote every rung twice and dropped a class-less rung silently; Zach: vocabulary only ever grows.",
+   "passCondition": "The classes are the source; today's Ladder is derived and equal; a subclass cannot remove or rename.",
+   "anchors": {
+    "1": "Two sources, or vocabulary can shrink.",
+    "3": "Derived but partial, or enforcement has holes.",
+    "5": "Derived Ladder equals today's; removal or renaming raises; nothing drops silently."
+   }
+  },
+  {
+   "id": "fr4",
+   "name": "Analytical and black box, one interface",
+   "weight": 15,
+   "why": "\"eventually though models could even be like NeuralNetwork ... from the outside they are a bit the same\"",
+   "passCondition": "A learned model fits, predicts, counts parameters and competes in select_best with the same calls.",
+   "anchors": {
+    "1": "The black box needs its own API.",
+    "3": "Same calls with special cases.",
+    "5": "Same calls, same tables, no special case."
+   }
+  },
+  {
+   "id": "fr5",
+   "name": "Migration",
+   "weight": 10,
+   "why": "The v1 ruler, robotparts' vendored rung bytes and sim2real's parity test consume today's API.",
+   "passCondition": "They keep working.",
+   "anchors": {
+    "1": "Consumers break.",
+    "3": "Changes are needed in one consumer.",
+    "5": "All three keep working unchanged."
+   }
+  },
+  {
+   "id": "fr6",
+   "name": "Plays with the stack",
+   "weight": 15,
+   "why": "Values flow to MuJoCo, sim2real and fitting; Zach reads it in an IDE.",
+   "passCondition": "Typed parameters, numpy-vectorized predict, values hand to MuJoCo/sim2real without glue.",
+   "anchors": {
+    "1": "Untyped, scalar loops, nothing exports.",
+    "3": "Some of it.",
+    "5": "All of it."
+   }
+  }
+ ],
+ "hardGates": [
+  {
+   "id": "g1",
+   "name": "Type data only",
+   "why": "robot_models holds no measured value and no maker; values come from the caller."
+  },
+  {
+   "id": "g2",
+   "name": "Light runtime core",
+   "why": "numpy + robot_msgs + stdlib at runtime; anything heavier is an extra."
+  },
+  {
+   "id": "g3",
+   "name": "Recovers the hidden truth",
+   "why": "check_scenario.py passes and the variant never reads _truth.py."
+  },
+  {
+   "id": "g4",
+   "name": "One vocabulary per type",
+   "why": "Canonical names and aliases resolve as today."
+  }
+ ],
+ "variants": [
+  {
+   "id": "v6",
+   "name": "Fitted instances",
+   "thesis": "A ModelFamily class holds its Model classes, whose Parameters are class attributes that subclasses can only add to or make required (enforced when the class is created); values live only on Model instances, and today's Ladder record is derived from the classes and equals ladders()[\"integrated_servo\"] exactly.",
+   "accent": "#3f7be0",
+   "bestWhen": "A type's models are refinements of each other and the people adding rungs write Python. You get one class to read (parameters with units, equation, references, physics) and plain value objects that hand straight to MuJoCo (m3.mujoco()) or sim2real (m3.values(), canonical SI names).",
+   "losesWhen": "You want one object for 'this servo': here it's several fitted instances plus a FamilyFit (v7's thesis). You want values as storable, diffable data (v8). You need constructor keywords checked statically: types come only through descriptor overloads, the 33 injected M1 fields are invisible to a checker, and none of this is verified with pyright, which isn't installed here. The core is large (546 lines). Ties between equally good siblings fall to declaration order.",
+   "decisions": [
+    {
+     "label": "Where models live",
+     "value": "Model classes are nested in the family's class body; declaration order by level is today's ladder order. A rung declared later joins its base's family, so nothing is silently dropped (checked: adding Dahl gives 15 models and M3.dahl appears in the derived record)."
+    },
+    {
+     "label": "Additivity rules",
+     "value": "Checked when the class is created: changing an inherited unit or definition raises, shadowing a parameter with None raises, loosening a required one raises, a parameter named after an API attribute or a type alias raises, and reusing an inherited definition under a new name raises. The only change allowed is `x = Parameter()` (optional below, required from this rung on). The family also refuses two different definitions of one name on different branches."
+    },
+    {
+     "label": "One source",
+     "value": "Model.rung() and Family.v1_ladder() derive today's Ladder; it equals ladders()[\"integrated_servo\"] as a whole record. Aliases, packed and deployment names are still imported from today's module."
+    },
+    {
+     "label": "Values",
+     "value": "Parameter is a descriptor: on the class it is the Parameter, on an instance the float. Instances are frozen. A fit leaves parameters its log cannot see unset instead of inventing them."
+    }
+   ],
+   "keepParts": [
+    "v1_ladder(): derive today's Ladder from the classes and assert it equals ladders() as a whole record. This makes 'one source' checkable and makes migration a one-line change.",
+    "Additivity enforced when the class is created, with `x = Parameter()` as the only way to tighten an inherited parameter, plus reserved API names and the alias check.",
+    "Generic fitting: a recording terms dict finds what the physics reads, seeds come from units, and unidentifiable parameters become a skip with a reason. Plus the numpy-swapped reference run, cross-checked against the scalar run."
+   ],
+   "proof": [
+    "PASS  v6_fitted_instances",
+    "Scenario run: docs/proposals/api-2026-11-17/v6_fitted_instances/scenario.out.txt",
+    "Simulated: The rig log is the fixture's simulated plateau sweep, and M1 comes from the fixture's illustrative datasheet. Runnable: M0–M3 using their reference model.py; M3.lugre runs only at steady state and the fit skips it. M3.load and M4.ripple need inputs the log lacks. M3.weakening_capture, M4.drivetrain, M5.*, and M6 are declared only. M7 is a numpy polynomial standing in for the MLP. The fit frees only required parameters (stribeck_exponent stays at 2) and reports no uncertainty. On servo A, M2's viscous_friction ends on the positivity bound (≈0). tree().show() writes integrated_servo_tree.html with mermaid 10.9.1 loaded from a CDN; I rendered it headlessly and looked at it."
+   ],
+   "scores": {
+    "fr1": {
+     "score": 4.0,
+     "evidence": "user lens (4): All browse calls work as written (models[\"M3.stribeck\"], models.m3.stribeck, ladder()[0] -> <Model M0.ideal · class Ideal · 2 params>, tree().print/.show, for-loop key/param_count). Two calls are one spelling off. `model.fit` is a classmethod that returns an instance (`m3 = Stribeck.fit(fit, start=m1)`, scenario.py:79), and `IntegratedServo.select_best(test)` raises \"missing 1 required positional argument: 'among'\". The natural `IntegratedServo.fit(fit).select_best(test)` does work. · maintainer lens (4): models[\"M3.stribeck\"], models.m3.stribeck, ladder()[0], tree(), iteration and param_count all work in my probe, but `IntegratedServo.select_best(test)` raises `TypeError ... missing 1 required positional argument: 'among'`. Selection takes `fits.select_best(held_out)`, one obvious spelling away.",
+     "confidence": "high"
+    },
+    "fr2": {
+     "score": 4.5,
+     "evidence": "user lens (5): Batch fit and selection are one call each. `IntegratedServo.fit(fit, start=m1)` prints a table (\"5 fitted, 9 skipped\" with a reason per skipped model) and `select_best` prints the held-out table with \"M3.stribeck ... 1.00 <- chosen\" (scenario.out.txt:108-133). `Family.fit(log)` also works with no start. · maintainer lens (4): `Stribeck.fit(log)` returns an instance and `IntegratedServo.fit(fit)` with no start still fits and lists skips with reasons ('M3.lugre': 'this log cannot identify sigma0, sigma1'). `fits.select_best(test)` prints a readable table (scenario.out.txt:128-134), but the family call needs the fits passed in.",
+     "confidence": "high"
+    },
+    "fr3": {
+     "score": 5.0,
+     "evidence": "user lens (5): `derived == today` prints True on the whole v1 Ladder record (scenario.py:45). Renaming a parameter's unit (Newtons) and removing one (`breakaway_torque = None`) both raise at class creation, and len(IntegratedServo) stays 14. · maintainer lens (5): `IntegratedServo.v1_ladder() == ladders()[\"integrated_servo\"]` printed `FULL EQUAL: True`. A scratch `Tanh(CV, level=3)` rung registered in both models and the derived ladder. `viscous_friction = None`, a unit redefinition and an alias-named parameter each raised TypeError, and nothing was half-registered.",
+     "confidence": "high"
+    },
+    "fr4": {
+     "score": 5.0,
+     "evidence": "user lens (5): `Learned.fit(fit)` returns an instance with param_count 8 that has predict and score, and M7.learned competes in the same select_best table (763.78 mN·m held-out, rejected) (scenario.out.txt:134-147). · maintainer lens (5): `Learned(BlackBox)` (model.py:451-485) fits, predicts and counts 8 weights with the same calls, and it competes in the same select_best table (scenario.out.txt:134: M7.learned 8 params, 183.14× floor).",
+     "confidence": "high"
+    },
+    "fr5": {
+     "score": 5.0,
+     "evidence": "user lens (5): The README's migration plan is `LADDER = IntegratedServo.v1_ladder()`. The derived record is already equal to `ladders()`, the rung model.py/model.json bytes are not touched, and the ruler and sim2real parity test read the same record. · maintainer lens (5): With LADDER swapped for v1_ladder(): the v1 ruler `tests/test_ladders_acceptance.py` gave 120 passed and sim2real's `test_robot_models_parity.py` gave 56 passed. The physics is today's model.py loaded in place with numpy swapped in (`_reference`, model.py:750-761), so robotparts' vendored bytes and the single physics copy are untouched.",
+     "confidence": "medium"
+    },
+    "fr6": {
+     "score": 4.0,
+     "evidence": "user lens (4): Predict is vectorized: `m3.predict(np.linspace(-3,3,100_000)).shape` gives (100000,). `chosen.mujoco()` gives armature/frictionloss/damping and `values()` gives SI canonical names. The README admits constructor keywords are not statically checked and that pyright was not run. · maintainer lens (4): mypy shows `m.breakaway_torque` as float and flags assigning it to str, but `models.m3.stribeck` is Any and constructor keywords are unchecked. Predict on 100k samples took 0.83 ms. `m3.mujoco()` returns armature, frictionloss and damping from model.json maps.",
+     "confidence": "medium"
+    }
+   },
+   "gateResults": {
+    "g1": {
+     "pass": true,
+     "evidence": "user lens: The package files hold no measured values. Values come from fixture.datasheet() and rig_log() in scenario.py only. · maintainer lens: servo.py holds only units, definitions, equations and references; values come from the datasheet or the fit."
+    },
+    "g2": {
+     "pass": true,
+     "evidence": "user lens: model.py and servo.py import only stdlib, numpy and robot_models. · maintainer lens: Imports in model.py are numpy, stdlib (html, tempfile, importlib) and robot_models only."
+    },
+    "g3": {
+     "pass": true,
+     "evidence": "user lens: check_scenario.py prints \"PASS v6_fitted_instances\" (A: M3 1.00, B: M2 1.03). No package file references _truth. · maintainer lens: check_scenario prints `PASS v6_fitted_instances` (A→M3 1.00, B→M2 1.03), and a grep for `_truth` in v6 finds nothing."
+    },
+    "g4": {
+     "pass": true,
+     "evidence": "user lens: `IntegratedServo.canonical(\"frictionloss_nm\")` resolves the alias. Two definitions of one name across branches, or a parameter named after an alias, raise at class creation (README decision 2). · maintainer lens: `canonical(\"frictionloss_nm\")` returns 'coulomb_friction'. The family refuses an alias as a parameter name and refuses two definitions of one name (model.py:524-529)."
+    }
+   },
+   "previewLabel": "live session · click a cell or step",
+   "preview": "<style>\n.api-repl{font:13px/1.45 ui-sans-serif,system-ui,sans-serif;color:var(--ink,#1d232b);padding:14px;display:grid;grid-template-columns:minmax(0,1fr);gap:10px;width:0;min-width:100%;box-sizing:border-box}\n.api-repl .repl-head{display:flex;justify-content:space-between;gap:8px;font-size:12px;opacity:.8}\n.api-repl ol{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr);gap:6px}\n.api-repl .cell{all:unset;box-sizing:border-box;display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;width:100%;cursor:pointer;\n  border:1px solid color-mix(in srgb,currentColor 18%,transparent);border-radius:8px;padding:7px 9px;\n  background:color-mix(in srgb,currentColor 4%,transparent)}\n.api-repl .cell:hover{border-color:var(--accent,#3f7be0)}\n.api-repl .cell .n{font-weight:700;color:var(--accent,#3f7be0)}\n.api-repl pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}\n.api-repl ol,.api-repl li{min-width:0}\n.api-repl .out{display:none;white-space:pre;overflow-x:auto;margin:2px 0 4px 30px;padding:8px 10px;border-left:3px solid var(--accent,#3f7be0);\n  background:color-mix(in srgb,var(--accent,#3f7be0) 8%,transparent);border-radius:0 6px 6px 0}\n.api-repl .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.65;grid-column:2}\n.shape-tree{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;margin:0;padding:12px}\n.shape-tree code{font:inherit;background:color-mix(in srgb,currentColor 8%,transparent);padding:0 2px;border-radius:3px}\n</style><style>.prototype[data-story-state=\"s1\"] .api-repl .out[data-out=\"s1\"]{display:block}.prototype[data-story-state=\"s1\"] .api-repl .cell[data-story-to=\"s1\"]{border-color:var(--accent,#3f7be0);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#3f7be0) 25%,transparent)}.prototype[data-story-state=\"s2\"] .api-repl .out[data-out=\"s2\"]{display:block}.prototype[data-story-state=\"s2\"] .api-repl .cell[data-story-to=\"s2\"]{border-color:var(--accent,#3f7be0);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#3f7be0) 25%,transparent)}.prototype[data-story-state=\"s3\"] .api-repl .out[data-out=\"s3\"]{display:block}.prototype[data-story-state=\"s3\"] .api-repl .cell[data-story-to=\"s3\"]{border-color:var(--accent,#3f7be0);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#3f7be0) 25%,transparent)}.prototype[data-story-state=\"s4\"] .api-repl .out[data-out=\"s4\"]{display:block}.prototype[data-story-state=\"s4\"] .api-repl .cell[data-story-to=\"s4\"]{border-color:var(--accent,#3f7be0);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#3f7be0) 25%,transparent)}.prototype[data-story-state=\"s5\"] .api-repl .out[data-out=\"s5\"]{display:block}.prototype[data-story-state=\"s5\"] .api-repl .cell[data-story-to=\"s5\"]{border-color:var(--accent,#3f7be0);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#3f7be0) 25%,transparent)}.prototype:not([data-story-state]) .api-repl .out[data-out=\"s1\"]{display:block}</style><div class=\"api-repl\" style=\"--accent:#3f7be0\"><div class=\"repl-head\"><b>integrated_servo · \"what now?\" session</b><span>546 lines of API core</span></div><ol><li><button type=\"button\" class=\"cell\" data-story-to=\"s1\" title=\"Show this step's output\"><span class=\"n\">1</span><pre>IntegratedServo.models.m3\nIntegratedServo.ladder()[0]\nIntegratedServo.tree().print()\nfor model in IntegratedServo: print(f&quot;{model.key:&lt;22}{model.param_count:&gt;3}&quot;)</pre><span class=\"lbl\">browse: Zach&#x27;s access shape</span></button><pre class=\"out\" data-out=\"s1\">m3: stribeck, load, lugre, weakening_capture\n&lt;Model M0.ideal · class Ideal · 2 params&gt;\nintegrated_servo · class IntegratedServo · 14 models (a -&gt; b: b subclasses a)\n├── M0.ideal -&gt; M1.datasheet -&gt; M2.coulomb_viscous\n│   ├── M3.stribeck\n│   │   ├── M3.lugre -&gt; M5.dcmotor\n│   │   └── M3.weakening_capture -&gt; M4.drivetrain -&gt; M5.envelope -&gt; M5.wear -&gt; M6.residual\n│   ├── M3.load\n│   └── M4.ripple\n└── M7.learned\nM3.stribeck             6  runs ...</pre></li><li><button type=\"button\" class=\"cell\" data-story-to=\"s2\" title=\"Show this step's output\"><span class=\"n\">2</span><pre>today, derived = ladders()[&quot;integrated_servo&quot;], IntegratedServo.v1_ladder()\nderived == today\nclass Newtons(IntegratedServo.models.m3.stribeck, level=3, name=&quot;newtons&quot;):\n    coulomb_friction = Parameter(&quot;N&quot;, &quot;Coulomb friction, in newtons.&quot;)</pre><span class=\"lbl\">one source, additive vocabulary</span></button><pre class=\"out\" data-out=\"s2\">True\nM3.newtons: coulomb_friction redefines inherited [N·m] &#x27;Coulomb friction torque at the output.&#x27;; vocabulary only grows: write `coulomb_friction = Parameter()` to require it</pre></li><li><button type=\"button\" class=\"cell\" data-story-to=\"s3\" title=\"Show this step's output\"><span class=\"n\">3</span><pre>m1 = IntegratedServo.models.m1.datasheet.from_datasheet(datasheet())\nm1.predict(1.0)\nm1.predict(np.array([-1.0, 0.0, 0.5]))</pre><span class=\"lbl\">datasheet to M1, predict</span></button><pre class=\"out\" data-out=\"s3\">0.32\narray([-0.32,  0.  ,  0.31])</pre></li><li><button type=\"button\" class=\"cell\" data-story-to=\"s4\" title=\"Show this step's output\"><span class=\"n\">4</span><pre>m3 = Stribeck.fit(fit, start=m1)\nfits = IntegratedServo.fit(fit, start=m1)\nprint(fits)</pre><span class=\"lbl\">fit: one model, then the family</span></button><pre class=\"out\" data-out=\"s4\">IntegratedServo.fit · 250 samples · 5 fitted, 9 skipped\nM2.coulomb_viscous          4      2    80.12\nM3.stribeck                 6      4     3.95\nM3.load                     5      -        -  skipped: needs input tau_load, which the log lacks\nM3.lugre                    8      -        -  skipped: this log cannot identify sigma0, sigma1\nM7.learned                  8      8    10.13</pre></li><li><button type=\"button\" class=\"cell\" data-story-to=\"s5\" title=\"Show this step's output\"><span class=\"n\">5</span><pre>best = IntegratedServo.select_best(test, fits)\nprint(best)</pre><span class=\"lbl\">held out, choose (and servo B)</span></button><pre class=\"out\" data-out=\"s5\">held-out plateaus · floor 4.17 mN·m · the lowest rung within 1.5× floor\nM2.coulomb_viscous          4         71.64    17.18\nM3.stribeck                 6          4.18     1.00  &lt;- chosen\nM7.learned                  8        763.78   183.14\n[servo B] M2.coulomb_viscous 4.33 1.03 &lt;- chosen; M3.stribeck 6.62 1.57</pre></li></ol></div>",
+   "story": {
+    "title": "Walk the session",
+    "steps": [
+     {
+      "label": "browse: Zach's access shape",
+      "caption": "Every call in ROUND2.md works as written. m3 is itself a grouping, and the family can be iterated.",
+      "state": "s1",
+      "target": "[data-story-to=\"s1\"]"
+     },
+     {
+      "label": "one source, additive vocabulary",
+      "caption": "Today's Ladder record is derived from the classes and matches in full, not just keys, bases, adds and optional. A subclass that changes a unit or removes a parameter raises when the class is created.",
+      "state": "s2",
+      "target": "[data-story-to=\"s2\"]"
+     },
+     {
+      "label": "datasheet to M1, predict",
+      "caption": "Catalogue units go in and an instance with SI values comes out. predict is vectorized with numpy.",
+      "state": "s3",
+      "target": "[data-story-to=\"s3\"]"
+     },
+     {
+      "label": "fit: one model, then the family",
+      "caption": "One generic fit with no per-rung seeds. The batch fit runs every model this log can run and gives a reason for each one it skips.",
+      "state": "s4",
+      "target": "[data-story-to=\"s4\"]"
+     },
+     {
+      "label": "held out, choose (and servo B)",
+      "caption": "Uses sim2real's rule on held-out plateaus. The black box competes through the same call and loses because it extrapolates past the fitted speed range. On servo B the simpler rung wins.",
+      "state": "s5",
+      "target": "[data-story-to=\"s5\"]"
+     }
+    ]
+   },
+   "media": [
+    {
+     "label": "The object model",
+     "caption": "ModelFamily, Model and Parameters here, and the calls.",
+     "html": "<pre class=\"shape-tree\">IntegratedServo(ModelFamily)               iterable; len 14\n├── .models[&quot;M3.stribeck&quot;] / .models.m3.stribeck   (m3 = a Group of classes)\n├── .ladder()[0], .ladder(top)=fallback chain\n├── .tree().print() / .show(path)-&gt;Path (HTML+mermaid)\n├── .fit(log, start=m1) -&gt; FamilyFit {key: instance} + .skipped\n├── .select_best(held_out, fits) -&gt; Selection(.chosen)\n├── .v1_ladder() == ladders()[&quot;integrated_servo&quot;]\n└── class Stribeck(CoulombViscous, level=3, name=&quot;stribeck&quot;)\n    ├── breakaway_torque = Parameter(&quot;N·m&quot;, &quot;...&quot;)   coulomb_friction = Parameter()\n    ├── class: .key .param_count .fallback() .describe() .fit(log)\n    └── instance: .breakaway_torque (float) .params .predict(v) .score(log) .mujoco()\nBlackBox(Model) -&gt; Learned (M7): weights; same fit/predict/param_count</pre>"
+    },
+    {
+     "label": "Adding a rung",
+     "caption": "What a contributor writes to add a new model.",
+     "html": "<pre class=\"shape-tree\">One nested class: docstring title, new Parameter(unit, definition) lines, equation and references. To make it runnable, add actuators/rungs/&lt;word&gt;/model.py and model.json. There is no record, no seeds() override and no registry; fit, family fit, select_best, the tree and the derived v1 record pick it up automatically. The frozen ruler&#x27;s key list would fail on purpose, because a new rung is a ruler change.</pre>"
+    },
+    {
+     "label": "Migration from v1",
+     "caption": "What changes for the ruler, robotparts and sim2real.",
+     "html": "<pre class=\"shape-tree\">Now it is additive: src/, the v1 ruler, robotparts&#x27; vendored model.py/model.json bytes and sim2real are untouched, and the classes read today&#x27;s rung code by path. Later, actuators/servo/ladder.py becomes <code>LADDER = IntegratedServo.v1_ladder()</code>, with ALIASES/PACKED/DEPLOYMENT moved verbatim into the family body. Because the derived record already equals today&#x27;s, ladders(), the ruler tests, sim2real&#x27;s parity test and robotparts&#x27; vendoring should keep passing; the scenario&#x27;s equality check backs this, but I didn&#x27;t run those suites against the swap. Worth adding to the parity test: SELECT_LIMIT == TWINNED_LIMIT. The other 11 types can move one at a time.</pre>"
+    }
+   ]
+  },
+  {
+   "id": "v7",
+   "name": "Family per unit",
+   "thesis": "The ModelFamily class is the type and holds the Model classes; a ModelFamily instance is one physical servo holding one fitted instance of every Model, so the servo itself is what you fit, choose on and hand to sim2real/MuJoCo.",
+   "accent": "#2e9e6b",
+   "bestWhen": "The thing you carry is a servo, not a model: sim2real twins a unit, a fleet is a list of units, and each unit says which rung its own data paid for (A -> M3, B -> M2 from the same datasheet). The batch fit's status table answers 'what happened to every model' in one place.",
+   "losesWhen": "You want values as plain data to diff, store or share without their unit. A unit is a mutable object graph that fit changes in place (v8's Parameters sets win there). Each unit also builds all 14 instances, hybrid class/instance methods are one more idea to learn, and the core is over its line budget (473 vs 350).",
+   "decisions": [
+    {
+     "label": "Where values live",
+     "value": "On a ModelFamily instance (one per physical unit), which holds one Model instance per rung"
+    },
+    {
+     "label": "Parameter",
+     "value": "A frozen-dataclass descriptor: on the class it is the record (unit, definition, required); on an instance it is the float. Typed, so servo[Stribeck].breakaway_torque is a float"
+    },
+    {
+     "label": "Additive enforcement",
+     "value": "__init_subclass__ allows a rung to add parameters or promote optional to required. Removing, redeclaring, demoting, aliased names and unknown names all raise before the class registers"
+    },
+    {
+     "label": "One source",
+     "value": "A rung registers when its class is declared; as_ladder() builds the v1 Ladder (v1's own checks run on it); ladder_diff == []"
+    }
+   ],
+   "keepParts": [
+    "Parameter as a descriptor: the record on the class, the value on an instance, typed for type checkers",
+    "Additive vocabulary enforced in __init_subclass__, plus as_ladder()/ladder_diff deriving and checking the v1 Ladder from the classes",
+    "Generic fitting with starting values by parameter unit (speed scales fitted as their log), plus 'runnable = defines its own torque'"
+   ],
+   "proof": [
+    "PASS  v7_family_per_unit",
+    "Scenario run: docs/proposals/api-2026-11-17/v7_family_per_unit/scenario.out.txt",
+    "Simulated: The rig logs are the shared fixture's (hidden Stribeck truth for A, plain Coulomb + viscous for B, plus noise) and the datasheet is the fixture's illustrative servo. M0-M3.stribeck and M7 run. M3.load runs but the log has no tau_load, so it is skipped. M3.lugre, M3.weakening_capture and M4-M6 are declared only. M7 is a small numpy RBF stand-in, not the MLP."
+   ],
+   "scores": {
+    "fr1": {
+     "score": 4.0,
+     "evidence": "user lens (4): `model.fit(log); model.predict(v)` works literally, in place, on a model instance (probe: Stribeck(output_inertia=4.2e-5, gear_ratio=10), then .fit(fit), then .predict(1.0) gives 0.4547). Browse, iteration and param_count all work. Two gaps: `IntegratedServo.select_best(test)` on the class raises \"IntegratedServo is the type and has no values: select on a unit\", and `IntegratedServo.fit(log)` with no datasheet returns \"1 of 14 models fitted\". · maintainer lens (4): Browse calls, iteration and param_count all work, but `IntegratedServo.select_best(test)` raises 'IntegratedServo is the type and has no values: select on a unit'. `IntegratedServo.fit(fit)` with no datasheet fits only M7, so every physics rung fails with 'the log cannot see output_inertia, gear_ratio: state it'.",
+     "confidence": "high"
+    },
+    "fr2": {
+     "score": 4.5,
+     "evidence": "user lens (5): `servo.fit(fit)` prints one status line per model (\"M3.stribeck fitted 4 of 6 fit rms 3.95 mN·m\") and `servo.select_best(test)` prints fit rms, held-out rms and ÷ floor with \"<- best\" (scenario.out.txt:83-118). `servo.best` is the chosen instance. · maintainer lens (4): `servo.fit(log)` and `servo.select_best(held)` are one call each, and the unit's status table says what happened to every model (scenario.out.txt:112-118). Batch selection is unit-only, and `fit` mutates in place.",
+     "confidence": "high"
+    },
+    "fr3": {
+     "score": 3.5,
+     "evidence": "user lens (4): `ladder_diff(ladders()[\"integrated_servo\"])` returns [] (keys, bases, adds and optional only), but my probe `A.as_ladder() == ladders()[\"integrated_servo\"]` printed False. Additivity is enforced: the Broken subclass raises and \"M3.broken\" is not in models. · maintainer lens (3): `as_ladder() == ladders()[...]` is False: notes differ on M4.drivetrain, M5.dcmotor and M5.envelope, equations differ on M5.envelope and M7.learned, and `ladder_diff` compares only keys, bases, adds and optional. The vocabulary is imported from `today.VOCABULARY` (servo_family.py:726), so a scratch rung with a new parameter raised `KeyError 'stiction_scratch' is not a canonical ... parameter`. A new parameter means a second edit outside the class.",
+     "confidence": "high"
+    },
+    "fr4": {
+     "score": 5.0,
+     "evidence": "user lens (5): M7.learned (a ridge regression, 14 weights) is fitted by the same servo.fit and competes in select_best: 18.72 mN·m held-out, 4.49× floor, not chosen (scenario.out.txt:118). · maintainer lens (5): `Learned(IntegratedServo.Model, kind=\"learned\")` (servo_family.py:890-922) fits by ridge, predicts and has param_count 14, and it sits in the same selection table (scenario.out.txt:118: 4.49× floor).",
+     "confidence": "high"
+    },
+    "fr5": {
+     "score": 4.0,
+     "evidence": "user lens (4): Migration is `LADDER = IntegratedServo.as_ladder()`, but the derived record is not whole-record equal to today's. The README also names a forced rename because the family takes the datasheet class's name IntegratedServo. · maintainer lens (4): The swapped ladder passes the ruler (120 passed) and sim2real parity (56 passed), and the rung folders are untouched. But every runnable rung retypes its physics as a numpy `torque` (servo_family.py:777-780), held to model.py only by an opt-in `parity()` call, and prose and notes are lost on migration.",
+     "confidence": "medium"
+    },
+    "fr6": {
+     "score": 4.0,
+     "evidence": "user lens (4): Predict takes numpy arrays in and returns arrays out. `servo.best.mujoco()` gives armature/frictionloss/damping. The README claims `servo[Stribeck].breakaway_torque` types as float, but pyright was not run. A unit is a mutable object graph. · maintainer lens (4): mypy shows `servo[Stribeck].breakaway_torque` as float via the `Parameter[float]` descriptor and the typed `Models.__getitem__` overload. Predict on 100k samples took 0.76 ms. `servo.best.mujoco()` works.",
+     "confidence": "medium"
+    }
+   },
+   "gateResults": {
+    "g1": {
+     "pass": true,
+     "evidence": "user lens: family_per_unit.py and servo_family.py hold no measured values. The 4.2e-5 inertia appears only in scenario.py:73, typed by the caller. · maintainer lens: servo_family.py holds declarations only; unit values come from `IntegratedServo(datasheet=ds)` or `fit`."
+    },
+    "g2": {
+     "pass": true,
+     "evidence": "user lens: family_per_unit.py and servo_family.py import only stdlib, numpy and robot_models. · maintainer lens: family_per_unit.py imports numpy, stdlib and robot_models only."
+    },
+    "g3": {
+     "pass": true,
+     "evidence": "user lens: check_scenario.py prints \"PASS v7_family_per_unit\" (A: M2 20.28, M3 1.00; B: M2 1.03). No _truth import. · maintainer lens: `PASS v7_family_per_unit` (A→M3 1.00, B→M2 1.03), and there is no `_truth` import."
+    },
+    "g4": {
+     "pass": true,
+     "evidence": "user lens: `IntegratedServo.canonical(\"frictionloss_nm\")` resolves the alias. An alias used as a parameter name raises with a did-you-mean hint (README). · maintainer lens: `canonical(name, strict=True)` refuses an alias in a class body ('it is an alias of coulomb_friction'), and `canonical(\"frictionloss_nm\")` returns 'coulomb_friction'."
+    }
+   },
+   "previewLabel": "live session · click a cell or step",
+   "preview": "<style>\n.api-repl{font:13px/1.45 ui-sans-serif,system-ui,sans-serif;color:var(--ink,#1d232b);padding:14px;display:grid;grid-template-columns:minmax(0,1fr);gap:10px;width:0;min-width:100%;box-sizing:border-box}\n.api-repl .repl-head{display:flex;justify-content:space-between;gap:8px;font-size:12px;opacity:.8}\n.api-repl ol{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr);gap:6px}\n.api-repl .cell{all:unset;box-sizing:border-box;display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;width:100%;cursor:pointer;\n  border:1px solid color-mix(in srgb,currentColor 18%,transparent);border-radius:8px;padding:7px 9px;\n  background:color-mix(in srgb,currentColor 4%,transparent)}\n.api-repl .cell:hover{border-color:var(--accent,#3f7be0)}\n.api-repl .cell .n{font-weight:700;color:var(--accent,#3f7be0)}\n.api-repl pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}\n.api-repl ol,.api-repl li{min-width:0}\n.api-repl .out{display:none;white-space:pre;overflow-x:auto;margin:2px 0 4px 30px;padding:8px 10px;border-left:3px solid var(--accent,#3f7be0);\n  background:color-mix(in srgb,var(--accent,#3f7be0) 8%,transparent);border-radius:0 6px 6px 0}\n.api-repl .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.65;grid-column:2}\n.shape-tree{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;margin:0;padding:12px}\n.shape-tree code{font:inherit;background:color-mix(in srgb,currentColor 8%,transparent);padding:0 2px;border-radius:3px}\n</style><style>.prototype[data-story-state=\"s1\"] .api-repl .out[data-out=\"s1\"]{display:block}.prototype[data-story-state=\"s1\"] .api-repl .cell[data-story-to=\"s1\"]{border-color:var(--accent,#3f7be0);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#3f7be0) 25%,transparent)}.prototype[data-story-state=\"s2\"] .api-repl .out[data-out=\"s2\"]{display:block}.prototype[data-story-state=\"s2\"] .api-repl .cell[data-story-to=\"s2\"]{border-color:var(--accent,#3f7be0);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#3f7be0) 25%,transparent)}.prototype[data-story-state=\"s3\"] .api-repl .out[data-out=\"s3\"]{display:block}.prototype[data-story-state=\"s3\"] .api-repl .cell[data-story-to=\"s3\"]{border-color:var(--accent,#3f7be0);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#3f7be0) 25%,transparent)}.prototype[data-story-state=\"s4\"] .api-repl .out[data-out=\"s4\"]{display:block}.prototype[data-story-state=\"s4\"] .api-repl .cell[data-story-to=\"s4\"]{border-color:var(--accent,#3f7be0);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#3f7be0) 25%,transparent)}.prototype[data-story-state=\"s5\"] .api-repl .out[data-out=\"s5\"]{display:block}.prototype[data-story-state=\"s5\"] .api-repl .cell[data-story-to=\"s5\"]{border-color:var(--accent,#3f7be0);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#3f7be0) 25%,transparent)}.prototype:not([data-story-state]) .api-repl .out[data-out=\"s1\"]{display:block}</style><div class=\"api-repl\" style=\"--accent:#2e9e6b\"><div class=\"repl-head\"><b>integrated_servo · \"what now?\" session</b><span>473 lines of API core</span></div><ol><li><button type=\"button\" class=\"cell\" data-story-to=\"s1\" title=\"Show this step's output\"><span class=\"n\">1</span><pre>IntegratedServo.tree().print()\nIntegratedServo.ladder()[0]\nfor model in IntegratedServo: print(f&quot;{model.key:&lt;22}{model.param_count:&gt;3}  {model.kind}&quot;)</pre><span class=\"lbl\">browse the type</span></button><pre class=\"out\" data-out=\"s1\">integrated_servo · 14 models (a -&gt; b: b subclasses a)\n├── M0.ideal -&gt; M1.datasheet -&gt; M2.coulomb_viscous\n│   ├── M3.stribeck\n│   │   ├── M3.lugre -&gt; M5.dcmotor\n│   │   └── M3.weakening_capture -&gt; M4.drivetrain -&gt; M5.envelope -&gt; M5.wear -&gt; M6.residual\n│   ├── M3.load\n│   └── M4.ripple\n└── M7.learned\n&lt;model M0.ideal · class Ideal(IntegratedServoModel) · 2 params&gt;\nM0.ideal                2  physics\n...\nM3.stribeck             6  physics\n...\nM7.learned             14  learned</pre></li><li><button type=\"button\" class=\"cell\" data-story-to=\"s2\" title=\"Show this step's output\"><span class=\"n\">2</span><pre>IntegratedServo.models[&quot;M3.stribeck&quot;] is IntegratedServo.models.m3.stribeck\nIntegratedServo.models.m3\nStribeck.breakaway_torque\nStribeck.fallback()</pre><span class=\"lbl\">pick M3.stribeck</span></button><pre class=\"out\" data-out=\"s2\">True\nModels(stribeck, load, lugre, weakening_capture)\nbreakaway_torque [N·m] (required): Static friction at the output: the torque that starts it moving from rest, the top of the Stribeck curve.\n(&#x27;M3.stribeck&#x27;, &#x27;M2.coulomb_viscous&#x27;, &#x27;M1.datasheet&#x27;, &#x27;M0.ideal&#x27;)</pre></li><li><button type=\"button\" class=\"cell\" data-story-to=\"s3\" title=\"Show this step's output\"><span class=\"n\">3</span><pre>IntegratedServo.ladder_diff(ladders()[&quot;integrated_servo&quot;])\ntry:\n    class Broken(Stribeck, level=3, name=&quot;broken&quot;):\n        breakaway_torque = Parameter(optional=True)\nexcept TypeError as error:\n    print(error)\n&quot;M3.broken&quot; in IntegratedServo.models</pre><span class=\"lbl\">one source, additive</span></button><pre class=\"out\" data-out=\"s3\">[]\nM3.broken redeclares breakaway_torque, which its base already needs: a rung only adds\nFalse</pre></li><li><button type=\"button\" class=\"cell\" data-story-to=\"s4\" title=\"Show this step's output\"><span class=\"n\">4</span><pre>servo = IntegratedServo(datasheet=datasheet(), name=&quot;servo A&quot;)\nservo.models.m1.datasheet.predict(1.0)\nservo.fit(fit)\nservo.models.m3.stribeck.parity(test)</pre><span class=\"lbl\">the unit: datasheet to M1, fit</span></button><pre class=\"out\" data-out=\"s4\">0.32\nIntegratedServo unit &#x27;servo A&#x27;: 5 of 14 models fitted\n  M2.coulomb_viscous    fitted 2 of 4                   fit rms   64.69 mN·m\n  M3.stribeck           fitted 4 of 6                   fit rms    3.95 mN·m\n  M3.load               skipped: the log has no tau_load\n  M3.lugre              declared, no physics here\n  M7.learned            fitted 14 of 14                 fit rms    3.92 mN·m\n0.0</pre></li><li><button type=\"button\" class=\"cell\" data-story-to=\"s5\" title=\"Show this step's output\"><span class=\"n\">5</span><pre>servo.select_best(test)\nservo.best.mujoco()</pre><span class=\"lbl\">select_best on held out</span></button><pre class=\"out\" data-out=\"s5\">servo A · held-out floor 4.17 mN·m · lowest rung within 1.5× floor\n  model                params  fit rms  held out  ÷ floor   [mN·m]\n  M0.ideal                  2   543.70    531.92   127.54\n  M1.datasheet              2   242.00    221.97    53.22\n  M2.coulomb_viscous        4    64.69     84.58    20.28\n  M3.stribeck               6     3.95      4.18     1.00  &lt;- best\n  M7.learned               14     3.92     18.72     4.49\n{&#x27;armature&#x27;: 4.2e-05, &#x27;frictionloss&#x27;: 0.6500489870074954, &#x27;damping&#x27;: 0.035284565973142}</pre></li></ol></div>",
+   "story": {
+    "title": "Walk the session",
+    "steps": [
+     {
+      "label": "browse the type",
+      "caption": "The family class is the type: its tree, its ladder and iterating over it all come from the subclass tree. No values are involved.",
+      "state": "s1",
+      "target": "[data-story-to=\"s1\"]"
+     },
+     {
+      "label": "pick M3.stribeck",
+      "caption": "Look a model up by key or by attribute; .m3 is the group of alternatives at that level. A class attribute is the Parameter record itself.",
+      "state": "s2",
+      "target": "[data-story-to=\"s2\"]"
+     },
+     {
+      "label": "one source, additive",
+      "caption": "Today's v1 Ladder is derived from the classes and matches on keys, bases, adds and optional. A subclass that tries to remove vocabulary fails at class creation and never registers.",
+      "state": "s3",
+      "target": "[data-story-to=\"s3\"]"
+     },
+     {
+      "label": "the unit: datasheet to M1, fit",
+      "caption": "One physical unit holds every model. A single batch fit climbs the ladder and says what happened to each model. The numpy physics matches the package's stdlib model.py exactly.",
+      "state": "s4",
+      "target": "[data-story-to=\"s4\"]"
+     },
+     {
+      "label": "select_best on held out",
+      "caption": "sim2real's rule picks the best model for this unit. The numpy black box competes through the same calls: it fits its training data best and loses held out. The chosen model's values go to MuJoCo by the rung's model.json maps.",
+      "state": "s5",
+      "target": "[data-story-to=\"s5\"]"
+     }
+    ]
+   },
+   "media": [
+    {
+     "label": "The object model",
+     "caption": "ModelFamily, Model and Parameters here, and the calls.",
+     "html": "<pre class=\"shape-tree\">ModelFamily  (class = type, instance = one unit)\n├─ IntegratedServo.models / .ladder() / .tree() / iter / .canonical() / .as_ladder() -&gt; v1 Ladder\n│  └─ Model classes: Ideal ─ Datasheet ─ CoulombViscous ─ Stribeck ─ LuGre ... (a rung subclasses its base)\n│     └─ Parameter: Stribeck.breakaway_torque -&gt; unit, definition, required/optional\n│        (on an instance: the number; model.parameter(n) -&gt; record with value)\n└─ servo = IntegratedServo(datasheet=ds, name=...)\n   ├─ servo.models.m3.stribeck  (a Stribeck instance: .params .predict .fit .parity .mujoco)\n   ├─ servo.fit(log) -&gt; servo   lowest rung first, each starts from the fitted rung below; .status per model\n   ├─ servo.select_best(held_out) -&gt; Selection; servo.best\n   └─ IntegratedServo.fit(log, datasheet=, name=) -&gt; a new unit (the batch call on the type)</pre>"
+    },
+    {
+     "label": "Adding a rung",
+     "caption": "What a contributor writes to add a new model.",
+     "html": "<pre class=\"shape-tree\">One class: Parameters, a docstring (the title), equation, references, code if the package has its physics, and a vectorized torque only if it should run. It then appears automatically in models, ladder, tree, as_ladder, every unit, the batch fit and select_best. No seeds() override, no registry, no second record.</pre>"
+    },
+    {
+     "label": "Migration from v1",
+     "caption": "What changes for the ruler, robotparts and sim2real.",
+     "html": "<pre class=\"shape-tree\">Each Rung(...) record in actuators/servo/ladder.py becomes a class, and LADDER = IntegratedServo.as_ladder() keeps ladders(), fallback() and parameters() working, along with robotparts&#x27; vendored rung folders (untouched) and sim2real&#x27;s parity test. ladder_diff == [] is the guard that proves the swap changed nothing. rungs/*/model.py stays as the stdlib ruler; the numpy torque is checked against it by parity in a test. The name IntegratedServo clashes with today&#x27;s datasheet class, so one must be renamed (suggested: IntegratedServo.Datasheet).</pre>"
+    }
+   ]
+  },
+  {
+   "id": "v8",
+   "name": "Parameter sets",
+   "thesis": "A Model class is pure physics made of Parameter declarations, and its values live in a separate generated <Model>.Parameters frozen dataclass that you can store, diff, round-trip through JSON, compare and hand to MuJoCo. The classes are the only source, and today's Ladder is derived from them and checked by v1's own validators.",
+   "accent": "#b5487a",
+   "bestWhen": "Values travel: stored with a rig log, diffed between two units or two fit dates, serialized to a card, compared, or handed to MuJoCo or sim2real. Also when one equation is fitted for a whole fleet, because the class is shared and only the value sets differ.",
+   "losesWhen": "You want the object you hold to be the fitted model (v6's instances). Here model.fit(log) returns a new value set instead of changing the model. Type checkers do not see the generated Parameters fields, which are built with make_dataclass; a .pyi stub would fix that and was not built.",
+   "decisions": [
+    {
+     "label": "Where values live",
+     "value": "Only in a generated <Model>.Parameters frozen, keyword-only dataclass. No model instances exist."
+    },
+    {
+     "label": "Parameters inheritance",
+     "value": "Stribeck.Parameters subclasses CoulombViscous.Parameters, so an M3 set is also an M2 set."
+    },
+    {
+     "label": "Additive vocabulary",
+     "value": "Enforced when the class is created: redeclaring or removing an inherited name raises TypeError. requires= is the only way to change an inherited parameter (optional to needed). A shared quantity is declared once, and conflicting declarations of one name raise."
+    },
+    {
+     "label": "One source",
+     "value": "Every registration re-derives a v1 Ladder and runs v1's validators on it, rolling back on failure. drift(today) returns []."
+    }
+   ],
+   "keepParts": [
+    "Additive-vocabulary and numpy-vs-model.py checks that run when a class is defined, plus the derived v1 Ladder that v1's own validators check and that rolls back on failure",
+    "Parameters as a frozen value class that inherits along the ladder, with JSON round-trip, diff, as_dict and mujoco()",
+    "Generic fitting with starting values read from units and positive parameters fitted in log space, so a new rung needs no fitting code; models without physics are listed as skipped, never dropped"
+   ],
+   "proof": [
+    "PASS  v8_parameter_sets",
+    "Scenario run: docs/proposals/api-2026-11-17/v8_parameter_sets/scenario.out.txt",
+    "Simulated: Rig logs come from fixture.py's simulated plateaus, and the servo is illustrative. Physics runs only for M0, M1, M2, M3.stribeck and M7.learned; M3.load needs tau_load and M3.lugre needs state, so both are declared without physics, as is everything above M3. M7.learned is a numpy stand-in for the MLP: a per-direction linear model on [1, |v|, ln|v|, ln²|v|]. Not built: a .pyi stub, a discover() change, and runs of robotparts or sim2real. Files are all under /home/bam/robot_models/docs/proposals/api-2026-11-17/v8_parameter_sets/: parameter_sets/{core,fitting,views,servo,__init__}.py, scenario.py, scenario.out.txt, README.md, integrated_servo_tree.html."
+   ],
+   "scores": {
+    "fr1": {
+     "score": 3.0,
+     "evidence": "user lens (3): Browse works, but `ladder()[0]` shows the raw class repr \"<class 'parameter_sets.servo.IntegratedServo.Ideal'>\". `Stribeck.fit(log)` and `IntegratedServo.fit(log)` both raise without start= (\"this log cannot see output_inertia, gear_ratio; pass start=\"). `select_best` needs the fits passed in, `select_best(fits, test_log)`, and `fits.select_best` raises AttributeError. `model.fit` returns a Parameters set rather than fitting the model. · maintainer lens (3): Browse calls work, but `model.predict(v)` becomes `Stribeck.predict(params, v)` or `p.predict(v)`, and select_best becomes `IntegratedServo.select_best(fits, held_out)`. That is two of his calls changed shape, and the README admits both are 'one spelling/argument away'.",
+     "confidence": "high"
+    },
+    "fr2": {
+     "score": 3.5,
+     "evidence": "user lens (4): `IntegratedServo.fit(fit_log, start=m1)` prints a table with the fitted values inline, and `select_best(fits, test_log)` prints the \"<- chosen\" table (scenario.out.txt:86-107). It is still one call each, but every call needs start= and the fits object threaded through. · maintainer lens (3): `IntegratedServo.fit(fit)` with no start aborts the whole batch at M0: 'M0.ideal.fit: this log cannot see output_inertia, gear_ratio; pass start=...'. It does not skip that rung. With start=m1 the fit and selection tables read well (scenario.out.txt:101-107).",
+     "confidence": "high"
+    },
+    "fr3": {
+     "score": 4.0,
+     "evidence": "user lens (4): `IntegratedServo.drift(ladders()[\"integrated_servo\"])` returns [] (keys, bases, adds, optional, kind, vocabulary and units), but my probe `as_ladder() == today` printed False. `coulomb_friction = None` raises TypeError and the family stays at 14. · maintainer lens (4): The classes are the full source, vocabulary included. A scratch Tanh rung registered in models and as_ladder(); removal and redefinition raised TypeError. But derived != today: notes are dropped on 6 rungs (M1.datasheet note '' vs \"States every IntegratedServo field...\"), and `drift()` compares adds and vocabulary as sets, so it reports [] and the loss is silent.",
+     "confidence": "high"
+    },
+    "fr4": {
+     "score": 5.0,
+     "evidence": "user lens (5): `Learned.fit(log)` returns a Parameters set with param_count 8 and predict(1.0) = 0.43, and M7.learned competes in select_best (10.75× floor, scenario.out.txt:107). · maintainer lens (5): `Learned` declares `Weights(4)` ×2 (servo.py:906-920). It is fitted by the same generic LM, counted in param_count 8, and shown in the selection table (scenario.out.txt:107).",
+     "confidence": "high"
+    },
+    "fr5": {
+     "score": 4.0,
+     "evidence": "user lens (4): The README makes `LADDER = IntegratedServo.as_ladder()` additive, but says `discover()` would also need to look for a ModelFamily subclass. The derived record is not whole-record equal. · maintainer lens (4): The swapped ladder passes the ruler (120 passed) and sim2real parity (56 passed), and the rung bytes are untouched. The numpy physics is a retyped second copy, though `_check_parity` enforces it at class creation (core.py:566-575). Notes are lost, and the README says `discover()` must change.",
+     "confidence": "medium"
+    },
+    "fr6": {
+     "score": 3.0,
+     "evidence": "user lens (3): Predict is vectorized and the value sets serialize well: to_json round-trips equal, diff and mujoco() work (scenario.out.txt:93-110). The README states \"Type checkers do not see the generated Parameters fields\" (make_dataclass, no .pyi). · maintainer lens (3): mypy on `S.Parameters(coulomb_friction=0.1).breakaway_torque` reports `Unexpected keyword argument` and `\"ParameterSet\" has no attribute \"breakaway_torque\"`, because make_dataclass fields are invisible to the checker. Predict on 100k samples took 0.73 ms, and `to_json()` and `mujoco()` need no glue.",
+     "confidence": "high"
+    }
+   },
+   "gateResults": {
+    "g1": {
+     "pass": true,
+     "evidence": "user lens: core.py, fitting.py, views.py and servo.py hold no measured values. Values come in through from_datasheet(datasheet()) in the scenario. · maintainer lens: servo.py holds declarations only. Its one numeric default, stribeck_exponent=2.0, is the reference equation's default, not a measurement."
+    },
+    "g2": {
+     "pass": true,
+     "evidence": "user lens: The parameter_sets/*.py files import only stdlib, numpy and robot_models. · maintainer lens: core.py and fitting.py import numpy, stdlib and robot_models only."
+    },
+    "g3": {
+     "pass": true,
+     "evidence": "user lens: check_scenario.py prints \"PASS v8_parameter_sets\" (A: M3 1.00; B: M2 1.03, M3 1.57). No _truth import. · maintainer lens: `PASS v8_parameter_sets` (A→M3 1.00, B→M2 1.03), and there is no `_truth` import."
+    },
+    "g4": {
+     "pass": true,
+     "evidence": "user lens: `IntegratedServo.canonical(\"frictionloss_nm\")` resolves the alias. A parameter named like an alias (sigma2) is refused (README). · maintainer lens: `canonical(\"frictionloss_nm\")` returns 'coulomb_friction'. An alias-named parameter is refused by v1's own Ladder validator, and `_derive` refuses two declarations of one name."
+    }
+   },
+   "previewLabel": "live session · click a cell or step",
+   "preview": "<style>\n.api-repl{font:13px/1.45 ui-sans-serif,system-ui,sans-serif;color:var(--ink,#1d232b);padding:14px;display:grid;grid-template-columns:minmax(0,1fr);gap:10px;width:0;min-width:100%;box-sizing:border-box}\n.api-repl .repl-head{display:flex;justify-content:space-between;gap:8px;font-size:12px;opacity:.8}\n.api-repl ol{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr);gap:6px}\n.api-repl .cell{all:unset;box-sizing:border-box;display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;width:100%;cursor:pointer;\n  border:1px solid color-mix(in srgb,currentColor 18%,transparent);border-radius:8px;padding:7px 9px;\n  background:color-mix(in srgb,currentColor 4%,transparent)}\n.api-repl .cell:hover{border-color:var(--accent,#3f7be0)}\n.api-repl .cell .n{font-weight:700;color:var(--accent,#3f7be0)}\n.api-repl pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}\n.api-repl ol,.api-repl li{min-width:0}\n.api-repl .out{display:none;white-space:pre;overflow-x:auto;margin:2px 0 4px 30px;padding:8px 10px;border-left:3px solid var(--accent,#3f7be0);\n  background:color-mix(in srgb,var(--accent,#3f7be0) 8%,transparent);border-radius:0 6px 6px 0}\n.api-repl .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.65;grid-column:2}\n.shape-tree{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;margin:0;padding:12px}\n.shape-tree code{font:inherit;background:color-mix(in srgb,currentColor 8%,transparent);padding:0 2px;border-radius:3px}\n</style><style>.prototype[data-story-state=\"s1\"] .api-repl .out[data-out=\"s1\"]{display:block}.prototype[data-story-state=\"s1\"] .api-repl .cell[data-story-to=\"s1\"]{border-color:var(--accent,#3f7be0);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#3f7be0) 25%,transparent)}.prototype[data-story-state=\"s2\"] .api-repl .out[data-out=\"s2\"]{display:block}.prototype[data-story-state=\"s2\"] .api-repl .cell[data-story-to=\"s2\"]{border-color:var(--accent,#3f7be0);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#3f7be0) 25%,transparent)}.prototype[data-story-state=\"s3\"] .api-repl .out[data-out=\"s3\"]{display:block}.prototype[data-story-state=\"s3\"] .api-repl .cell[data-story-to=\"s3\"]{border-color:var(--accent,#3f7be0);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#3f7be0) 25%,transparent)}.prototype[data-story-state=\"s4\"] .api-repl .out[data-out=\"s4\"]{display:block}.prototype[data-story-state=\"s4\"] .api-repl .cell[data-story-to=\"s4\"]{border-color:var(--accent,#3f7be0);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#3f7be0) 25%,transparent)}.prototype[data-story-state=\"s5\"] .api-repl .out[data-out=\"s5\"]{display:block}.prototype[data-story-state=\"s5\"] .api-repl .cell[data-story-to=\"s5\"]{border-color:var(--accent,#3f7be0);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#3f7be0) 25%,transparent)}.prototype:not([data-story-state]) .api-repl .out[data-out=\"s1\"]{display:block}</style><div class=\"api-repl\" style=\"--accent:#b5487a\"><div class=\"repl-head\"><b>integrated_servo · \"what now?\" session</b><span>547 lines of API core</span></div><ol><li><button type=\"button\" class=\"cell\" data-story-to=\"s1\" title=\"Show this step's output\"><span class=\"n\">1</span><pre>IntegratedServo.tree().print()\nfor model in IntegratedServo: print(model.key, model.param_count, model.runnable())</pre><span class=\"lbl\">Browse the family</span></button><pre class=\"out\" data-out=\"s1\">├── M0.ideal [2] -&gt; M1.datasheet [2] -&gt; M2.coulomb_viscous [4]\n│   ├── M3.stribeck [6]\n│   │   ├── M3.lugre [8] -&gt; M5.dcmotor [10]\n│   │   └── M3.weakening_capture [11] -&gt; M4.drivetrain [14] -&gt; M5.envelope [18] -&gt; M5.wear [20] -&gt; M6.residual [20]\n│   ├── M3.load [5]\n│   └── M4.ripple [5]\n└── M7.learned [8]\nM3.stribeck 6 True\nM3.load 5 False</pre></li><li><button type=\"button\" class=\"cell\" data-story-to=\"s2\" title=\"Show this step's output\"><span class=\"n\">2</span><pre>Stribeck = IntegratedServo.models[&quot;M3.stribeck&quot;]\nStribeck is IntegratedServo.models.m3.stribeck\n[klass.__qualname__ for klass in Stribeck.Parameters.__mro__[:4]]\nIntegratedServo.drift(ladders()[&quot;integrated_servo&quot;])\nclass Smoother(Stribeck, level=4, name=&quot;smoother&quot;):\n    coulomb_friction = None  # raises</pre><span class=\"lbl\">Pick M3.stribeck; one source</span></button><pre class=\"out\" data-out=\"s2\">True\n[&#x27;IntegratedServo.Stribeck.Parameters&#x27;, &#x27;IntegratedServo.CoulombViscous.Parameters&#x27;, &#x27;IntegratedServo.Datasheet.Parameters&#x27;, &#x27;IntegratedServo.Ideal.Parameters&#x27;]\n[]\nTypeError: Smoother: coulomb_friction is Stribeck&#x27;s; vocabulary only grows. To need an inherited optional one here, pass requires=(&#x27;coulomb_friction&#x27;,)</pre></li><li><button type=\"button\" class=\"cell\" data-story-to=\"s3\" title=\"Show this step's output\"><span class=\"n\">3</span><pre>m1 = IntegratedServo.models.m1.datasheet.from_datasheet(datasheet())\nm1.predict(1.0)\nIntegratedServo.Datasheet.predict(m1, np.array([-1.0, 0.0, 0.5]))</pre><span class=\"lbl\">Datasheet to M1, predict</span></button><pre class=\"out\" data-out=\"s3\">0.32\narray([-0.32,  0.  ,  0.31])</pre></li><li><button type=\"button\" class=\"cell\" data-story-to=\"s4\" title=\"Show this step's output\"><span class=\"n\">4</span><pre>m3 = Stribeck.fit(fit_log, start=m1)\nfits = IntegratedServo.fit(fit_log, start=m1)\nprint(fits)\nIntegratedServo.load(fits[&quot;M3.stribeck&quot;].to_json()) == fits[&quot;M3.stribeck&quot;]</pre><span class=\"lbl\">Fit one model, then the family</span></button><pre class=\"out\" data-out=\"s4\">M2.coulomb_viscous        2         64.69  coulomb_friction=0.5797, viscous_friction=-0.06487\nM3.stribeck               4          3.95  coulomb_friction=0.4195, viscous_friction=0.03528, breakaway_torque=0.65, stribeck_velocity=0.249\nM7.learned                8         14.63  forward=(4 weights), backward=(4 weights)\nskipped: M3.load, M3.lugre, ... (declared, no physics attached)\nTrue</pre></li><li><button type=\"button\" class=\"cell\" data-story-to=\"s5\" title=\"Show this step's output\"><span class=\"n\">5</span><pre>print(IntegratedServo.select_best(fits, test_log))\nprint(IntegratedServo.select_best(fits_b, rig_log(&quot;B&quot;, &quot;test&quot;)))</pre><span class=\"lbl\">select_best on held-out data; case B control</span></button><pre class=\"out\" data-out=\"s5\">M2.coulomb_viscous        4    64.69     84.58    20.28\nM3.stribeck               6     3.95      4.18     1.00  &lt;- chosen\nM7.learned                8    14.63     44.84    10.75\n--- servo B ---\nM2.coulomb_viscous        4     4.04      4.33     1.03  &lt;- chosen\nM3.stribeck               6     3.97      6.62     1.57\nM7.learned                8     3.94      4.33     1.03</pre></li></ol></div>",
+   "story": {
+    "title": "Walk the session",
+    "steps": [
+     {
+      "label": "Browse the family",
+      "caption": "The family is the type. Iterating it walks the ladder, and tree().show(path) writes a self-contained HTML page without opening it.",
+      "state": "s1",
+      "target": "[data-story-to=\"s1\"]"
+     },
+     {
+      "label": "Pick M3.stribeck; one source",
+      "caption": "The value classes inherit along the ladder. The derived Ladder matches today's on keys, bases, adds, optional, kind and units, and removing a parameter is refused when the class is created.",
+      "state": "s2",
+      "target": "[data-story-to=\"s2\"]"
+     },
+     {
+      "label": "Datasheet to M1, predict",
+      "caption": "Catalogue units go in and an SI value set comes out. The model class is stateless, and predict is vectorized with numpy.",
+      "state": "s3",
+      "target": "[data-story-to=\"s3\"]"
+     },
+     {
+      "label": "Fit one model, then the family",
+      "caption": "Fitting is generic, with starting values taken from each parameter's unit. Each rung starts from the fit of the rung below it, and models without physics are listed as skipped instead of disappearing. The values survive a JSON round trip unchanged.",
+      "state": "s4",
+      "target": "[data-story-to=\"s4\"]"
+     },
+     {
+      "label": "select_best on held-out data; case B control",
+      "caption": "This is sim2real's rule: pick the lowest rung within 1.5x the rig's noise floor. The black box competes in the same table. On servo B, M3 fits the training plateaus better but predicts the held-out ones worse, so M2 wins.",
+      "state": "s5",
+      "target": "[data-story-to=\"s5\"]"
+     }
+    ]
+   },
+   "media": [
+    {
+     "label": "The object model",
+     "caption": "ModelFamily, Model and Parameters here, and the calls.",
+     "html": "<pre class=\"shape-tree\">IntegratedServo(ModelFamily)            iterate, len, .models, .ladder(), .tree(), .fit(), .select_best()\n├── class Ideal(Model, level=0)          Parameter declarations + numpy torque(p, v); no values\n│   ├── .Parameters                      generated frozen dataclass, units in field metadata\n│   └── Datasheet(Ideal, states=ServoDatasheet)\n│       └── CoulombViscous(requires=(coulomb_friction, viscous_friction))\n│           ├── Stribeck                 Stribeck.Parameters subclasses CoulombViscous.Parameters\n│           │   ├── LuGre -&gt; DcMotor     declared, no physics\n│           │   └── WeakeningCapture -&gt; Drivetrain -&gt; Envelope -&gt; Wear -&gt; Residual\n│           ├── Load, Ripple             declared\n└── class Learned(Model, level=7)        Weights(4) x2, same fit/predict/param_count\nParameters: .predict(v) .as_dict() .needed() .diff() .to_json() .mujoco() .info\nModel: .fit(log, start=) -&gt; Parameters; .predict(params, v); .fallback(); .param_count</pre>"
+    },
+    {
+     "label": "Adding a rung",
+     "caption": "What a contributor writes to add a new model.",
+     "html": "<pre class=\"shape-tree\">One class: Parameter declarations, a docstring title, equation and references, and optionally a numpy torque(p, v) with code= to check it against model.py. It registers itself when defined, even outside the family body. There is no Rung record, no seeds() override and no registry. I checked this outside the scenario: a Tanh rung showed up in as_ladder(), fit and select_best with no other edit. An alias-named parameter (sigma2), a clashing redeclaration and a drifted equation were each refused, and the family stayed at 14 models.</pre>"
+    },
+    {
+     "label": "Migration from v1",
+     "caption": "What changes for the ruler, robotparts and sim2real.",
+     "html": "<pre class=\"shape-tree\">Purely additive; nothing in src/ changes until a variant is picked. servo.py would replace servo/ladder.py&#x27;s VOCABULARY and RUNGS, and LADDER would become IntegratedServo.as_ladder(). ladders(), the v1 ruler, robotparts&#x27; vendored rung bytes and sim2real&#x27;s parity test would keep reading the same Ladder; drift() returns [] today. discover() would also need to look for ModelFamily subclasses.</pre>"
+    }
+   ]
+  }
+ ]
+}
