@@ -25,16 +25,19 @@ velocity-plateau sweep simulated from a hidden Stribeck truth plus noise. Every 
 1. browse the integrated_servo models as a ladder;
 2. pick M3.stribeck: its parameters, units, equation, references, fallback; resolve an alias;
 3. build the datasheet model (M1) from the datasheet and predict the resisting torque at 1 rad/s;
-4. fit M2.coulomb_viscous and M3.stribeck to the rig log;
-5. compare them and choose the rung that pays.
+4. fit M2.coulomb_viscous and M3.stribeck on the fit plateaus;
+5. compare them on the held-out plateaus and choose the lowest rung that reaches the noise floor (amendment 1);
+   the same scenario runs on a second servo (case B, a negative control) where the simpler rung must win.
 
 **Stop line:** runnable physics for M0–M3 only; M4–M7 declared, not run. Fitting is numpy only. No change to `src/`,
 the ruler, robotparts or sim2real; each README states its migration path instead.
 
 **Check:** [check_scenario.py](check_scenario.py) (`/home/bam/robot_models/.venv/bin/python check_scenario.py`):
-the ladder keys, the fallback, the alias, M1 = the stated values in SI, M3 beats M2, and M3 recovers the hidden truth
-(5 % on the friction levels, 10 % on stribeck_velocity and viscous_friction). Shown to fail on a wrong fit before
-any variant was built.
+the ladder keys, the fallback, the alias, M1 = the stated values in SI; the held-out choice (case A → M3.stribeck,
+case B → M2.coulomb_viscous) with each fit's held-out rms recomputed by the check from the package's own rung physics;
+and recovery of the hidden truth (5 % on the friction levels, 10 % on stribeck_velocity and viscous_friction). v0 was
+shown to fail on a wrong fit before any variant was built; amendment 1 was shown to fail a training-rms rule and an
+always-the-richer-rung rule.
 
 ### Weighted criteria (sum 100)
 
@@ -56,6 +59,23 @@ repos consume v1 today. Revise them and the ranking moves.
 - **G2 Light runtime core:** numpy + robot_msgs + stdlib at runtime; anything heavier is an extra.
 - **G3 Recovers the hidden truth:** `check_scenario.py` passes, and the variant never reads `_truth.py`.
 - **G4 One vocabulary per type:** canonical names and aliases resolve as today.
+
+## Amendment 1: choose on held-out data (2026-11-17, after the builds, before the adapt pass)
+
+Raised by the "Robot models sim-to-real summary" session, and Zach's own rule from this morning: "if doing a more
+complex model doesn't actually improve test time performance you are just overfitting". v0's check compared
+TRAINING rms; M3.stribeck nests M2.coulomb_viscous (breakaway_torque = coulomb_friction reduces it to M2), so M3
+always won and the "choose the rung that pays" step graded the optimiser, not the choice.
+
+- `rig_log(case, split)`: fit on plateaus 1, 3, 5, 7, 9; hold out 2, 4, 6, 8, 10. A `plateau` id per sample makes
+  the rig's noise floor observable (pooled within-plateau std).
+- Case B, a negative control: a plain Coulomb + viscous servo, where the check expects M2.coulomb_viscous.
+- The check recomputes held-out rms itself with the package's own rung physics, never trusting a variant's number.
+- The recommended rule is sim2real's (`src/sim2real/cards/schema.py` `select()`): the lowest rung whose held-out
+  rms ÷ noise floor ≤ 1.5. On the reference fit: case A, M2 20.3, M3 1.00 → M3; case B, M2 1.03, M3 1.57 → M2
+  (M3 overfits the fit plateaus and does worse on the held-out ones).
+
+The ruler changed first, alone; then each variant was adapted to it.
 
 ## The five directions (assigned before building)
 

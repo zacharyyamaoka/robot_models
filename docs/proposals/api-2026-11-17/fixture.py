@@ -1,10 +1,16 @@
 """The one scenario every API proposal runs: "I have an accurate datasheet and the rig; I selected the models. What now?"
 
-    datasheet() -> robot_models IntegratedServo   the catalogue's word for one servo, in the catalogue's units
-    rig_log()   -> dict of numpy arrays            a velocity-plateau friction sweep from the 1-DOF rig: v [rad/s], tau [N·m]
+    datasheet()                 -> robot_models IntegratedServo   the catalogue's word for one servo, in its units
+    rig_log(case, split)        -> dict of numpy arrays            a velocity-plateau friction sweep on the 1-DOF rig:
+                                   v [rad/s], tau [N·m], plateau (an id per held speed and direction)
+
+`case` is "A" or "B": two servos on the same rig, opaque on purpose (a scenario passes it through, never branches on
+it). `split` is "fit" (plateaus 1, 3, 5, 7, 9: 0.03 to 2 rad/s), "test" (2, 4, 6, 8, 10: held out) or "all". Choose rungs on "test": a rung
+that nests another always fits its own training data at least as well (amendment 1, Zach 2026-11-17: "if doing a more
+complex model doesn't actually improve test time performance you are just overfitting").
 
 The servo and its numbers are illustrative (no maker, no SKU); they live here, in a proposals folder, never in src/.
-The rig log is simulated from a hidden Stribeck truth (_truth.py) plus noise, so a fit can be graded against it.
+The rig logs are simulated from hidden truths (_truth.py) plus noise, so fits and choices can be graded.
 """
 
 from __future__ import annotations
@@ -18,6 +24,7 @@ from robot_models.datasheet import Stated
 
 PLATEAUS = (0.03, 0.06, 0.1, 0.18, 0.3, 0.5, 0.8, 1.3, 2.0, 3.0)   # rad/s, each run both directions
 SAMPLES_PER_PLATEAU = 25
+SPLITS = ("fit", "test", "all")
 
 
 def datasheet() -> IntegratedServo:
@@ -33,18 +40,23 @@ def datasheet() -> IntegratedServo:
     )
 
 
-def rig_log() -> dict[str, np.ndarray]:
+def rig_log(case: str = "A", split: str = "all") -> dict[str, np.ndarray]:
     """Velocity plateaus, both directions: the output speed held and the torque the motor had to add (tau_r)."""
-    from _truth import NOISE_STD, SEED, TRUTH
+    from _truth import CASES, NOISE_STD
 
-    rng = np.random.default_rng(SEED)
-    speeds = np.repeat(np.array(PLATEAUS), SAMPLES_PER_PLATEAU)
+    if split not in SPLITS:
+        raise ValueError(f"split {split!r} is one of {SPLITS}")
+    truth, seed = CASES[case]
+    rng = np.random.default_rng(seed)
+    index = np.repeat(np.arange(len(PLATEAUS)), SAMPLES_PER_PLATEAU)
+    speeds = np.array(PLATEAUS)[index]
     v = np.concatenate([speeds, -speeds])
-    t = TRUTH
-    level = t["coulomb_friction"] + (t["breakaway_torque"] - t["coulomb_friction"]) * np.exp(
-        -((np.abs(v) / t["stribeck_velocity"]) ** 2))
-    tau = level * np.sign(v) + t["viscous_friction"] * v + rng.normal(0.0, NOISE_STD, v.shape)
-    return {"v": v, "tau": tau}
+    plateau = np.concatenate([index + 1, -(index + 1)])          # +k forward, -k backward, k = 1..10
+    level = truth["coulomb_friction"] + (truth["breakaway_torque"] - truth["coulomb_friction"]) * np.exp(
+        -((np.abs(v) / truth["stribeck_velocity"]) ** 2))
+    tau = level * np.sign(v) + truth["viscous_friction"] * v + rng.normal(0.0, NOISE_STD, v.shape)
+    keep = np.ones(v.shape, bool) if split == "all" else ((np.abs(plateau) % 2 == 1) == (split == "fit"))
+    return {"v": v[keep], "tau": tau[keep], "plateau": plateau[keep]}
 
 
 def expected_m1_at(v: float) -> float:
