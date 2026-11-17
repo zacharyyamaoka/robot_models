@@ -1,0 +1,93 @@
+
+# 1. Browse the integrated_servo models: one row per preset (today's ladder keys), one column per slot
+>>> from servo_slots import servo
+>>> print(servo)   # * = runs in this prototype (M0-M3); every other row is declared, not run
+integrated_servo       inertia  friction           ripple  drivetrain  electrics  wear  correction
+M0.ideal             * ideal    ·                  ·       ·           ·          ·     ·
+M1.datasheet         * ideal    datasheet          ·       ·           ·          ·     ·
+M2.coulomb_viscous   * ideal    coulomb_viscous    ·       ·           ·          ·     ·
+M3.stribeck          * ideal    stribeck           ·       ·           ·          ·     ·
+M3.load              * ideal    load               ·       ·           ·          ·     ·
+M3.lugre             * ideal    lugre              ·       ·           ·          ·     ·
+M3.weakening_capture   ideal    weakening_capture  ·       ·           ·          ·     ·
+M4.ripple              ideal    coulomb_viscous    ripple  ·           ·          ·     ·
+M4.drivetrain          ideal    weakening_capture  ·       drivetrain  ·          ·     ·
+M5.dcmotor             ideal    lugre              ·       ·           dcmotor    ·     ·
+M5.envelope            ideal    weakening_capture  ·       drivetrain  envelope   ·     ·
+M5.wear                ideal    weakening_capture  ·       drivetrain  envelope   wear  ·
+M6.residual            ideal    weakening_capture  ·       drivetrain  envelope   wear  residual
+M7.learned             ·        ·                  ·       ·           ·          ·     learned
+
+# 2. Pick M3.stribeck: a preset is a named composition; climbing to it swaps one slot
+>>> m3 = servo["M3.stribeck"]
+>>> m3 == servo["M2.coulomb_viscous"].redeclare(friction="stribeck")
+True
+>>> print(m3.describe())   # each term's equation, what the model needs (units, meaning), what it reads, references
+M3.stribeck = inertia:ideal + friction:stribeck
+  inertia:ideal      tau_r = 0; armature = output_inertia
+  friction:stribeck  tau_r = (coulomb_friction + (breakaway_torque − coulomb_friction)·exp(−(|v|/stribeck_velocity)^stribeck_exponent))·sign(v) + viscous_friction·v
+  needs output_inertia     kg·m²      The part's own inertia about its axis, referred to the output (MuJoCo's armature).
+        gear_ratio         —          Rotor turns per output turn, > 0: 10 for a 10:1 reducer.
+        coulomb_friction   N·m        Coulomb friction torque at the output.
+        viscous_friction   N·m·s/rad  Viscous friction coefficient at the output.
+        breakaway_torque   N·m        Static friction at the output: the torque that starts it moving from rest, the top of the Stribeck curve.
+        stribeck_velocity  rad/s      Output speed over which friction falls from breakaway_torque to coulomb_friction.
+  reads 32 more when stated (.optional): peak_torque, rated_torque, max_output_speed, …, stribeck_exponent
+  refs  Siciliano, Sciavicco, Villani, Oriolo (2009) · MuJoCo (2026) · Armstrong-Hélouvry, Dupont, Canudas de Wit (1994) · Olsson, Åström, Canudas de Wit, Gäfvert, Lischinsky (1998)
+
+# 2b. Its fallback, an alias, and a composition no rung names
+>>> for lower in m3.fallback(): print(lower)   # each step down steps back or empties one slot
+M3.stribeck = inertia:ideal + friction:stribeck
+M2.coulomb_viscous = inertia:ideal + friction:coulomb_viscous
+M1.datasheet = inertia:ideal + friction:datasheet
+M0.ideal = inertia:ideal
+>>> m3.canonical("frictionloss_nm")            # the rack twin's name for one of its quantities
+'coulomb_friction'
+>>> m3 + servo.term("ripple")                  # lmfit-style +: the parameters are the union
+off the ladder = inertia:ideal + friction:stribeck + ripple:ripple
+>>> (m3 + servo.term("ripple")).parameters[-1]
+'harmonics'
+>>> m3 + servo.term("lugre")                   # a slot holds one option
+ValueError: two terms fill friction: a slot holds one option; swap it with .redeclare(friction=...)
+
+# 3. The datasheet model (M1): stated values in SI, then the resisting torque at 1 rad/s
+>>> import numpy as np
+>>> from fixture import datasheet, rig_log
+>>> m1 = servo["M1.datasheet"].from_datasheet(datasheet())   # catalogue units in: rpm, kg·cm², mN·m·s/rad
+>>> m1
+M1.datasheet from the datasheet
+  needs    output_inertia 4.2e-05 kg·m² · gear_ratio 10
+  stated   peak_torque 3.5 N·m · rated_torque 1.05 N·m · max_output_speed 24.09 rad/s · coulomb_friction 0.3 N·m · viscous_friction 0.02 N·m·s/rad
+>>> m1.predict(1.0)
+0.32
+>>> m1.predict(np.array([-1.0, 0.1, 1.0]))
+array([-0.32 ,  0.302,  0.32 ])
+>>> servo["M3.stribeck"].from_datasheet(datasheet())        # a datasheet states no Stribeck curve
+ValueError: M3.stribeck: the datasheet states no breakaway_torque, stribeck_velocity; fit them: .fit(log, ...)
+
+# 4. Fit M2.coulomb_viscous, then climb one slot to M3.stribeck and fit again on the same rig log
+>>> log = rig_log()   # velocity plateaus, both directions: v [rad/s], tau [N·m]
+>>> m2_fit = servo["M2.coulomb_viscous"].fit(log, start=m1)
+>>> m3_fit = m2_fit.model.redeclare(friction="stribeck").fit(log, start=m2_fit)
+>>> m2_fit
+M2.coulomb_viscous from a fit to 500 samples (rms 0.06894 N·m)
+  fitted   coulomb_friction 0.5601 N·m · viscous_friction -0.03347 N·m·s/rad
+  carried  output_inertia 4.2e-05 kg·m² · gear_ratio 10
+  stated   peak_torque 3.5 N·m · rated_torque 1.05 N·m · max_output_speed 24.09 rad/s
+>>> m3_fit
+M3.stribeck from a fit to 500 samples (rms 0.00406 N·m)
+  fitted   coulomb_friction 0.4199 N·m · viscous_friction 0.03508 N·m·s/rad · breakaway_torque 0.6502 N·m · stribeck_velocity 0.2493 rad/s
+  carried  output_inertia 4.2e-05 kg·m² · gear_ratio 10
+  stated   peak_torque 3.5 N·m · rated_torque 1.05 N·m · max_output_speed 24.09 rad/s
+
+# 5. Compare them: does the friction swap pay?
+>>> from composed_terms import compare
+>>> verdict = compare(m2_fit, m3_fit)
+>>> print(verdict)
+model                 k  rms N·m      BIC  swapped
+M2.coulomb_viscous    2   0.0689  -2662.1
+M3.stribeck           4   0.0041  -5481.7  friction: coulomb_viscous → stribeck   ← chosen
+>>> verdict.chosen
+'M3.stribeck'
+>>> m3_fit.params   # SI values by canonical name, ready for MuJoCo or sim2real
+{'coulomb_friction': 0.4199166478341351, 'viscous_friction': 0.03507676270088142, 'breakaway_torque': 0.6502394617437682, 'stribeck_velocity': 0.24928147442400214}

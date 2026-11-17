@@ -1,0 +1,90 @@
+
+# Step 1 · Browse the integrated_servo models as a ladder
+>>> from estimators import Model, families
+>>> servo = families()["integrated_servo"]       # the type's models, organized as its ladder: the climb's search order
+>>> print(servo)
+integrated_servo: 14 models (a → b: b extends a; ° declared, not run here)
+M0.ideal → M1.datasheet → M2.coulomb_viscous
+├── M3.stribeck
+│   ├── M3.lugre → M5.dcmotor°
+│   └── M3.weakening_capture° → M4.drivetrain° → M5.envelope° → M5.wear° → M6.residual°
+├── M3.load
+└── M4.ripple°
+M7.learned°
+>>> ladder = list(servo.models())                # every key, in today's order: each one an unfitted Model
+
+# Step 2 · Pick M3.stribeck: what it needs, means and falls back on; resolve an alias
+>>> stribeck = servo.model("M3.stribeck")
+>>> print(stribeck.describe())
+M3.stribeck  Stribeck friction: breakaway falling to Coulomb with speed
+  falls back  M3.stribeck → M2.coulomb_viscous → M1.datasheet → M0.ideal   (siblings: M3.load, M4.ripple)
+  needs       output_inertia [kg·m²], gear_ratio [1], coulomb_friction [N·m], viscous_friction [N·m·s/rad], breakaway_torque [N·m], stribeck_velocity [rad/s]
+  fits        coulomb_friction, viscous_friction, breakaway_torque, stribeck_velocity
+  optional    stribeck_exponent [1] (+31 datasheet fields below it, read when stated)
+  equation    tau_r = (coulomb_friction + (breakaway_torque − coulomb_friction)·exp(−(|v|/stribeck_velocity)^stribeck_exponent))·sign(v) + viscous_friction·v
+  reference   Armstrong-Hélouvry, Dupont, Canudas de Wit (1994). A survey of models, analysis tools and compensation methods for the control of machines with friction. Automatica.
+  reference   Olsson, Åström, Canudas de Wit, Gäfvert, Lischinsky (1998). Friction models and friction compensation. European Journal of Control.
+  physics     actuators/rungs/stribeck/model.py: tau_r(v)
+>>> servo.canonical("frictionloss_nm")                               # the rack twin's name for the quantity
+'coulomb_friction'
+>>> servo.model("M3.stribeck", frictionloss_nm=0.3).get_params()     # set by an alias, held by the canonical name
+{'coulomb_friction': 0.3}
+
+# Step 3 · The datasheet model: M1 from the stated values, then predict
+>>> from fixture import datasheet, rig_log
+>>> ds = datasheet()                              # the catalogue's units: rpm, kg·cm², mN·m·s/rad
+>>> m1 = Model.from_datasheet(ds)                 # M1.datasheet by default: every stated value it holds, in SI
+>>> print(m1)
+M1.datasheet: not fitted
+  stated   output_inertia 4.2e-05 kg·m², gear_ratio 10, peak_torque 3.5 N·m, rated_torque 1.05 N·m, max_output_speed 24.09 rad/s, coulomb_friction 0.3 N·m, viscous_friction 0.02 N·m·s/rad
+>>> m1.predict(1.0)                               # tau_r at 1 rad/s [N·m]
+0.32
+
+# Step 4 · Fit M2 and M3 to the rig log
+>>> log = rig_log()                               # velocity plateaus, both directions: v [rad/s], tau [N·m]
+>>> m2 = Model.from_datasheet(ds, "M2.coulomb_viscous").fit(log)
+>>> m3 = Model.from_datasheet(ds, "M3.stribeck").fit(log)    # starts from the datasheet; the rest is scanned
+>>> print(m2)
+M2.coulomb_viscous: fitted on 500 samples, rms 0.0689 N·m
+  fitted   coulomb_friction 0.5601 N·m
+  fitted   viscous_friction -0.03347 N·m·s/rad
+  stated   output_inertia 4.2e-05 kg·m², gear_ratio 10, peak_torque 3.5 N·m, rated_torque 1.05 N·m, max_output_speed 24.09 rad/s
+>>> print(m3)
+M3.stribeck: fitted on 500 samples, rms 0.00406 N·m
+  fitted   coulomb_friction 0.4199 N·m
+  fitted   viscous_friction 0.03508 N·m·s/rad
+  fitted   breakaway_torque 0.6502 N·m
+  fitted   stribeck_velocity 0.2493 rad/s
+  stated   output_inertia 4.2e-05 kg·m², gear_ratio 10, peak_torque 3.5 N·m, rated_torque 1.05 N·m, max_output_speed 24.09 rad/s
+>>> m1.score(log), m2.score(log), m3.score(log)  # R², sklearn's score
+(0.8136124659397225, 0.983570080208875, 0.9999430205637946)
+
+# Step 5 · Compare: climb the ladder while the next rung pays
+>>> report = servo.climb(ds, log)                 # M1 from the datasheet, then fit every rung above, keep the best
+>>> print(report)
+climb integrated_servo on 500 samples: BIC = n·ln(RSS/n) + k·ln(n), climb while ΔBIC < −2
+  rung                   k  rms N·m    BIC   ΔBIC  verdict
+  M1.datasheet           0   0.2322  -1460      ·  start: the datasheet, nothing fitted
+  M2.coulomb_viscous     2   0.0689  -2662  -1202  pays → climb
+  M3.stribeck            4   0.0041  -5482  -2820  pays → climb
+  M3.load                ·        ·      ·      ·  skipped: the log has no tau_load
+  M4.ripple              ·        ·      ·      ·  skipped: declared, above the M0–M3 stop line
+  M3.lugre               ·        ·      ·      ·  skipped: the log has no dt
+  M3.weakening_capture   ·        ·      ·      ·  skipped: declared, no physics shipped
+chosen M3.stribeck: nothing above it fits this log
+>>> report.chosen
+<Model M3.stribeck: 9 values, 4 fitted on 500 samples>
+
+# Step 6 · The same climb stops where the log stops paying
+>>> fast = {column: values[abs(log["v"]) >= 0.8] for column, values in log.items()}  # only plateaus ≥ 0.8 rad/s
+>>> print(servo.climb(ds, fast))                  # no slow plateaus: the Stribeck drop is invisible, so M3 is not worth it
+climb integrated_servo on 200 samples: BIC = n·ln(RSS/n) + k·ln(n), climb while ΔBIC < −2
+  rung                   k  rms N·m    BIC   ΔBIC  verdict
+  M1.datasheet           0   0.1471   -767      ·  start: the datasheet, nothing fitted
+  M2.coulomb_viscous     2   0.0039  -2206  -1439  pays → climb
+  M3.stribeck            4   0.0039  -2196    +10  does not pay
+  M3.load                ·        ·      ·      ·  skipped: the log has no tau_load
+  M4.ripple              ·        ·      ·      ·  skipped: declared, above the M0–M3 stop line
+chosen M2.coulomb_viscous: M3.stribeck does not pay
+
+# run() returns: chosen M3.stribeck, M3 rms 0.0041 < M2 rms 0.0689

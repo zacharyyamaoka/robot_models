@@ -1,0 +1,92 @@
+
+# 1a. Name the type and take its kit: its models, datasheet class, experiments and fidelity metric in one object
+>>> import numpy as np
+>>> from type_kit import types
+>>> from fixture import datasheet, rig_log
+>>> servo = types.of(datasheet())       # Hugging Face AutoModel's move: the datasheet's class names its type
+>>> servo                               # types.integrated_servo is the same kit
+<integrated_servo kit> A joint in one housing: a motor, its drive, a reducer or none, and an encoder.
+  models       14 on the ladder: 6 runs, 1 structure only, 7 declared
+  datasheet    IntegratedServo, 35 typed fields
+  experiments  chirps, reading_datasheet, velocity_plateaus, slow_plateaus, pendulum_sweeps, small_reversals, rotor_angle_sweep, measure_only_board_calibration
+  fidelity     tau_r_rms over the rig floor
+
+# 1b. Its models are its ladder; each names the rig motion that identifies what it adds (robotparts' measured_by)
+>>> print(servo.models)
+M0.ideal                              runs            chirps, reading_datasheet
+└─ M1.datasheet                       runs            reading_datasheet
+   └─ M2.coulomb_viscous              runs            velocity_plateaus
+      ├─ M3.stribeck                  runs            slow_plateaus
+      │  ├─ M3.lugre                  runs            small_reversals
+      │  │  └─ M5.dcmotor             declared        measure_only_board_calibration
+      │  └─ M3.weakening_capture      structure only  -
+      │     └─ M4.drivetrain          declared        -
+      │        └─ M5.envelope         declared        -
+      │           └─ M5.wear          declared        -
+      │              └─ M6.residual   declared        -
+      ├─ M3.load                      runs            pendulum_sweeps
+      └─ M4.ripple                    declared        rotor_angle_sweep
+M7.learned                            declared        -
+
+# 2. Pick M3.stribeck: what it needs in what unit, the experiment identifying each, equation, references, fallback
+>>> stribeck = servo.models["M3.stribeck"]
+>>> print(stribeck)
+M3.stribeck  Stribeck friction: breakaway falling to Coulomb with speed
+  identified by
+    chirps              output_inertia [kg·m²]
+    reading_datasheet   gear_ratio []
+    velocity_plateaus   coulomb_friction [N·m], viscous_friction [N·m·s/rad]
+    slow_plateaus       breakaway_torque [N·m], stribeck_velocity [rad/s], stribeck_exponent [] (optional, 2 when absent)
+  equation    tau_r = (coulomb_friction + (breakaway_torque − coulomb_friction)·exp(−(|v|/stribeck_velocity)^stribeck_exponent))·sign(v) + viscous_friction·v
+  references  Armstrong-Hélouvry, Dupont, Canudas de Wit (1994); Olsson, Åström, Canudas de Wit, Gäfvert, Lischinsky (1998)
+  fallback    M3.stribeck -> M2.coulomb_viscous -> M1.datasheet -> M0.ideal
+  physics     actuators/rungs/stribeck/model.py (runs)
+>>> [model.key for model in stribeck.fallback]
+['M3.stribeck', 'M2.coulomb_viscous', 'M1.datasheet', 'M0.ideal']
+>>> servo.canonical("frictionloss_nm")  # one vocabulary per type: the rack twin's name resolves to the type's own
+'coulomb_friction'
+
+# 3. The datasheet model: M1.datasheet holding the stated values in SI, then its resisting torque at 1 rad/s
+>>> m1 = servo.from_datasheet(datasheet())
+>>> {name: m1.values[name] for name in ("coulomb_friction", "viscous_friction", "max_output_speed")}
+{'coulomb_friction': 0.3, 'viscous_friction': 0.02, 'max_output_speed': 24.085543677521745}
+>>> m1.predict(1.0)
+0.32
+
+# 4. The rig log: which of the kit's experiments it is, then every model the log and the datasheet identify
+>>> log = rig_log()
+>>> servo.experiments.covered_by(log)
+('velocity_plateaus', 'slow_plateaus')
+>>> found = servo.identify(log, datasheet=datasheet())
+>>> print(found)
+  M0.ideal            the datasheet's 2 stated values
+  M1.datasheet        the datasheet's 7 stated values
+  M2.coulomb_viscous  coulomb_friction=0.5601, viscous_friction=-0.03347
+  M3.stribeck         coulomb_friction=0.4199, viscous_friction=0.03508, breakaway_torque=0.6502, stribeck_velocity=0.2493
+  not yet: M3.load: run pendulum_sweeps
+  not yet: M3.lugre: run small_reversals
+  not yet: M3.weakening_capture: structure only: no published physics (the type holds its terms)
+  not yet: M4.ripple, M4.drivetrain, M5.dcmotor, M5.envelope, M5.wear, M6.residual, M7.learned: declared: this round runs M0-M3 only
+
+# 5. Compare with the type's fidelity metric (RMS over the rig's own plateau scatter); choose the rung that pays
+>>> comparison = servo.compare(found, log)
+>>> print(comparison)
+  model                 rms N·m    floor  x floor  twinned (<= 1.5x)
+  M0.ideal               0.5378   0.0041   131.61  no
+  M1.datasheet           0.2322   0.0041    56.82  no
+  M2.coulomb_viscous     0.0689   0.0041    16.87  no
+  M3.stribeck            0.0041   0.0041     0.99  yes
+  chosen: M3.stribeck, the lowest rung the rig cannot tell from the part
+
+# 6. What now: hand the chosen model on (SI, numpy in and out); the kit names the motion that unlocks the next rung
+>>> chosen = comparison.chosen
+>>> dict(chosen.values)
+{'output_inertia': 4.2e-05, 'gear_ratio': 10.0, 'coulomb_friction': 0.41991641949494457, 'viscous_friction': 0.03507686421451761, 'breakaway_torque': 0.6502393104593884, 'stribeck_velocity': 0.24928215331007678}
+>>> chosen.predict(np.array([-1.0, -0.1, 0.1, 1.0]))
+array([-0.455 , -0.6195,  0.6195,  0.455 ])
+>>> found.missing["M3.lugre"]
+'run small_reversals'
+>>> print(servo.experiments["small_reversals"])
+small_reversals: "small reversals, recorded fast"
+  identifies sigma0, sigma1
+  on M3.lugre

@@ -1,0 +1,74 @@
+
+# 1 · browse the ladder
+>>> from subclass_ladder.servo import ServoModel
+>>> print(ServoModel.tree())
+integrated_servo · class ServoModel · 14 models (a -> b: b subclasses a)
+├── M0.ideal -> M1.datasheet -> M2.coulomb_viscous
+│   ├── M3.stribeck
+│   │   ├── M3.lugre -> M5.dcmotor
+│   │   └── M3.weakening_capture -> M4.drivetrain -> M5.envelope -> M5.wear -> M6.residual
+│   ├── M3.load
+│   └── M4.ripple
+└── M7.learned
+>>> ServoModel.ladder()
+('M0.ideal', 'M1.datasheet', 'M2.coulomb_viscous', 'M3.stribeck', 'M3.load', 'M3.lugre', 'M3.weakening_capture', 'M4.ripple', 'M4.drivetrain', 'M5.dcmotor', 'M5.envelope', 'M5.wear', 'M6.residual', 'M7.learned')
+
+# 2 · pick M3.stribeck
+>>> from subclass_ladder.servo import Stribeck
+>>> print(Stribeck.describe())
+M3.stribeck · class Stribeck(CoulombViscous) · Stribeck friction: breakaway falling to Coulomb with speed
+  tau_r = (coulomb_friction + (breakaway_torque − coulomb_friction)·exp(−(|v|/stribeck_velocity)^stribeck_exponent))·sign(v) + viscous_friction·v
+  needs breakaway_torque [N·m]: Static friction at the output: the torque that starts it moving from rest, the top of the Stribeck curve.
+  needs stribeck_velocity [rad/s]: Output speed over which friction falls from breakaway_torque to coulomb_friction.
+  reads stribeck_exponent [1]: Shape exponent of the Stribeck curve, how sharply friction falls with speed; 2 when absent.
+  inherits output_inertia [kg·m²], gear_ratio [1], coulomb_friction [N·m], viscous_friction [N·m·s/rad]; reads 31 more when stated
+  cites Armstrong-Hélouvry, Dupont, Canudas de Wit (1994); Olsson, Åström, Canudas de Wit, Gäfvert, Lischinsky (1998)
+  runs actuators/rungs/stribeck/model.py · also at M3: M3.load, M3.lugre, M3.weakening_capture
+>>> [klass.__name__ for klass in Stribeck.__mro__]
+['Stribeck', 'CoulombViscous', 'Datasheet', 'Ideal', 'ServoModel', 'Model', 'object']
+>>> Stribeck.fallback()
+('M3.stribeck', 'M2.coulomb_viscous', 'M1.datasheet', 'M0.ideal')
+>>> ServoModel.canonical("frictionloss_nm")
+'coulomb_friction'
+
+# 3 · datasheet to M1, predict
+>>> import numpy as np
+>>> from fixture import datasheet, rig_log
+>>> from subclass_ladder.servo import Datasheet
+>>> m1 = Datasheet.from_datasheet(datasheet())
+>>> m1
+Datasheet(output_inertia=4.2e-05, gear_ratio=10.0, peak_torque=3.5, rated_torque=1.05, max_output_speed=24.085543677521745, coulomb_friction=0.3, viscous_friction=0.02)
+>>> m1.torque(1.0)
+0.32
+>>> m1.torque(np.array([-1.0, 0.0, 0.5]))
+array([-0.32,  0.  ,  0.31])
+
+# 4 · fit M2 and M3
+>>> from subclass_ladder.servo import CoulombViscous
+>>> log = rig_log()
+>>> m2 = CoulombViscous.fit(log, start=m1)
+>>> m3 = Stribeck.fit(log, start=m2)
+>>> m2.coulomb_friction, m2.viscous_friction
+(0.5601499382598149, -0.03347063727300118)
+>>> m3.coulomb_friction, m3.breakaway_torque, m3.stribeck_velocity, m3.viscous_friction
+(0.4199164192197515, 0.6502393102767854, 0.2492821541292309, 0.03507686433678171)
+>>> m3.output_inertia, m3.gear_ratio
+(4.2e-05, 10.0)
+
+# 5 · compare and choose
+>>> comparison = ServoModel.compare([m1, m2, m3], log)
+>>> print(comparison)
+rung                 fitted  rms [N·m]       BIC
+M1.datasheet              0     0.2322   -1460.2
+M2.coulomb_viscous        2     0.0689   -2662.1
+M3.stribeck               4     0.0041   -5481.7  <- lowest BIC
+>>> chosen = comparison.chosen
+>>> chosen.key, isinstance(chosen, CoulombViscous)
+('M3.stribeck', True)
+
+# 6 · hand it on
+>>> chosen.mujoco()
+{'armature': 4.2e-05, 'frictionloss': 0.6502393102767854, 'damping': 0.03507686433678171}
+>>> from subclass_ladder.servo import Drivetrain
+>>> Drivetrain.runnable, Drivetrain.needs()[-3:]
+(False, ('harmonics', 'backlash', 'torsional_stiffness'))

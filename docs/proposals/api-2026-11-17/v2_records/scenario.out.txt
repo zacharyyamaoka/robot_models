@@ -1,0 +1,87 @@
+
+## 1. Browse the integrated_servo models as a ladder
+>>> from family_records import families    # robot_models.family once landed
+>>> servo = families()["integrated_servo"]
+>>> print(servo.tree())
+integrated_servo: A joint in one housing: a motor, its drive, a reducer or none, and an encoder.
+M0.ideal* → M1.datasheet* → M2.coulomb_viscous*
+├── M3.stribeck*
+│   ├── M3.lugre* → M5.dcmotor
+│   └── M3.weakening_capture → M4.drivetrain → M5.envelope → M5.wear → M6.residual
+├── M3.load*
+└── M4.ripple
+M7.learned
+* runnable here: 6 of 14 (physics attached for M0-M3 only); the rest are declared records
+>>> servo.children("M2.coulomb_viscous")
+('M3.stribeck', 'M3.load', 'M4.ripple')
+
+## 2. Pick M3.stribeck: parameters, units, equation, references, fallback; resolve an alias
+>>> stribeck = servo["M3.stribeck"]
+>>> print(stribeck)
+M3.stribeck  Stribeck friction: breakaway falling to Coulomb with speed
+  base      M2.coulomb_viscous
+  inherits  output_inertia [kg·m²], gear_ratio, coulomb_friction [N·m], viscous_friction [N·m·s/rad]
+  adds      breakaway_torque [N·m]: Static friction at the output: the torque that starts it moving from rest, the top of the Stribeck curve.
+            stribeck_velocity [rad/s]: Output speed over which friction falls from breakaway_torque to coulomb_friction.
+  optional  stribeck_exponent (+31 inherited, read when stated)
+  equation  tau_r = (coulomb_friction + (breakaway_torque − coulomb_friction)·exp(−(|v|/stribeck_velocity)^stribeck_exponent))·sign(v) + viscous_friction·v
+  refs      Armstrong-Hélouvry, Dupont, Canudas de Wit (1994)… https://doi.org/10.1016/0005-1098(94)90209-7
+            Olsson, Åström, Canudas de Wit, Gäfvert, Lischinsky (1998)… https://doi.org/10.1016/S0947-3580(98)70113-X
+  physics   actuators/rungs/stribeck/model.py: torque(v [rad/s]) -> tau_r [N·m]; a fit varies coulomb_friction, viscous_friction, breakaway_torque, stribeck_velocity
+>>> servo.fallback("M3.stribeck")
+('M3.stribeck', 'M2.coulomb_viscous', 'M1.datasheet', 'M0.ideal')
+>>> servo.canonical("frictionloss_nm")
+'coulomb_friction'
+
+## 3. The datasheet model (M1) from the datasheet: the resisting torque at 1 rad/s
+>>> from fixture import datasheet, rig_log
+>>> values = servo.values(datasheet())
+>>> values
+Values(integrated_servo, 7 stated, SI):
+  peak_torque        3.5          N·m
+  rated_torque       1.05         N·m
+  max_output_speed   24.0855      rad/s
+  coulomb_friction   0.3          N·m
+  viscous_friction   0.02         N·m·s/rad
+  gear_ratio         10
+  output_inertia     4.2e-05      kg·m²
+>>> m1 = servo["M1.datasheet"].bind(values)
+>>> m1(v=1.0)
+0.32
+>>> m1(v=np.array([-1.0, 0.0, 1.0]))
+array([-0.32,  0.  ,  0.32])
+
+## 4. Fit M2.coulomb_viscous and M3.stribeck to the rig log
+>>> log = rig_log()
+>>> m2 = servo["M2.coulomb_viscous"].fit(log["tau"], v=log["v"], values=values)
+>>> m3 = stribeck.fit(log["tau"], v=log["v"], values=values)
+>>> print(m3)
+M3.stribeck fitted on 500 samples, rms 0.00406
+  output_inertia     4.2e-05    kg·m²      given
+  gear_ratio         10                    given
+  coulomb_friction   0.41992    N·m        fitted
+  viscous_friction   0.035077   N·m·s/rad  fitted
+  breakaway_torque   0.65024    N·m        fitted
+  stribeck_velocity  0.24928    rad/s      fitted
+  + 3 optional values it reads: peak_torque, rated_torque, max_output_speed
+>>> round(m2.rms, 4), round(m3.rms, 4)
+(0.0689, 0.0041)
+
+## 5. Compare them and choose the rung that pays
+>>> verdict = servo.compare(m1, m2, m3, observed=log["tau"], v=log["v"])
+>>> verdict
+model                fitted        rms        BIC
+M3.stribeck               4    0.00406    -5481.7
+M2.coulomb_viscous        2    0.06894    -2662.1
+M1.datasheet              0     0.2322    -1460.2
+chosen: M3.stribeck, BIC 2819.7 below M2.coulomb_viscous
+>>> verdict.chosen
+'M3.stribeck'
+
+## 6. Hand it on: MuJoCo's joint attributes, a vectorized call; a declared rung says it does not run
+>>> m3.mujoco()
+{'armature': 4.2e-05, 'frictionloss': 0.6502392062209615, 'damping': 0.035076934159658735}
+>>> m3(v=np.array([0.05, 0.5, 2.0])).round(4)
+array([0.6429, 0.4416, 0.4901])
+>>> servo["M4.drivetrain"].fit(log["tau"], v=log["v"], values=values)  # -> NotImplementedError
+NotImplementedError: M4.drivetrain is declared, not runnable here: physics is attached for M0-M3 only (the round's stop line)
