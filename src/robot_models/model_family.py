@@ -1,15 +1,14 @@
-"""PartType -> Models -> Model -> Parameter: a part type's models as classes; values live on Model INSTANCES.
+"""ModelFamily -> Model -> Parameter: a part type's models as classes; values live on Model INSTANCES.
 
 Round 2's pick, v6 "Fitted instances" (docs/proposals/api-2026-11-17/), named as PEP 0004 amendment 2 records:
 
-    class IntegratedServo(PartType, id="integrated_servo"):              # the type: the one object per part type
-        Datasheet = IntegratedServoDatasheet                             # its datasheet class (PEP 0003)
+    class IntegratedServo(ModelFamily, id="integrated_servo"):           # a part type's models: one family
         class Stribeck(CoulombViscous, level=3, name="stribeck"):        # a rung subclasses its base
             breakaway_torque = Parameter("N·m", "Static friction ...")   # new: unit + definition, required
             coulomb_friction = Parameter()                               # inherited: only ever tightened
-    IntegratedServo.models.m3.stribeck                                   # a Model class; .models.m3 is a Models too
-    m3 = IntegratedServo.models.m3.stribeck.fit(log, start=m1)           # a fit returns an instance
-    IntegratedServo.fit(log, start=m1).select_best(held_out)             # batch: any Models group, the type forwards
+    IntegratedServo.m3.stribeck                                          # a Model class; .m3 is a ModelFamily too
+    m3 = IntegratedServo.m3.stribeck.fit(log, start=m1)                  # a fit returns an instance
+    IntegratedServo.fit(log, start=m1).select_best(held_out)             # batch: any family, a level's too
 
 The classes are the one source of the type's models: `IntegratedServo.v1_ladder()` builds today's `Ladder` record from
 them, equal to `ladders()["integrated_servo"]`. numpy + stdlib only; importing `robot_models.ladder` or a datasheet
@@ -44,7 +43,7 @@ SELECT_LIMIT = 1.5
 Log = Mapping[str, np.ndarray]  # a rig log: v [rad/s], tau [N·m], plateau (an id per held speed)
 # WHY reserved: parameters share the class namespace with the API (V1's "one namespace" flaw), so a clash raises.
 API_NAMES = frozenset({"key", "level", "word", "kind", "title", "equation", "references", "note", "wears", "composes",
-                       "code", "part_type", "parameters", "own", "param_count", "fitted_count", "fallback", "needs",
+                       "code", "family", "parameters", "own", "param_count", "fitted_count", "fallback", "needs",
                        "describe", "rung", "runnable", "inputs", "from_datasheet", "fit", "predict", "score",
                        "values", "params", "mujoco", "weights", "degree"})
 LEVEL = re.compile(r"[mM](\d+)")
@@ -103,7 +102,8 @@ class Model(metaclass=_ModelType):
     title: ClassVar[str]
     code: ClassVar[str]
     kind: ClassVar[str] = "physics"
-    part_type: ClassVar[Any] = None
+    family: ClassVar[Any] = None                 # the type's ModelFamily, once the rung joins it
+    _datasheet: ClassVar[type | None] = None     # the datasheet class whose fields this rung reads (M1)
     parameters: ClassVar[dict[str, Parameter]] = {}
     own: ClassVar[tuple[str, ...]] = ()          # what this rung adds or tightens, in declaration order
     param_count: ClassVar[int] = 0
@@ -117,6 +117,7 @@ class Model(metaclass=_ModelType):
         cls.level, cls.word, cls.key = level, name, f"M{level}.{name}"
         inherited, own = dict(cls.parameters), {}
         if datasheet is not None:  # WHY (PEP 0003 §6): a datasheet's typed fields ARE rung M1, read from its class
+            cls._datasheet = datasheet
             for record in v1.datasheet_vocabulary(datasheet):
                 if record.name not in inherited:
                     own[record.name] = Parameter(record.unit, record.definition, record.shape, record.note, False,
@@ -134,8 +135,8 @@ class Model(metaclass=_ModelType):
         cls.title = (vars(cls).get("__doc__") or "").strip()
         cls.code = f"{RUNG_CODE}/{name}" if (PACKAGE / RUNG_CODE / name).is_dir() else ""
         cls.param_count = cls._count()
-        if cls.part_type is not None:  # WHY: a rung declared after its type joins it; nothing drops silently
-            cls.part_type._add(cls)
+        if cls.family is not None:  # WHY: a rung declared after its family joins it; nothing drops silently
+            cls.family._add(cls)
 
     @classmethod
     def _additive(cls, name: str, new: Parameter, inherited: dict[str, Parameter]) -> Parameter:
@@ -197,7 +198,7 @@ class Model(metaclass=_ModelType):
                   for n in cls.own]
         inherited = [f"{n} [{p[n].unit or '1'}]" for n in cls.needs() if n not in cls.own]
         more = sum(1 for n in p if n not in cls.own and not p[n].required)
-        siblings = [m.word for m in (cls.part_type if cls.part_type is not None else ()) if m.level == cls.level and m is not cls]
+        siblings = [m.word for m in (cls.family if cls.family is not None else ()) if m.level == cls.level and m is not cls]
         runs = f"{cls.code}/model.py, numpy-vectorized" if cls.runnable() else "declared, not runnable here"
         return "\n".join([*lines, f"  inherits {', '.join(inherited) or 'nothing'}; + {more} optional, read when stated",
                           f"  param_count {cls.param_count} · runs {runs} · also at M{cls.level}: "
@@ -210,7 +211,7 @@ class Model(metaclass=_ModelType):
         unknown = [name for name in values if name not in self.parameters]
         if unknown:
             raise TypeError(f"{self.key} has no parameter {unknown[0]!r} "
-                            f"(canonical: {_canonical(self.part_type, unknown[0])!r})")
+                            f"(canonical: {_canonical(self.family, unknown[0])!r})")
         missing = [name for name in self.needs() if values.get(name) is None]
         if missing:
             raise TypeError(f"{self.key} needs {', '.join(missing)}")
@@ -259,8 +260,8 @@ class Model(metaclass=_ModelType):
     def _torque(cls, values: Mapping[str, Any], inputs: Mapping[str, Any]) -> Any:
         terms = values if isinstance(values, _Reading) else dict(values)
         for term in _reference(cls.code)[2]["terms"]:  # the reference's own symbols (LuGre's sigma2) via aliases
-            if term not in terms and _canonical(cls.part_type, term) in terms:
-                terms[term] = terms[_canonical(cls.part_type, term)]
+            if term not in terms and _canonical(cls.family, term) in terms:
+                terms[term] = terms[_canonical(cls.family, term)]
         return _run(cls.code, terms, inputs)
 
     def score(self, log: Log) -> float:
@@ -288,7 +289,7 @@ class Model(metaclass=_ModelType):
         values = {**{n: _unit_seeds(cls.parameters[n].unit, log)[0] for n in cls.needs()}, **given}
         reading, inputs = _Reading(values), {"v": log["v"], **{n: log[n] for n in cls.inputs()}}
         cls._torque(reading, inputs)
-        reads = {_canonical(cls.part_type, name) for name in reading.read}
+        reads = {_canonical(cls.family, name) for name in reading.read}
         # WHY read AND moved: inertia is never read by a friction curve; LuGre's sigma0 is read but cancels at steady state
         # WHY a jittered probe: equal seeds (breakaway = Coulomb) would hide stribeck_velocity
         probe = {**values, **{n: values[n] * (1.1 + 0.1 * i) for i, n in enumerate(cls.needs())}}
@@ -359,182 +360,119 @@ class BlackBox(Model):
         return f"{type(self).__name__}({self.weights.size} weights, a degree-{self.degree} polynomial per direction)"
 
 
-# --- a group of models: the type's, or one level's ---------------------------------------------------------------
+# --- a family of models: the type's, or one level's --------------------------------------------------------------
 
 
-class Models:
-    """A group of Model classes in ladder order, and the batch calls over them.
+class _FamilyMeta(type):
+    """WHY a metaclass: a family is a class, `class IntegratedServo(ModelFamily, id=...)`, and its models are reached
+    on the class itself, as Zach wrote them: `IntegratedServo["M3.stribeck"]`, `IntegratedServo.m3.stribeck`,
+    `for model in IntegratedServo`."""
 
-    `IntegratedServo.models` is every rung; `.models.m3` (or `.models["M3"]`) is a Models too, and `.models.m3.stribeck`
-    (or `.models["M3.stribeck"]`) one Model class. Every group has `fit`, `select_best`, `ladder()` and `tree()`.
-    Iterating gives the Model classes, as `for model in IntegratedServo` does.
-
-    WHY one class for every level (Types vs ModelFamily, 2026-11-17): Zach's "a parent class that holds a bunch of
-    single models and kinda helps us do compact batch operations" — and "M1 models yet again a Model grouping" — so
-    the type's whole set and one level's are the same kind of object, never a ModelFamily beside a Group.
-    """
-
-    def __init__(self, part_type: Any, keys: Iterable[str] | None = None, label: str = "") -> None:
-        self._part_type, self._label = part_type, label
-        self._own: dict[str, type[Model]] | None = None if keys is not None else {}  # the type's root group holds them
-        self._keys = None if keys is None else tuple(keys)
-
-    # --- what the group holds ---------------------------------------------------------------------------------
-
-    def _models(self) -> dict[str, type[Model]]:
-        """WHY computed on access: a level's group sees a rung declared after it was first read."""
-        root = self._part_type.models._own
-        return root if self._keys is None else {key: root[key] for key in self._keys if key in root}
-
-    def _add(self, model: type[Model]) -> None:
-        self._own[model.key] = model
-
-    def _subgroup(self, level: int) -> Models:
-        keys = [key for key, model in self._models().items() if model.level == level]
-        if not keys:
-            raise KeyError(f"{self._name()} has no M{level} models; levels: "
-                           f"{', '.join(sorted({f'M{m.level}' for m in self}, key=lambda s: int(s[1:])))}")
-        return Models(self._part_type, keys, f"m{level}")
-
-    def __getitem__(self, key: str) -> Any:
-        """`models["M3.stribeck"]` is a Model class; `models["M3"]` the M3 group."""
-        models = self._models()
+    def __getitem__(cls, key: str) -> Any:
+        """`IntegratedServo["M3.stribeck"]` is a Model class; `IntegratedServo["M3"]` the M3 family."""
+        models = cls._models()
         if key in models:
             return models[key]
         level = LEVEL.fullmatch(key)
         if level:
-            return self._subgroup(int(level[1]))
-        raise KeyError(f"{key!r}: no model or level in {self._name()}; keys are {', '.join(models)}")
+            return cls._subfamily(int(level[1]))
+        raise KeyError(f"{key!r}: no model or level in {cls._name()}; keys are {', '.join(models)}")
 
-    def __getattr__(self, name: str) -> Any:
-        """`models.m3` is the M3 group; `models.m3.stribeck` the model whose word is stribeck in that group."""
+    def __getattr__(cls, name: str) -> Any:
+        """`IntegratedServo.m3` is the M3 family; `.m3.stribeck` the model whose word is stribeck in that family."""
         if name.startswith("_"):
             raise AttributeError(name)
         level = LEVEL.fullmatch(name)
         try:
             if level:
-                return self._subgroup(int(level[1]))
+                return cls._subfamily(int(level[1]))
         except KeyError as error:
             raise AttributeError(str(error)) from None
-        found = [model for model in self._models().values() if model.word == name]
+        found = [model for model in cls._models().values() if model.word == name]
         if len(found) == 1:
             return found[0]
         if found:
-            raise AttributeError(f"{name!r} names {', '.join(m.key for m in found)} in {self._name()}: write "
+            raise AttributeError(f"{name!r} names {', '.join(m.key for m in found)} in {cls._name()}: write "
                                  f".m<level>.{name}")
-        raise AttributeError(f"{self._name()} has no model {name!r}; words here: "
-                             f"{', '.join(m.word for m in self)}")
-
-    def __iter__(self) -> Iterator[type[Model]]:
-        return iter(self._models().values())
-
-    def __len__(self) -> int:
-        return len(self._models())
-
-    def __contains__(self, item: object) -> bool:
-        models = self._models()
-        return item in models or (isinstance(item, type) and models.get(getattr(item, "key", None)) is item)
-
-    def keys(self) -> tuple[str, ...]:
-        return tuple(self._models())
-
-    def values(self) -> tuple[type[Model], ...]:
-        return tuple(self._models().values())
-
-    def items(self) -> tuple[tuple[str, type[Model]], ...]:
-        return tuple(self._models().items())
-
-    def __dir__(self) -> list[str]:
-        return sorted({*super().__dir__(), *(m.word for m in self), *(f"m{m.level}" for m in self)})
-
-    def _name(self) -> str:
-        return f"{self._part_type.__name__}.models{'.' + self._label if self._label else ''}"
-
-    def __repr__(self) -> str:
-        names = ", ".join(m.word for m in self) if self._label else ", ".join(self.keys())
-        return f"<Models {self._name()} · {len(self)}: {names}>"
-
-    # --- the batch calls --------------------------------------------------------------------------------------
-
-    def ladder(self, top: type[Model] | None = None) -> tuple[type[Model], ...]:
-        """Every model in ladder order; with `top`, its fallback chain (one line, top first), within this group."""
-        models = self._models()
-        return tuple(models[key] for key in (top.fallback() if top else models) if key in models)
-
-    def tree(self) -> Tree:
-        return Tree(self)
-
-    def fit(self, log: Log, start: Model | None = None) -> Fits:
-        """Fit every runnable model in the group, climbing: each starts from its nearest fitted base and `start`.
-        A model this log cannot fit is a skip with its reason, never a failure."""
-        result = Fits(self, log)
-        for model in self:
-            base = next((result[key].values() for key in model.fallback()[1:] if key in result), {})
-            try:  # WHY merged: the climb carries the user's start (the datasheet) past rungs that drop its fields
-                result[model.key] = model.fit(log, start={**(start.values() if start else {}), **base})
-            except NotFittable as reason:
-                result.skipped[model.key] = str(reason)
-        return result
-
-    def select_best(self, held_out: Log, among: Iterable[Model] | Mapping[str, Model],
-                    limit: float = SELECT_LIMIT) -> Selection:
-        """Among the fitted instances of this group's models: the lowest rung whose held-out rms ÷ the rig's noise
-        floor ≤ limit (sim2real's rule), else None. `IntegratedServo.fit(log).select_best(held_out)` is the same."""
-        order = list(self._part_type.models.keys())
-        candidates = among.values() if isinstance(among, Mapping) else among
-        ranked = sorted((m for m in candidates if type(m) in self), key=lambda m: order.index(m.key))
-        return Selection(tuple(ranked), tuple(m.score(held_out) for m in ranked), noise_floor(held_out), limit)
-
-
-# --- the type ----------------------------------------------------------------------------------------------------
-
-
-class _PartTypeMeta(type):
-    """WHY a metaclass: `for model in IntegratedServo` iterates the type itself, as Zach wrote it."""
+        raise AttributeError(f"{cls._name()} has no model {name!r}; words here: {', '.join(m.word for m in cls)}")
 
     def __iter__(cls) -> Iterator[type[Model]]:
-        return iter(cls.models)
+        return iter(cls._models().values())
 
     def __len__(cls) -> int:
-        return len(cls.models)
+        return len(cls._models())
+
+    def __contains__(cls, item: object) -> bool:
+        models = cls._models()
+        return item in models or (isinstance(item, type) and models.get(getattr(item, "key", None)) is item)
+
+    def __dir__(cls) -> list[str]:
+        return sorted({*super().__dir__(), *(m.word for m in cls), *(f"m{m.level}" for m in cls)})
 
     def __call__(cls, *args: Any, **kwargs: Any) -> Any:
-        # WHY refuse: values live on Model instances (v6), and a datasheet is `IntegratedServo.Datasheet(...)`; a call
-        # to the type means nothing yet, so it never silently builds one of the two (Types vs ModelFamily).
-        datasheet = f"{cls.__name__}.Datasheet(...)" if getattr(cls, "Datasheet", None) else "its datasheet class"
-        raise TypeError(f"{cls.__name__} is a part type, not a value: a datasheet is {datasheet}, a model's values "
-                        f"are {cls.__name__}.models.m<level>.<word>(...) or what its .fit(log) returns")
+        # WHY refuse: values live on Model instances (v6); a call to the family means nothing yet, so it never
+        # silently builds one, and a later meaning has no first one to retire.
+        raise TypeError(f"{cls._name()} is a model family, not a value: a model's values are "
+                        f"{cls._name()}.m<level>.<word>(...) or what its .fit(log) returns")
 
     def __repr__(cls) -> str:
-        return f"<PartType {cls.__name__} · {cls.id} · {len(cls)} models>" if "models" in vars(cls) else super().__repr__()
+        if vars(cls).get("_level") is not None:
+            return f"<ModelFamily {cls._name()} · {len(cls)}: {', '.join(m.word for m in cls)}>"
+        if "_own" in vars(cls):
+            return f"<ModelFamily {cls.__name__} · {cls.id} · {len(cls)} models: {', '.join(cls.keys())}>"
+        return super().__repr__()
 
 
-class PartType(metaclass=_PartTypeMeta):
-    """A generic kind of part, no maker: its models (classes nested in its body), its Datasheet class, its aliases,
-    packed and deployment names. `fit`, `select_best`, `ladder()`, `tree()` and iteration forward to `.models`.
+class ModelFamily(metaclass=_FamilyMeta):
+    """A family of Model classes in ladder order, and the batch calls over them; a part type's whole set is one,
+    declared as a class whose body nests its models, and every level of it (`IntegratedServo.m3`) is one too.
 
-    WHY "PartType", not "ModelFamily" (PEP 0004 amendment 2): "family" already names a maker's product line, a kind
-    of physics and sim2real's slices of one model; the type owns more than its models; robot_models' ladder.py opens
-    "A part type's ladder of models"."""
+        IntegratedServo["M3.stribeck"], IntegratedServo.m3.stribeck     # one Model class
+        IntegratedServo.m3, IntegratedServo["M3"]                       # the M3 family
+        IntegratedServo.fit(log), .select_best(held_out, fits), .ladder(top=), .tree(); for model in IntegratedServo
+
+    WHY one kind of object at every level (2026-11-17): Zach's "a parent class that holds a bunch of single models and
+    kinda helps us do compact batch operations", and "M1 models yet again a Model grouping". WHY "ModelFamily" and no
+    `.models` (Zach, 2026-11-17: "As we are in robot models all there really is is models"): robot_models knows
+    ModelFamily -> Model -> Parameter only; the type that joins a datasheet to its models lives in robotparts (PEP 0004
+    amendment 2). "Models" was renamed for readability: "to make Models clearly different from Model".
+    """
 
     id: ClassVar[str]
-    models: ClassVar[Models]
-    Datasheet: ClassVar[type | None] = None
     aliases: ClassVar[tuple] = ()
     packed: ClassVar[tuple] = ()
     deployment: ClassVar[tuple] = ()
+    _root: ClassVar[Any] = None          # a level's family: the type's family it reads; None on the type's own
+    _level: ClassVar[int | None] = None
 
-    def __init_subclass__(cls, *, id: str, **kwargs: Any) -> None:  # `id`: the type's id, as Ladder.type
+    def __init_subclass__(cls, *, id: str | None = None, level: int | None = None, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
-        cls.id, cls.models = id, Models(cls)
+        if level is not None:  # a level's family (_subfamily): it holds nothing of its own
+            return
+        if id is None:
+            raise TypeError(f"class {cls.__name__}(ModelFamily) needs id=, the type's id (as Ladder.type)")
+        cls.id, cls._own, cls._levels = id, {}, {}
         found = [v for v in vars(cls).values() if isinstance(v, builtins.type) and issubclass(v, Model) and "key" in vars(v)]
         for model in sorted(found, key=lambda model: model.level):  # stable: declaration order within a level
             cls._add(model)
 
+    # --- what the family holds --------------------------------------------------------------------------------
+
+    @classmethod
+    def _models(cls) -> dict[str, type[Model]]:
+        """WHY computed on access: a level's family sees a rung declared after it was first read."""
+        own = vars(cls._root or cls).get("_own")
+        if own is None:
+            return {}
+        return own if cls._level is None else {key: m for key, m in own.items() if m.level == cls._level}
+
     @classmethod
     def _add(cls, model: type[Model]) -> None:
-        if model.word in dir(Models):
-            raise TypeError(f"{model.key}: the word {model.word!r} is a Models call; name the rung otherwise")
+        if cls._level is not None:
+            raise TypeError(f"{model.key}: a rung joins its type's family, not the level {cls._name()}")
+        calls = {name for name in {*dir(ModelFamily), *vars(_FamilyMeta), "id"} if not name.startswith("_")}
+        if model.word in calls:
+            raise TypeError(f"{model.key}: the word {model.word!r} is a ModelFamily call; name the rung otherwise")
         vocabulary = {p.name: p for m in cls for p in m.parameters.values()}
         for name in model.own:  # WHY one vocabulary per type (G4): a name means one thing on every branch
             old, new = vocabulary.get(name), model.parameters[name]
@@ -542,45 +480,92 @@ class PartType(metaclass=_PartTypeMeta):
                 raise TypeError(f"{model.key}: {name} is an alias of the type, never a parameter name")
             if old is not None and (old.unit, old.definition, old.shape) != (new.unit, new.definition, new.shape):
                 raise TypeError(f"{model.key}: {name} [{new.unit}] differs from its other branch's [{old.unit}]")
-        model.part_type = cls
-        cls.models._add(model)
+        model.family = cls
+        cls._own[model.key] = model
         cls.__dict__.get("_v1") and delattr(cls, "_v1")  # a new rung changes the derived record
 
-    # --- forwarded to .models ---------------------------------------------------------------------------------
+    @classmethod
+    def _subfamily(cls, level: int) -> Any:
+        if not any(m.level == level for m in cls):
+            raise KeyError(f"{cls._name()} has no M{level} models; levels: "
+                           f"{', '.join(sorted({f'M{m.level}' for m in cls}, key=lambda s: int(s[1:])))}")
+        root = cls._root or cls
+        if level not in root._levels:  # WHY cached: `IntegratedServo.m3 is IntegratedServo.m3`
+            root._levels[level] = _FamilyMeta(f"{root.__name__}.m{level}", (ModelFamily,),
+                                              {"_root": root, "_level": level, "id": root.id, "__doc__": root.__doc__},
+                                              level=level)
+        return root._levels[level]
+
+    @classmethod
+    def _name(cls) -> str:
+        return cls.__name__
+
+    @classmethod
+    def keys(cls) -> tuple[str, ...]:
+        return tuple(cls._models())
+
+    @classmethod
+    def values(cls) -> tuple[type[Model], ...]:
+        return tuple(cls._models().values())
+
+    @classmethod
+    def items(cls) -> tuple[tuple[str, type[Model]], ...]:
+        return tuple(cls._models().items())
+
+    # --- the batch calls --------------------------------------------------------------------------------------
 
     @classmethod
     def ladder(cls, top: type[Model] | None = None) -> tuple[type[Model], ...]:
-        return cls.models.ladder(top)
+        """Every model in ladder order; with `top`, its fallback chain (one line, top first), within this family."""
+        models = cls._models()
+        return tuple(models[key] for key in (top.fallback() if top else models) if key in models)
 
     @classmethod
     def tree(cls) -> Tree:
-        return cls.models.tree()
+        return Tree(cls)
 
     @classmethod
     def fit(cls, log: Log, start: Model | None = None) -> Fits:
-        return cls.models.fit(log, start)
+        """Fit every runnable model in the family, climbing: each starts from its nearest fitted base and `start`.
+        A model this log cannot fit is a skip with its reason, never a failure."""
+        result = Fits(cls, log)
+        for model in cls:
+            base = next((result[key].values() for key in model.fallback()[1:] if key in result), {})
+            try:  # WHY merged: the climb carries the user's start (the datasheet) past rungs that drop its fields
+                result[model.key] = model.fit(log, start={**(start.values() if start else {}), **base})
+            except NotFittable as reason:
+                result.skipped[model.key] = str(reason)
+        return result
 
     @classmethod
     def select_best(cls, held_out: Log, among: Iterable[Model] | Mapping[str, Model],
                     limit: float = SELECT_LIMIT) -> Selection:
-        return cls.models.select_best(held_out, among, limit)
+        """Among the fitted instances of this family's models: the lowest rung whose held-out rms ÷ the rig's noise
+        floor ≤ limit (sim2real's rule), else None. `IntegratedServo.fit(log).select_best(held_out)` is the same."""
+        order = list((cls._root or cls).keys())
+        candidates = among.values() if isinstance(among, Mapping) else among
+        ranked = sorted((m for m in candidates if type(m) in cls), key=lambda m: order.index(m.key))
+        return Selection(tuple(ranked), tuple(m.score(held_out) for m in ranked), noise_floor(held_out), limit)
 
-    # --- the type's own -------------------------------------------------------------------------------------
+    # --- the type's record ------------------------------------------------------------------------------------
 
     @classmethod
     def v1_ladder(cls) -> v1.Ladder:
-        """Today's `Ladder` record, derived from the classes (the classes are the one source)."""
-        if "_v1" not in vars(cls):
-            vocabulary = {p.name: p.record() for m in cls for p in m.parameters.values()}
-            first = [p.name for p in v1.datasheet_vocabulary(cls.Datasheet)] if cls.Datasheet else []
+        """Today's `Ladder` record of the type, derived from the classes (the classes are the one source). The
+        datasheet class it names is the one the M1 rung reads its fields from (`datasheet=`)."""
+        root = cls._root or cls
+        if "_v1" not in vars(root):
+            datasheet = next((vars(m)["_datasheet"] for m in root if vars(m).get("_datasheet")), None)
+            vocabulary = {p.name: p.record() for m in root for p in m.parameters.values()}
+            first = [p.name for p in v1.datasheet_vocabulary(datasheet)] if datasheet else []
             order = [*first, *(name for name in vocabulary if name not in first)]
-            cls._v1 = v1.Ladder(cls.id, (cls.__doc__ or "").strip(), tuple(vocabulary[n] for n in order),
-                                tuple(m.rung() for m in cls), cls.aliases, cls.packed, cls.deployment, cls.Datasheet)
-        return cls._v1
+            root._v1 = v1.Ladder(root.id, (root.__doc__ or "").strip(), tuple(vocabulary[n] for n in order),
+                                 tuple(m.rung() for m in root), root.aliases, root.packed, root.deployment, datasheet)
+        return root._v1
 
     @classmethod
     def canonical(cls, name: str) -> str:
-        return _canonical(cls, name)
+        return _canonical(cls._root or cls, name)
 
 
 # --- what the batch calls return ---------------------------------------------------------------------------------
@@ -589,17 +574,17 @@ class PartType(metaclass=_PartTypeMeta):
 class Fits(dict):
     """{key: fitted instance}, `.skipped` {key: why}; prints as a table; `.select_best(held_out)` chooses."""
 
-    def __init__(self, models: Models, log: Log) -> None:
+    def __init__(self, family: type[ModelFamily], log: Log) -> None:
         super().__init__()
-        self.models, self.log, self.skipped = models, log, {}
+        self.family, self.log, self.skipped = family, log, {}
 
     def select_best(self, held_out: Log, limit: float = SELECT_LIMIT) -> Selection:
-        return self.models.select_best(held_out, self, limit)
+        return self.family.select_best(held_out, self, limit)
 
     def __str__(self) -> str:
-        lines = [f"{self.models._name()}.fit · {self.log['v'].size} samples · {len(self)} fitted, {len(self.skipped)} "
+        lines = [f"{self.family._name()}.fit · {self.log['v'].size} samples · {len(self)} fitted, {len(self.skipped)} "
                  f"skipped", f"{'model':<22}{'params':>7}{'fitted':>7}{'fit rms':>9}  [mN·m]"]
-        for model in self.models:
+        for model in self.family:
             fitted = self.get(model.key)
             lines.append(f"{model.key:<22}{model.param_count:>7}" + (
                 f"{fitted.fitted_count:>7}{1e3 * fitted.score(self.log):>9.2f}" if fitted else
@@ -631,22 +616,21 @@ class Selection:
 
 
 class Tree:
-    """A group's class tree: `.print()` as text, `.show()` writes an HTML page with a mermaid diagram."""
+    """A family's class tree: `.print()` as text, `.show()` writes an HTML page with a mermaid diagram."""
 
-    def __init__(self, models: Models) -> None:
-        self.models = models
+    def __init__(self, family: type[ModelFamily]) -> None:
+        self.family = family
 
     def _parent(self, model: type[Model]) -> str | None:
-        """The nearest model it extends within this group: a level's tree is its own roots."""
-        return next((key for key in model.fallback()[1:] if key in self.models.keys()), None)
+        """The nearest model it extends within this family: a level's tree is its own roots."""
+        return next((key for key in model.fallback()[1:] if key in self.family.keys()), None)
 
     def _children(self, key: str | None) -> list[type[Model]]:
-        return [m for m in self.models if self._parent(m) == key]
+        return [m for m in self.family if self._parent(m) == key]
 
     def text(self) -> str:
         """A run of single children is one line (a -> b: b subclasses a); the tree branches where the type does."""
-        part_type = self.models._part_type
-        lines = [f"{part_type.id} · {self.models._name()} · {len(self.models)} models (a -> b: b subclasses a)"]
+        lines = [f"{self.family.id} · {self.family._name()} · {len(self.family)} models (a -> b: b subclasses a)"]
 
         def draw(node: type[Model], prefix: str, last: bool) -> None:
             chain, below = [node.key], self._children(node.key)
@@ -672,20 +656,20 @@ class Tree:
             return f'  {m.key.replace(".", "_")}["<b>{m.key}</b> · {m.param_count} params{adds}{more}"]' + (
                 "" if m.runnable() else ":::declared")
 
-        edges = [f"  {m.key.replace('.', '_')} --> {parent.replace('.', '_')}" for m in self.models
+        edges = [f"  {m.key.replace('.', '_')} --> {parent.replace('.', '_')}" for m in self.family
                  if (parent := self._parent(m))]
-        return "\n".join(["graph BT", *map(node, self.models), *edges, "  classDef declared stroke-dasharray: 4 3"])
+        return "\n".join(["graph BT", *map(node, self.family), *edges, "  classDef declared stroke-dasharray: 4 3"])
 
     def show(self, path: str | Path | None = None) -> Path:
         """Write a page (mermaid from a pinned CDN, the text tree as its fallback) and return its path; opens nothing."""
-        name = self.models._name()
+        name = self.family._name()
         path = Path(path or Path(tempfile.gettempdir()) / f"{name.replace('.', '_')}_tree.html")
         rows = "".join(f"<tr><td>{m.key}<td>{n}<td>{p.unit or '1'}<td>{'required' if p.required else 'optional'}"
-                       f"<td>{html.escape(p.definition)}" for m in self.models for n, p in m.parameters.items()
+                       f"<td>{html.escape(p.definition)}" for m in self.family for n, p in m.parameters.items()
                        if n in m.own)
         path.write_text(f"""<!doctype html><meta charset="utf-8"><title>{name}</title>
 <style>body{{font:14px system-ui;margin:24px}}td{{padding:2px 8px}}tr:nth-child(even){{background:#f2f2f2}}</style>
-<h1>{name} · {len(self.models)} models</h1><pre class="mermaid">{self.mermaid()}</pre>
+<h1>{name} · {len(self.family)} models</h1><pre class="mermaid">{self.mermaid()}</pre>
 <pre>{html.escape(self.text())}</pre><h2>What each model adds</h2><table>{rows}</table>
 <script type="module">import m from "https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.esm.min.mjs";
 m.initialize({{startOnLoad: true}});</script>""", encoding="utf-8")
@@ -702,9 +686,9 @@ def noise_floor(log: Log) -> float:
     return float(np.sqrt(spread @ spread / (spread.size - plateaus.size)))
 
 
-def _canonical(part_type: Any, name: str) -> str:
+def _canonical(family: Any, name: str) -> str:
     try:
-        return part_type.v1_ladder().canonical(name) if part_type is not None else name
+        return family.v1_ladder().canonical(name) if family is not None else name
     except (KeyError, ValueError):
         return name
 
@@ -815,5 +799,5 @@ def _least_squares(residual: Callable[[np.ndarray], np.ndarray], x: np.ndarray, 
     return x, cost
 
 
-__all__ = ["API_NAMES", "BlackBox", "Fits", "Model", "Models", "NotFittable", "Parameter", "PartType", "SELECT_LIMIT",
+__all__ = ["API_NAMES", "BlackBox", "Fits", "Model", "ModelFamily", "NotFittable", "Parameter", "SELECT_LIMIT",
            "Selection", "Tree", "noise_floor"]

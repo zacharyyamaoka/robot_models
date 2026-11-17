@@ -1,4 +1,4 @@
-"""The integrated servo's part type: `class IntegratedServo(PartType)`, its 14 models as nested classes (PEP 0004
+"""The integrated servo's models: `class IntegratedServo(ModelFamily)`, its 14 models as nested classes (PEP 0004
 amendment 2; round 2's pick, v6 "Fitted instances").
 
 A class body lists what its rung ADDS: `Parameter(unit, definition)` is new and required, `required=False` is read
@@ -6,11 +6,11 @@ when stated, and `Parameter()` makes a parameter the base already states require
 it). The docstring is the rung's title. The fallback is the MRO; the ladder is the declaration order, by level.
 
     from robot_models import IntegratedServo
-    IntegratedServo.models.m3.stribeck.fit(log, start=m1)        # one model: returns a fitted instance
-    IntegratedServo.fit(log, start=m1).select_best(held_out)     # the batch, on IntegratedServo.models
+    IntegratedServo.m3.stribeck.fit(log, start=m1)               # one model: returns a fitted instance
+    IntegratedServo.fit(log, start=m1).select_best(held_out)     # the batch, on the whole family
 
 `IntegratedServo.v1_ladder()` derives today's `Ladder` from these classes; it equals `ladders()["integrated_servo"]`
-(tests/test_part_type.py), so ladder.py's hand-written record and these classes cannot drift apart.
+(tests/test_model_family.py), so ladder.py's hand-written record and these classes cannot drift apart.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from robot_models import references as refs
 from robot_models.actuators.servo import ladder as today  # aliases, packed and deployment names: not models
 from robot_models.actuators.servo.integrated_servo import IntegratedServoDatasheet
 from robot_models.ladder import Wear as WearLaw
-from robot_models.part_type import BlackBox, Model, Parameter, PartType
+from robot_models.model_family import BlackBox, Model, ModelFamily, Parameter
 
 # WHY module constants: three parameters first appear on two branches (M4.ripple and M5.dcmotor), so they are written
 # once and placed on both; the type refuses two different definitions of one name.
@@ -30,12 +30,12 @@ THERMAL_RESISTANCE = Parameter("K/W", "Winding-to-ambient thermal resistance: wi
 THERMAL_TIME_CONSTANT = Parameter("s", "Time constant of the winding temperature's first-order rise.")
 
 
-class IntegratedServo(PartType, id="integrated_servo"):
+class IntegratedServo(ModelFamily, id="integrated_servo"):
     """A joint in one housing: a motor, its drive, a reducer or none, and an encoder."""
 
-    # WHY the datasheet hangs off the type (PEP 0004 amendment 2): one object per type, so its datasheet is
-    # `IntegratedServo.Datasheet(...)`, not a second class holding the type's bare name.
-    Datasheet = IntegratedServoDatasheet
+    # WHY no datasheet here (PEP 0004 amendment 2, Zach: "As we are in robot models all there really is is models"):
+    # the family holds models only; M1 reads IntegratedServoDatasheet's fields (`datasheet=` below), and the type that
+    # joins a datasheet to this family is robotparts' follow-up.
     aliases, packed, deployment = today.ALIASES, today.PACKED, today.DEPLOYMENT
 
     class Ideal(Model, level=0, name="ideal"):
@@ -46,8 +46,8 @@ class IntegratedServo(PartType, id="integrated_servo"):
         equation = "tau_r = 0; armature = output_inertia"
         references = (refs.SICILIANO_2009, refs.MUJOCO_ARMATURE)
 
-    # WHY "DatasheetModel": `Datasheet` is the type's datasheet class (above); the M1 rung holds the SI numbers it runs
-    # on, a Datasheet the Stated values and their sources. Its key stays M1.datasheet.
+    # WHY "DatasheetModel": `IntegratedServoDatasheet` is the datasheet class (PEP 0003); the M1 rung holds the SI
+    # numbers it runs on, a Datasheet the Stated values and their sources. Its key stays M1.datasheet.
     class DatasheetModel(Ideal, level=1, name="datasheet", datasheet=IntegratedServoDatasheet):
         """The datasheet: the stated values, nothing fitted"""
         equation = ("tau_r = coulomb_friction·sign(v) + viscous_friction·v when stated; armature = output_inertia, or "
