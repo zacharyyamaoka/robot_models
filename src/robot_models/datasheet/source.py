@@ -278,7 +278,8 @@ def _with_hint(error: TypeError) -> str:
     fields = list(owner.typed_fields()) if owner else []
     near = difflib.get_close_matches(found[2], fields, n=1)
     hint = f" (did you mean {near[0]}?)" if near else ""
-    return (f"{found[2]} is not a field of {found[1]}{hint}; a value the type has no field for goes in "
+    name = owner.type_name() if owner else found[1]
+    return (f"{found[2]} is not a field of {name}{hint}; a value the type has no field for goes in "
             f"extra={{...}}")
 
 

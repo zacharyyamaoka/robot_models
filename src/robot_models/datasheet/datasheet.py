@@ -105,6 +105,15 @@ class Datasheet:
     # --- the type ---------------------------------------------------------------------------------------------
 
     @classmethod
+    def type_name(cls) -> str:
+        """The part type this datasheet states, as a message names it: `IntegratedServoDatasheet` -> "IntegratedServo".
+
+        WHY (PEP 0004 amendment 2): the datasheet class moved off the type's bare name to `<Type>Datasheet`, reached as
+        `<Type>.Datasheet`; a refusal still names the field the way the type's vocabulary does
+        (`IntegratedServo.rated_torque`), so the messages robotparts and its editor show did not change."""
+        return cls.__name__.removesuffix("Datasheet") or cls.__name__
+
+    @classmethod
     def typed_fields(cls) -> dict[str, FieldSpec]:
         """Every typed field of this type, {name: FieldSpec}, in declaration order."""
         return {f.name: f.metadata["datasheet"] for f in dataclasses.fields(cls) if "datasheet" in f.metadata}
@@ -134,12 +143,12 @@ class Datasheet:
         for name, spec in fields.items():
             stated = getattr(self, name)
             if stated is not None:
-                check_value(type(self).__name__, name, spec, stated)
+                check_value(self.type_name(), name, spec, stated)
         for name, stated in self.extra.items():
             if name in fields:
-                raise ValueError(f"{type(self).__name__}: extra {name!r} is a typed field; set it as one")
+                raise ValueError(f"{self.type_name()}: extra {name!r} is a typed field; set it as one")
             if not isinstance(stated, Stated):
-                raise TypeError(f"{type(self).__name__}: extra {name!r} must be a Stated, not {stated!r}")
+                raise TypeError(f"{self.type_name()}: extra {name!r} must be a Stated, not {stated!r}")
 
     # --- resolving it from sources ----------------------------------------------------------------------------
 
@@ -164,7 +173,7 @@ class Datasheet:
                                  f"explicitly instead of preferring it")
         for name, source in pick.items():
             if name not in fields and not any(name in s.extra for s in everything):
-                raise KeyError(f"pick names {name!r}, which is no field of {cls.__name__} and no source's extra")
+                raise KeyError(f"pick names {name!r}, which is no field of {cls.type_name()} and no source's extra")
             if source.states(name) is None:
                 raise KeyError(f"pick takes {name} from {source.label}, which states no {name}")
 
@@ -315,24 +324,24 @@ def check_source(cls: type[Datasheet], source: Source) -> None:
     written as another type must be one `cls` extends (a BldcMotor statement can feed an IntegratedServo)."""
     fields = cls.typed_fields()
     if source.type is not None and not issubclass(cls, source.type):
-        raise TypeError(f"sources/{source.name}.py is written as {source.type.__name__}(...), but this part is "
-                        f"{cls.__name__}, which does not extend it")
+        raise TypeError(f"sources/{source.name}.py is written as {source.type.type_name()}(...), but this part is "
+                        f"{cls.type_name()}, which does not extend it")
     for name, stated in source.values.items():
         if name not in fields:
             near = difflib.get_close_matches(name, list(fields), n=1)
             hint = f" (did you mean {near[0]}?)" if near else ""
-            raise KeyError(f"sources/{source.name}.py: {name} is not a field of {cls.__name__}{hint}; "
+            raise KeyError(f"sources/{source.name}.py: {name} is not a field of {cls.type_name()}{hint}; "
                            f"a value the type has no field for goes in extra = {{...}}")
         spec = fields[name]
         for column in source.columns or (None,):
             value = stated.for_column(column) if column and stated.by_column else stated
             check_value(f"sources/{source.name}.py", name, spec, value)
         if stated.at is not None and spec.side is None:
-            raise ValueError(f"sources/{source.name}.py: {name} says at={stated.at!r}, but {cls.__name__}.{name} "
+            raise ValueError(f"sources/{source.name}.py: {name} says at={stated.at!r}, but {cls.type_name()}.{name} "
                              f"is defined on one side only ({spec.definition})")
     for name in source.extra:
         if name in fields:
-            raise KeyError(f"sources/{source.name}.py: extra {name!r} is a typed field of {cls.__name__}; "
+            raise KeyError(f"sources/{source.name}.py: extra {name!r} is a typed field of {cls.type_name()}; "
                            f"write it as `{name} = Stated(...)`")
 
 

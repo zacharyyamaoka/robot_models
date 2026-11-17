@@ -4,7 +4,7 @@
 
 A joint in one housing: a motor, its drive, a reducer or none, and an encoder.
 
-**14 rungs** · 52 parameters · 44 aliases · 7 packed names · 6 deployment-only names · folder `actuators/servo/` · datasheet class [`IntegratedServo`](integrated_servo.py), whose typed fields rung `M1.datasheet` states.
+**14 rungs** · 52 parameters · 44 aliases · 7 packed names · 6 deployment-only names · folder `actuators/servo/` · datasheet class [`IntegratedServoDatasheet`](integrated_servo.py), whose typed fields rung `M1.datasheet` states.
 
 In code: `ladders()["integrated_servo"]` from [`robot_models.ladder`](../../ladder.py). Every type: [docs/TYPES.md](../../../../docs/TYPES.md). Spec: [PEP 0004](../../../../docs/peps/0004-model-ladders-by-type.md).
 Types in the folders below this one: [`bldc_motor`](bldc/README.md), [`foc_controller`](foc_controller/README.md), [`gearbox`](gearbox/README.md).
@@ -24,7 +24,7 @@ The ladder climbs the way a joint's torque model grows:
 - M5 is the electrics and heat (MuJoCo's DC motor, and the drive's ceiling) and the wear that grows with use.
 - M6 is a learned residual on the wear rung and M7 a black-box network.
 
-Torques, speeds and inertias are at the OUTPUT, after the reducer, as `IntegratedServo`'s datasheet states them; kt,
+Torques, speeds and inertias are at the OUTPUT, after the reducer, as `IntegratedServoDatasheet` states them; kt,
 kv and rotor_inertia stay on the rotor. Every name below is a canonical one: sim2real's twin names, the registry's
 keys and the exporter's fields are aliases (a unit never appears in a canonical name), and MuJoCo's arrays are packed
 names. What a deployment sets (gains, current limit) is `deployment`, never a rung's parameter.
@@ -87,7 +87,7 @@ Bottom up. *Needs* is what the rung's model cannot run without, new over its bas
 | rung | title | base | needs (adds) | reads when stated (optional) | code | equation | references |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | <a id="rung-m0-ideal"></a>`M0.ideal` | The ideal actuator: the stated inertia and ratio, no losses | — | `output_inertia`, `gear_ratio` | — | [`actuators/rungs/ideal`](../rungs/ideal/README.md) | `tau_r = 0; armature = output_inertia` | [SICILIANO_2009](#ref-siciliano_2009), [MUJOCO_ARMATURE](#ref-mujoco_armature) |
-| <a id="rung-m1-datasheet"></a>`M1.datasheet` | The datasheet: the stated values, nothing fitted<br>*States every IntegratedServo field and needs none beyond M0 (robotparts' M1: required false).* | [`M0.ideal`](#rung-m0-ideal) | — | every `IntegratedServo` typed field its base does not hold: 33 names, each listed under [Vocabulary](#vocabulary) | [`actuators/rungs/datasheet`](../rungs/datasheet/README.md) | `tau_r = coulomb_friction·sign(v) + viscous_friction·v when stated; armature = output_inertia, or gear_ratio²·(rotor_inertia + gearbox_input_inertia)` | [ARMSTRONG_1994](#ref-armstrong_1994), [MUJOCO_ARMATURE](#ref-mujoco_armature) |
+| <a id="rung-m1-datasheet"></a>`M1.datasheet` | The datasheet: the stated values, nothing fitted<br>*States every IntegratedServo field and needs none beyond M0 (robotparts' M1: required false).* | [`M0.ideal`](#rung-m0-ideal) | — | every `IntegratedServoDatasheet` typed field its base does not hold: 33 names, each listed under [Vocabulary](#vocabulary) | [`actuators/rungs/datasheet`](../rungs/datasheet/README.md) | `tau_r = coulomb_friction·sign(v) + viscous_friction·v when stated; armature = output_inertia, or gear_ratio²·(rotor_inertia + gearbox_input_inertia)` | [ARMSTRONG_1994](#ref-armstrong_1994), [MUJOCO_ARMATURE](#ref-mujoco_armature) |
 | <a id="rung-m2-coulomb_viscous"></a>`M2.coulomb_viscous` | Coulomb and viscous friction, fitted | [`M1.datasheet`](#rung-m1-datasheet) | `coulomb_friction`, `viscous_friction` | — | [`actuators/rungs/coulomb_viscous`](../rungs/coulomb_viscous/README.md) | `tau_r = coulomb_friction·sign(v) + viscous_friction·v` | [ARMSTRONG_1994](#ref-armstrong_1994), [OLSSON_1998](#ref-olsson_1998) |
 | <a id="rung-m3-stribeck"></a>`M3.stribeck` | Stribeck friction: breakaway falling to Coulomb with speed | [`M2.coulomb_viscous`](#rung-m2-coulomb_viscous) | `breakaway_torque`, `stribeck_velocity` | `stribeck_exponent` | [`actuators/rungs/stribeck`](../rungs/stribeck/README.md) | `tau_r = (coulomb_friction + (breakaway_torque − coulomb_friction)·exp(−(\|v\|/stribeck_velocity)^stribeck_exponent))·sign(v) + viscous_friction·v` | [ARMSTRONG_1994](#ref-armstrong_1994), [OLSSON_1998](#ref-olsson_1998) |
 | <a id="rung-m3-load"></a>`M3.load` | Friction that grows with the transmitted load | [`M2.coulomb_viscous`](#rung-m2-coulomb_viscous) | `friction_load_coefficient` | — | [`actuators/rungs/load`](../rungs/load/README.md) | `tau_r = (coulomb_friction + friction_load_coefficient·\|tau_load\|)·sign(v) + viscous_friction·v` | [KIRCANSKI_1997](#ref-kircanski_1997), [OLSSON_1998](#ref-olsson_1998) |

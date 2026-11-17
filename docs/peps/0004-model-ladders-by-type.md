@@ -7,6 +7,8 @@
   (committed red before they start; off-limits to them).
 - **Amended:** 2026-11-16, amendment 1 (§14): the physics errors the v1 check agents found in the frozen spec, fixed
   in the ruler first (`87db875`) and then in the ladders, this PEP and the generated docs. 83 → 84 rungs.
+  2026-11-17, amendment 2 (§15): a type is one object, `class IntegratedServo(PartType)`, holding its models as
+  classes; the datasheet class becomes `IntegratedServoDatasheet`. Built for `integrated_servo` only.
 - **Ask:** Zach, 2026-11-16: "please start an ultracode workflow to implement robot_models as discussed. It can be a
   public repo." "As discussed" means the vault note `Projects/robot_msgs/Robot Models — Thinking to Date (2026-11-16).md`
   (its open questions, each with its default) and `Robot Models Layering — Decision (2026-11-12).md`.
@@ -1090,3 +1092,70 @@ the equation or note as the spec's form and asks only for a non-empty one.
 
 Undo: `git revert` the commits after `87db875` that apply this amendment, then `87db875` itself; the ruler, the
 ladders and the docs go back together.
+
+## 15. Amendment 2 (2026-11-17): the type is one object; its models are classes; no "ModelFamily"
+
+**Ask:** Zach, round 2 of the API proposals (`docs/proposals/api-2026-11-17/ROUND2.md`): "I 100% like organizing
+everything around a type", "a model should 100% be a class", "we only ever want vocabulary to be additive"; then, in
+his daily note of 2026-11-17 (*Types vs ModelFamilys*): "BLDC motor is a TYPE and that TYPE has a model family? or is
+the TYPE just the name of the model family?" and "`servo.models` is how you access the modelfamily". The answer, in
+the callout under that heading: the type is the one object, `servo.models` is its group of models, and the word
+"ModelFamily" goes. Round 2's pick is v6 "Fitted instances" (values on Model instances). This amendment is the
+default build of both; it is on branch `api-v6-parttype` until Zach picks.
+
+**The names**
+
+| name | what it is | spelled |
+|---|---|---|
+| **PartType** | a generic kind of part, no maker: its models, its Datasheet class, its aliases, packed and deployment names | `class IntegratedServo(PartType, id="integrated_servo")` |
+| **Models** | a group of Model classes, in ladder order, with the batch calls; every level is one too | `IntegratedServo.models`, `.models.m3`, `.models["M3"]` |
+| **Model** | one rung: a class of Parameters; an instance holds its values | `IntegratedServo.models.m3.stribeck`, `.models["M3.stribeck"]` |
+| **Parameter** | unit, definition, shape, note, required; its value on an instance | `Stribeck.breakaway_torque` (class), `m3.breakaway_torque` (value) |
+| **Datasheet** | the typed record of what the sources state about one SKU (PEP 0003) | `IntegratedServo.Datasheet(...)`, the class `IntegratedServoDatasheet` |
+| **DatasheetModel** | the M1 rung's class: the SI numbers M1 runs on, not the Stated values | key still `M1.datasheet` |
+
+- Every group has `fit(log, start=)`, `select_best(held_out, fits)`, `ladder(top=)` and `tree()`; iterating a group
+  gives its Model classes. `IntegratedServo.fit`, `.select_best`, `.ladder`, `.tree` and `for m in IntegratedServo`
+  forward to `IntegratedServo.models`. `IntegratedServo.models.m3.fit(log)` fits only the M3s;
+  `.models.m2.select_best(held_out, fits)` chooses among the M2s of a whole-type fit.
+- **Why not "ModelFamily":** "family" already means a maker's product line (robotparts' `RobotPart.family`), a kind of
+  physics (robotparts' `model.json`) and sim2real's slices of one type's model (`FAMILIES`); a rigid body chain is one
+  type with two families. The type also owns more than its models. **Why not a separate family object behind
+  `.models`:** that is a fourth noun for a group, and every level is the same kind of group. **Why not "ModelType":**
+  "model type" already means physics, residual or learned (`Rung.kind`). `PartType` is what ladder.py already says.
+- **Calling the type refuses** (`IntegratedServo(...)` raises, naming `.Datasheet(...)` and `.models...`): a call
+  means nothing yet, and a later pick (v7's unit) can give it a meaning without a second one to retire.
+
+**What is built (code: `src/robot_models/part_type.py`, `src/robot_models/actuators/servo/integrated_servo_type.py`)**
+
+- v6's prototype, moved into the package: the Model and Parameter classes, additive vocabulary enforced at class
+  creation, a generic unit-seeded fit, numpy-vectorized `predict` running the rung folders' own `model.py`
+  (loaded from their text, so no `__pycache__/` lands beside the bytes robotparts vendors), `select_best` by sim2real's
+  1.5× noise-floor rule, a numpy black box (`M7.learned`) with the same outside.
+- `from robot_models import IntegratedServo` is the type, loaded lazily (PEP 562): `import robot_models.ladder` and
+  the datasheets still import no numpy (tests/test_part_type.py holds it).
+- **One source, checked:** `IntegratedServo.v1_ladder()` derives today's `Ladder` record from the classes and equals
+  `ladders()["integrated_servo"]` on the whole record (tests/test_part_type.py; held red by editing one rung's title).
+  `ladder.py`'s hand-written record stays for now: it is what the equality is checked against, and what `ladders()`,
+  the ruler, sim2real's parity test and robotparts read.
+- **The datasheet's messages name the type** (`Datasheet.type_name()`: `IntegratedServoDatasheet` → "IntegratedServo"),
+  so `IntegratedServo.rated_torque: unit 'N' ...` reads as before.
+- The other 11 types keep their v1 API unchanged; each gets a PartType when it needs one.
+
+**The back-compat alias, and why the bare name is split for now**
+
+`robot_models.actuators.servo.IntegratedServo` (and `...servo.integrated_servo.IntegratedServo`) stays the datasheet
+class, an alias of `IntegratedServoDatasheet`; `robot_models.IntegratedServo` is the type. The frozen rulers require
+it: `tests/test_ladders_acceptance.py` asserts `ladder.datasheet is IntegratedServo` with that import, and
+`tests/test_datasheet.py` builds `IntegratedServo(rated_torque=...)` and asserts `issubclass(IntegratedServo,
+Datasheet)`. robotparts imports the same name as the datasheet in 8 live files (its GIM part file, its six
+`sources/*.py`, `user/test_datasheets.py`) and in its archived source-file proposals; sim2real does not import it.
+
+**To finish the rename** (each a later, separate step): robotparts writes `IntegratedServo.Datasheet(...)` (or
+imports `IntegratedServoDatasheet`); the two rulers move to the new names (a ruler edit, Zach's call); then the alias
+goes and `robot_models.actuators.servo.IntegratedServo` becomes the type; then `ladder.py` shrinks to
+`LADDER = IntegratedServo.v1_ladder()`, with the equality kept as a snapshot.
+
+**Undo:** delete branch `api-v6-parttype` before merging; after merging, `git revert` its commit. Nothing outside
+robot_models changed.
+
