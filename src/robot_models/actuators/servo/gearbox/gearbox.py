@@ -1,4 +1,4 @@
-"""Gearbox: the typed datasheet fields of a reducer sold on its own (StepperOnline AD60-G10-D14 on the rack).
+"""Gearbox: the typed datasheet fields of a reducer sold on its own.
 
 Names are robotparts registry keys (key_specs["gearbox"] first); `max_axial_load` / `max_radial_load` are the
 catalogue's names. No part is migrated onto this type yet (PEP 0003 §9); it is here so the servo tree is whole.

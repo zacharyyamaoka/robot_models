@@ -1,0 +1,3 @@
+# WHY (PEP 0004 §8.1): the rung folders are byte-identical to robotparts' vendored copies and their sha256 are pinned;
+# a checkout with core.autocrlf=true must never rewrite their line endings.
+src/robot_models/actuators/rungs/** -text

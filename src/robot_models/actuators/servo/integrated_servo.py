@@ -1,4 +1,4 @@
-"""IntegratedServo: the typed datasheet fields of a motor, a reducer and a driver sold as one SKU (SteadyWin GIM).
+"""IntegratedServo: the typed datasheet fields of a motor, a reducer and a driver sold as one SKU.
 
 Every BldcMotor field, plus the reducer's. Torques and speeds are at the OUTPUT, after the reducer; Kv, Kt and rotor
 inertia stay on the rotor (registry definitions), so a source that states them after the reducer says at='output'
