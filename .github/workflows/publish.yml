@@ -1,5 +1,5 @@
 # Publishes to PyPI when a version tag (v*) is pushed, through PyPI trusted publishing: no API token is stored
-# anywhere (robot_msgs' pattern). One-time setup on pypi.org: a "pending publisher" for project robot-model-ladders, owner
+# anywhere (robot_msgs' pattern). One-time setup on pypi.org: a "pending publisher" for project robot-models-lib, owner
 # zacharyyamaoka, repository robot_models, workflow publish.yml, environment pypi.
 name: publish
 on:
