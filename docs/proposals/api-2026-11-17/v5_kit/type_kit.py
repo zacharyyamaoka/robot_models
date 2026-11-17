@@ -3,7 +3,7 @@ generic types and then they get all of the stuff for those types kinda like auto
 
     servo = types.integrated_servo          # or types.of(datasheet): the datasheet's class names its type
     servo.models, servo.datasheet, servo.experiments, servo.fidelity     # the kit
-    found = servo.identify(rig_log, datasheet=ds); servo.compare(found, rig_log).chosen
+    found = servo.identify(fit_log, datasheet=ds); servo.compare(found, held_out_log).chosen
 
 Nothing is retyped: rungs, parameters, aliases, equations and references come from robot_models.ladder; the experiment
 that identifies each parameter, its defaults and the physics come from actuators/rungs/<word>/model.json and model.py.
@@ -28,13 +28,13 @@ TWINNED_LIMIT = 1.5      # WHY sim2real's cards.schema.TWINNED_LIMIT: twinned wi
 SLOW_BELOW = 0.5         # rad/s, robotparts' measured_by: "slow plateaus below 0.5 rad/s"
 
 
-def _plateaus(log) -> tuple[np.ndarray, np.ndarray]:
-    """Each held speed in a plateau log and every sample's plateau index."""
-    return np.unique(np.round(np.asarray(log["v"], float), 6), return_inverse=True)
+def _plateaus(log) -> np.ndarray:
+    """Every sample's plateau: the log's `plateau` id (one per held speed and direction), else the speed repeating."""
+    return np.asarray(log["plateau"]) if "plateau" in log else np.round(np.asarray(log["v"], float), 6)
 
 
 def _both_ways(log, at_least: int, below: float = np.inf) -> str | None:
-    speeds = set(_plateaus(log)[0].tolist())
+    speeds = set(np.unique(np.round(np.asarray(log["v"], float), 6)).tolist())
     held = [s for s in speeds if 0 < s < below and -s in speeds]
     return None if len(held) >= at_least else f"{len(held)} plateaus held both ways below {below} rad/s, needs {at_least}"
 
@@ -42,7 +42,9 @@ def _both_ways(log, at_least: int, below: float = np.inf) -> str | None:
 # WHY a table, not parsed text: what counts as "this motion" is the one thing the kit adds over model.json. Only plateau
 # logs are read here; every other motion says so instead of pretending.
 COVERAGE: dict[str, Callable] = {
-    "velocity_plateaus": lambda log: _both_ways(log, at_least=6),                    # "both directions, 6-8 speeds"
+    # WHY 5, not robotparts' "6-8 speeds": that is what the rig runs; held-out choice (amendment 1) fits on every other
+    # plateau of a 10-speed run, so the half a fit sees holds 5.
+    "velocity_plateaus": lambda log: _both_ways(log, at_least=5),
     "slow_plateaus": lambda log: _both_ways(log, at_least=3, below=SLOW_BELOW),
 }
 
@@ -197,18 +199,19 @@ class FidelityMetric:
     floor: str = "the scatter within each held plateau (the rig's own repeatability)"
 
     def evaluate(self, model: Model, log) -> Fidelity:
-        tau, (_, index) = np.asarray(log["tau"], float), _plateaus(log)
+        tau, (_, index) = np.asarray(log["tau"], float), np.unique(_plateaus(log), return_inverse=True)
         means = np.bincount(index, tau) / np.bincount(index)
         floor = float(np.sqrt(np.sum((tau - means[index]) ** 2) / (tau.size - means.size)))
         return Fidelity(model.key, float(np.sqrt(np.mean((tau - model.predict(log["v"])) ** 2))), floor)
 
 
 class Identified(dict):
-    """{key: Model with values} that a log and a datasheet identify; `missing` says what each other model lacks."""
+    """{key: Model with values} that a log and a datasheet identify; `missing` says what each other model lacks, and
+    `log` is what the values were fitted on (so the kit can refuse to score them on it)."""
 
-    def __init__(self, found: dict, missing: dict):
+    def __init__(self, found: dict, missing: dict, log=None):
         super().__init__(found)
-        self.missing = missing
+        self.missing, self.log = missing, log
 
     def __str__(self) -> str:
         lines = []
@@ -224,14 +227,19 @@ class Identified(dict):
 
 @dataclass(frozen=True)
 class Comparison:
-    rows: tuple[Fidelity, ...]
-    chosen: Model
+    rows: tuple[Fidelity, ...]          # on the held-out plateaus: what the choice is made on
+    chosen: Model | None
+    on_fit: tuple[Fidelity, ...] = ()   # the same metric on the fit plateaus: shown, never chosen on
 
     def __str__(self) -> str:
-        return "\n".join([f"  {'model':<20}{'rms N·m':>9}{'floor':>9}{'x floor':>9}  twinned (<= {TWINNED_LIMIT}x)",
-                          *(f"  {r.key:<20}{r.error:>9.4f}{r.floor:>9.4f}{r.ratio:>9.2f}  {'yes' if r.twinned else 'no'}"
-                            for r in self.rows),
-                          f"  chosen: {self.chosen.key}, the lowest rung the rig cannot tell from the part"])
+        fit = {r.key: f"{r.ratio:.2f}" for r in self.on_fit}
+        return "\n".join([f"  {'model':<20}{'fit x floor':>12}{'held-out rms N·m':>18}{'floor':>8}{'x floor':>9}"
+                          f"  twinned (<= {TWINNED_LIMIT}x)",
+                          *(f"  {r.key:<20}{fit.get(r.key, '-'):>12}{r.error:>18.4f}{r.floor:>8.4f}{r.ratio:>9.2f}"
+                            f"  {'yes' if r.twinned else 'no'}" for r in self.rows),
+                          f"  chosen: {self.chosen.key}, the lowest rung the rig cannot tell from the part on plateaus "
+                          f"the fit never saw" if self.chosen else
+                          f"  chosen: none within {TWINNED_LIMIT}x on held-out plateaus: climb (found.missing)"])
 
 
 def fit_plateaus(model: Model, log, names: list[str], known: Mapping[str, float]) -> dict[str, float]:
@@ -327,15 +335,21 @@ class Kit:
             values = fit_plateaus(model, log, fit, known) if fit else {}
             sources = {**dict.fromkeys(known, "datasheet"), **{n: model.identified_by[n].id for n in fit}}
             found[model.key] = model.with_values(sources, **known, **values)
-        return Identified(found, missing)
+        return Identified(found, missing, log)
 
-    def compare(self, found: Mapping[str, Model], log) -> Comparison:
-        """The type's fidelity metric on every identified model. Chosen: the lowest rung within TWINNED_LIMIT of the rig's
-        floor (the climb stops where the rig can no longer tell model from part), else the closest one."""
-        rows = tuple(self.fidelity.evaluate(model, log) for model in found.values())
+    def compare(self, found: Mapping[str, Model], held_out) -> Comparison:
+        """The type's fidelity metric on every identified model, on plateaus the fit never saw. Chosen (sim2real's
+        cards.schema.select): the lowest rung within TWINNED_LIMIT of the rig's own floor, same-level siblings by ratio;
+        None when none is. WHY held out (Zach, 2026-11-17: "if doing a more complex model doesn't actually improve test
+        time performance you are just overfitting"): a rung that nests another always fits its own plateaus as well."""
+        fit = getattr(found, "log", None)
+        if fit is not None and (seen := set(_plateaus(fit).tolist()) & set(_plateaus(held_out).tolist())):
+            raise ValueError(f"the fit saw {len(seen)} of these plateaus: choose on plateaus it never saw")
+        rows = tuple(self.fidelity.evaluate(model, held_out) for model in found.values())
         twinned = [r for r in rows if r.twinned]
-        pick = min(twinned, key=lambda r: (found[r.key].level, r.ratio)) if twinned else min(rows, key=lambda r: r.ratio)
-        return Comparison(rows, found[pick.key])
+        pick = min(twinned, key=lambda r: (found[r.key].level, r.ratio)) if twinned else None
+        on_fit = tuple(self.fidelity.evaluate(model, fit) for model in found.values()) if fit is not None else ()
+        return Comparison(rows, found[pick.key] if pick else None, on_fit)
 
     def __repr__(self) -> str:
         status = ["runs" if m.physics else m.why_not.split(":")[0] for m in self.models.values()]
@@ -344,7 +358,8 @@ class Kit:
         return "\n".join([f"<{self.type} kit> {self.ladder.title}",
                           f"  models       {len(self.models)} on the ladder: {counts}", f"  datasheet    {sheet}",
                           f"  experiments  {', '.join(self.experiments) or '-'}",
-                          f"  fidelity     {self.fidelity.id + ' over the rig floor' if self.fidelity else '-'}"])
+                          f"  fidelity     {self.fidelity.id if self.fidelity else '-'}"
+                          f"{' on held-out plateaus over the rig floor' if self.fidelity else ''}"])
 
 
 def build_kit(ladder: Ladder) -> Kit:

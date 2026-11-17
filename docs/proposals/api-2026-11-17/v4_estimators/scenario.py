@@ -38,22 +38,21 @@ m1 = Model.from_datasheet(ds)                 # M1.datasheet by default: every s
 print(m1)
 m1.predict(1.0)                               # tau_r at 1 rad/s [N·m]
 '''),
-    ("4 · Fit M2 and M3 to the rig log", '''
-log = rig_log()                               # velocity plateaus, both directions: v [rad/s], tau [N·m]
-m2 = Model.from_datasheet(ds, "M2.coulomb_viscous").fit(log)
-m3 = Model.from_datasheet(ds, "M3.stribeck").fit(log)    # starts from the datasheet; the rest is scanned
+    ("4 · Fit M2 and M3 on the fit plateaus only", '''
+fit, test = rig_log(<case>, "fit"), rig_log(<case>, "test")   # plateaus 1, 3, 5, 7, 9 to fit; 2, 4, 6, 8, 10 held out
+m2 = Model.from_datasheet(ds, "M2.coulomb_viscous").fit(fit)
+m3 = Model.from_datasheet(ds, "M3.stribeck").fit(fit)    # starts from the datasheet; the rest is scanned
 print(m2)
 print(m3)
-m1.score(log), m2.score(log), m3.score(log)  # R², sklearn's score
 '''),
-    ("5 · Compare: climb the ladder while the next rung pays", '''
-report = servo.climb(ds, log)                 # M1 from the datasheet, then fit every rung above, keep the best
+    ("5 · Compare on the held-out plateaus: climb to the lowest rung that reaches the noise floor", '''
+report = servo.climb(ds, fit, test)           # fit each rung on `fit`, judge it on `test`, stop at the floor
 print(report)
 report.chosen
 '''),
-    ("6 · The same climb stops where the log stops paying", '''
-fast = {column: values[abs(log["v"]) >= 0.8] for column, values in log.items()}  # only plateaus ≥ 0.8 rad/s
-print(servo.climb(ds, fast))                  # no slow plateaus: the Stribeck drop is invisible, so M3 is not worth it
+    ("6 · The negative control: a second servo, where the simpler rung must win", '''
+fit_b, test_b = rig_log("B", "fit"), rig_log("B", "test")   # same rig, a plain Coulomb + viscous servo
+print(servo.climb(ds, fit_b, test_b))         # M3 fits its own plateaus a hair better, and loses on the held-out ones
 '''),
 )
 
@@ -72,25 +71,28 @@ def _session(source: str, namespace: dict) -> None:
             exec(compile(ast.Module([node], []), "<scenario>", "exec"), namespace)
 
 
-def run(echo: bool = False) -> dict:
+def run(case: str = "A", echo: bool = False) -> dict:
+    """The scenario on one servo's rig log; `case` is opaque, written into the steps as the user would type it."""
     namespace: dict = {}
     with contextlib.nullcontext() if echo else contextlib.redirect_stdout(io.StringIO()):
         for title, source in STEPS:
             print(f"\n# Step {title}")
-            _session(source, namespace)
-    fits = {key: {"params": model.get_params(), "rms": model.rms_}
-            for key, model in (("M2.coulomb_viscous", namespace["m2"]), ("M3.stribeck", namespace["m3"]))}
+            _session(source.replace("<case>", f'"{case}"'), namespace)
+    report = namespace["report"]
+    # WHY the climb's own fits: they are the evidence its choice was made on, so the check re-scores exactly those
+    fits = {key: {"params": report.fits[key].get_params(), "rms": report.fits[key].rms_,
+                  "held_out": report.held_out[key]} for key in ("M2.coulomb_viscous", "M3.stribeck")}
     return {
         "ladder": namespace["ladder"],
         "fallback": namespace["stribeck"].fallback,
         "alias": namespace["servo"].canonical("frictionloss_nm"),
         "m1_at_1": namespace["m1"].predict(1.0),
         "fits": fits,
-        "chosen": namespace["report"].chosen.key,
+        "chosen": report.chosen.key,
     }
 
 
 if __name__ == "__main__":
     out = run(echo=True)
-    print(f"\n# run() returns: chosen {out['chosen']}, M3 rms {out['fits']['M3.stribeck']['rms']:.4f} "
-          f"< M2 rms {out['fits']['M2.coulomb_viscous']['rms']:.4f}")
+    print(f"\n# run() returns: chosen {out['chosen']}; held-out rms M2 {out['fits']['M2.coulomb_viscous']['held_out']:.4f}, "
+          f"M3 {out['fits']['M3.stribeck']['held_out']:.4f} N·m")

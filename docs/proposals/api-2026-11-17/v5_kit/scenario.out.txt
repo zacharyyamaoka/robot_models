@@ -9,7 +9,7 @@
   models       14 on the ladder: 6 runs, 1 structure only, 7 declared
   datasheet    IntegratedServo, 35 typed fields
   experiments  chirps, reading_datasheet, velocity_plateaus, slow_plateaus, pendulum_sweeps, small_reversals, rotor_angle_sweep, measure_only_board_calibration
-  fidelity     tau_r_rms over the rig floor
+  fidelity     tau_r_rms on held-out plateaus over the rig floor
 
 # 1b. Its models are its ladder; each names the rig motion that identifies what it adds (robotparts' measured_by)
 >>> print(servo.models)
@@ -53,37 +53,51 @@ M3.stribeck  Stribeck friction: breakaway falling to Coulomb with speed
 >>> m1.predict(1.0)
 0.32
 
-# 4. The rig log: which of the kit's experiments it is, then every model the log and the datasheet identify
->>> log = rig_log()
->>> servo.experiments.covered_by(log)
+# 4. The rig log, split by plateau: fit on plateaus 1, 3, 5, 7, 9; hold 2, 4, 6, 8, 10 out. Identify on the fit half
+>>> case                                # the servo on the rig (check_scenario.py replays this session on "B" too)
+'A'
+>>> fit, held_out = rig_log(case, "fit"), rig_log(case, "test")
+>>> servo.experiments.covered_by(fit)
 ('velocity_plateaus', 'slow_plateaus')
->>> found = servo.identify(log, datasheet=datasheet())
+>>> found = servo.identify(fit, datasheet=datasheet())
 >>> print(found)
   M0.ideal            the datasheet's 2 stated values
   M1.datasheet        the datasheet's 7 stated values
-  M2.coulomb_viscous  coulomb_friction=0.5601, viscous_friction=-0.03347
-  M3.stribeck         coulomb_friction=0.4199, viscous_friction=0.03508, breakaway_torque=0.6502, stribeck_velocity=0.2493
+  M2.coulomb_viscous  coulomb_friction=0.5797, viscous_friction=-0.06487
+  M3.stribeck         coulomb_friction=0.4195, viscous_friction=0.03528, breakaway_torque=0.65, stribeck_velocity=0.249
   not yet: M3.load: run pendulum_sweeps
   not yet: M3.lugre: run small_reversals
   not yet: M3.weakening_capture: structure only: no published physics (the type holds its terms)
   not yet: M4.ripple, M4.drivetrain, M5.dcmotor, M5.envelope, M5.wear, M6.residual, M7.learned: declared: this round runs M0-M3 only
 
-# 5. Compare with the type's fidelity metric (RMS over the rig's own plateau scatter); choose the rung that pays
->>> comparison = servo.compare(found, log)
+# 5. Choose with the type's fidelity metric, on held-out plateaus only: the lowest rung within 1.5x the rig's floor
+>>> servo.compare(found, fit)           # refused: a rung that nests another always fits its own plateaus as well
+ValueError: the fit saw 10 of these plateaus: choose on plateaus it never saw
+>>> comparison = servo.compare(found, held_out)
 >>> print(comparison)
-  model                 rms N·m    floor  x floor  twinned (<= 1.5x)
-  M0.ideal               0.5378   0.0041   131.61  no
-  M1.datasheet           0.2322   0.0041    56.82  no
-  M2.coulomb_viscous     0.0689   0.0041    16.87  no
-  M3.stribeck            0.0041   0.0041     0.99  yes
-  chosen: M3.stribeck, the lowest rung the rig cannot tell from the part
+  model                fit x floor  held-out rms N·m   floor  x floor  twinned (<= 1.5x)
+  M0.ideal                  135.90            0.5319  0.0042   127.54  no
+  M1.datasheet               60.49            0.2220  0.0042    53.22  no
+  M2.coulomb_viscous         16.17            0.0846  0.0042    20.28  no
+  M3.stribeck                 0.99            0.0042  0.0042     1.00  yes
+  chosen: M3.stribeck, the lowest rung the rig cannot tell from the part on plateaus the fit never saw
+
+# 5b. The negative control: a second servo through the same calls; M3 fits its plateaus best but not the held-out ones
+>>> found_b = servo.identify(rig_log("B", "fit"), datasheet=datasheet())
+>>> print(servo.compare(found_b, rig_log("B", "test")))
+  model                fit x floor  held-out rms N·m   floor  x floor  twinned (<= 1.5x)
+  M0.ideal                   99.57            0.4120  0.0042    97.64  no
+  M1.datasheet               21.57            0.0913  0.0042    21.63  no
+  M2.coulomb_viscous          1.01            0.0043  0.0042     1.03  yes
+  M3.stribeck                 0.99            0.0066  0.0042     1.57  no
+  chosen: M2.coulomb_viscous, the lowest rung the rig cannot tell from the part on plateaus the fit never saw
 
 # 6. What now: hand the chosen model on (SI, numpy in and out); the kit names the motion that unlocks the next rung
 >>> chosen = comparison.chosen
 >>> dict(chosen.values)
-{'output_inertia': 4.2e-05, 'gear_ratio': 10.0, 'coulomb_friction': 0.41991641949494457, 'viscous_friction': 0.03507686421451761, 'breakaway_torque': 0.6502393104593884, 'stribeck_velocity': 0.24928215331007678}
+{'output_inertia': 4.2e-05, 'gear_ratio': 10.0, 'coulomb_friction': 0.4194633038475971, 'viscous_friction': 0.035284565922791986, 'breakaway_torque': 0.6500489870334133, 'stribeck_velocity': 0.24901459937475945}
 >>> chosen.predict(np.array([-1.0, -0.1, 0.1, 1.0]))
-array([-0.455 , -0.6195,  0.6195,  0.455 ])
+array([-0.4547, -0.6192,  0.6192,  0.4547])
 >>> found.missing["M3.lugre"]
 'run small_reversals'
 >>> print(servo.experiments["small_reversals"])

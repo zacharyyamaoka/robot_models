@@ -39,22 +39,30 @@ m1 = servo["M1.datasheet"].bind(values)
 m1(v=1.0)
 m1(v=np.array([-1.0, 0.0, 1.0]))
 """),
-    ("4. Fit M2.coulomb_viscous and M3.stribeck to the rig log", """
-log = rig_log()
-m2 = servo["M2.coulomb_viscous"].fit(log["tau"], v=log["v"], values=values)
-m3 = stribeck.fit(log["tau"], v=log["v"], values=values)
+    ("4. Fit M2.coulomb_viscous and M3.stribeck on the fit plateaus only (1, 3, 5, 7, 9)", """
+case
+fit_log, test_log = rig_log(case, "fit"), rig_log(case, "test")
+m2 = servo["M2.coulomb_viscous"].fit(fit_log["tau"], v=fit_log["v"], values=values)
+m3 = stribeck.fit(fit_log["tau"], v=fit_log["v"], values=values)
 print(m3)
-round(m2.rms, 4), round(m3.rms, 4)
 """),
-    ("5. Compare them and choose the rung that pays", """
-verdict = servo.compare(m1, m2, m3, observed=log["tau"], v=log["v"])
+    ("5. Compare them on the held-out plateaus (2, 4, 6, 8, 10): the lowest rung that reaches the noise floor", """
+verdict = servo.compare(m1, m2, m3, observed=test_log["tau"], repeats=test_log["plateau"], v=test_log["v"])
 verdict
 verdict.chosen
 """),
-    ("6. Hand it on: MuJoCo's joint attributes, a vectorized call; a declared rung says it does not run", """
-m3.mujoco()
-m3(v=np.array([0.05, 0.5, 2.0])).round(4)
-servo["M4.drivetrain"].fit(log["tau"], v=log["v"], values=values)  # -> NotImplementedError
+    ("6. The negative control, servo B: the same calls, and the simpler rung wins", """
+fit_b, test_b = rig_log("B", "fit"), rig_log("B", "test")
+m2_b = servo["M2.coulomb_viscous"].fit(fit_b["tau"], v=fit_b["v"], values=values)
+m3_b = stribeck.fit(fit_b["tau"], v=fit_b["v"], values=values)
+round(m3_b.values["breakaway_torque"], 2), round(m3_b.values["stribeck_velocity"], 4)   # a knee chasing noise
+servo.compare(m2_b, m3_b, observed=test_b["tau"], repeats=test_b["plateau"], v=test_b["v"])
+"""),
+    ("7. Hand on the chosen one: MuJoCo's joint attributes, a vectorized call; a declared rung says it does not run", """
+best = verdict.best
+best.mujoco()
+best(v=np.array([0.05, 0.5, 2.0])).round(4)
+servo["M4.drivetrain"].fit(fit_log["tau"], v=fit_log["v"], values=values)  # -> NotImplementedError
 """),
 )
 
@@ -77,8 +85,9 @@ def _repl(code: str, namespace: dict) -> None:
             print(f"{type(error).__name__}: {error}")
 
 
-def run(echo: bool = False) -> dict:
-    namespace = {"np": np}
+def run(case: str = "A", echo: bool = False) -> dict:
+    """The scenario on one servo: `case` goes to rig_log untouched (the check runs "A" and "B")."""
+    namespace = {"np": np, "case": case}
     with contextlib.nullcontext() if echo else contextlib.redirect_stdout(io.StringIO()):
         for title, code in STEPS:
             print(f"\n## {title}")

@@ -4,13 +4,15 @@
 (`class Stribeck(CoulombViscous)`), so a type's ladder is its class tree, the fallback is the MRO, and a value is an
 instance (`Stribeck(coulomb_friction=..., ...)`) that type checkers and IDEs read field by field.
 
-`check_scenario.py v1_subclass` → **PASS**. The whole session (7 Levenberg–Marquardt fits) runs in about 0.75 s.
+`check_scenario.py v1_subclass` (amendment 1) → **PASS**: case A chooses M3.stribeck (held-out rms ÷ floor: M2 20.28,
+M3 1.00), case B chooses M2.coulomb_viscous (M2 1.03, M3 1.57). The whole transcript (both servos, 14
+Levenberg–Marquardt fits) runs in about 1 s.
 
 ```bash
 /home/bam/robot_models/.venv/bin/python /home/bam/robot_models/docs/proposals/api-2026-11-17/v1_subclass/scenario.py
 ```
 
-Files: [subclass_ladder/model.py](subclass_ladder/model.py) (the generic `Model`, 305 non-blank lines),
+Files: [subclass_ladder/model.py](subclass_ladder/model.py) (the generic `Model`, 337 non-blank lines),
 [subclass_ladder/servo.py](subclass_ladder/servo.py) (integrated_servo as 15 classes, 71 lines),
 [scenario.py](scenario.py), [scenario.out.txt](scenario.out.txt).
 
@@ -30,7 +32,9 @@ Model                                   frozen-dataclass base (PEP 681 dataclass
     └── Learned(level=7)                                                   extends no model
 class methods: fallback() = MRO as keys · needs() · reads() · parameter(name) · alternatives() · describe()
                from_datasheet(ds) · fit(log, start=) · seeds(log, start)        → instances (typed as Self)
-instance:      .coulomb_friction ... · torque(v, **inputs) · terms() · mujoco() · score(log)
+               compare(models, held_out, fitted_on=) → Comparison: .chosen = lowest rung on the chain ≤ 1.5× floor
+instance:      .coulomb_friction ... · torque(v, **inputs) · terms() · mujoco() · score(log) → rms [N·m]
+module:        noise_floor(log): the pooled within-plateau std, read from the log itself
 ```
 
 What the session shows (full transcript in [scenario.out.txt](scenario.out.txt)):
@@ -41,13 +45,26 @@ M3.stribeck · class Stribeck(CoulombViscous) · Stribeck friction: breakaway fa
   ...
 >>> Stribeck.fallback()
 ('M3.stribeck', 'M2.coulomb_viscous', 'M1.datasheet', 'M0.ideal')
->>> m3 = Stribeck.fit(log, start=m2)
->>> print(ServoModel.compare([m1, m2, m3], log))
-rung                 fitted  rms [N·m]       BIC
-M1.datasheet              0     0.2322   -1460.2
-M2.coulomb_viscous        2     0.0689   -2662.1
-M3.stribeck               4     0.0041   -5481.7  <- lowest BIC
+>>> fit, test = rig_log("A", "fit"), rig_log("A", "test")
+>>> m2 = CoulombViscous.fit(fit, start=m1)
+>>> m3 = Stribeck.fit(fit, start=m2)
+>>> print(ServoModel.compare([m1, m2, m3], test, fitted_on=fit))
+held-out plateaus · floor 4.17 mN·m · choose the lowest rung within 1.5× floor
+rung                 fitted  fit rms  held-out rms  ÷ floor   [rms in mN·m]
+M1.datasheet              0   242.00        221.97    53.22
+M2.coulomb_viscous        2    64.69         84.58    20.28
+M3.stribeck               4     3.95          4.18     1.00  <- chosen
+
+# 6 · servo B: simpler wins   (the same calls on rig_log("B", ...))
+held-out plateaus · floor 4.22 mN·m · choose the lowest rung within 1.5× floor
+rung                 fitted  fit rms  held-out rms  ÷ floor   [rms in mN·m]
+M1.datasheet              0    86.62         91.28    21.63
+M2.coulomb_viscous        2     4.04          4.33     1.03  <- chosen
+M3.stribeck               4     3.97          6.62     1.57
 ```
+
+On servo B, M3 fits its own plateaus better than M2 (3.97 vs 4.04 mN·m) and predicts the held-out ones worse (6.62 vs
+4.33): the overfit that a training-rms rule rewards, and the reason the choice is made on plateaus the fit never saw.
 
 ## Prior art borrowed
 
@@ -57,7 +74,8 @@ M3.stribeck               4     0.0041   -5481.7  <- lowest BIC
 | **PyTorch `nn.Module` subclassing** | You define a model by subclassing; parameters are attributes; `forward` ↔ `torque`; `reset_parameters` ↔ `seeds()` (where a fit starts); `named_parameters` ↔ `needs()` / `terms()`. |
 | **Dataclass inheritance + PEP 681 `dataclass_transform`** (pydantic, SQLModel, attrs) | The base applies `@dataclass(frozen=True, kw_only=True)` in `__init_subclass__`, so a rung class needs no decorator and pyright sees every hand-declared field as a typed, keyword-only constructor argument. |
 | **Python's C3 MRO** | The fallback chain is the method resolution order read as rung keys. |
-| Schwarz 1978 (BIC), Levenberg–Marquardt | `compare()` picks the lowest BIC; `fit()` is numpy-only LM (no scipy in the runtime). |
+| sim2real `cards/schema.py` `select()` | The choice: the lowest rung whose held-out rms ÷ the rig's noise floor ≤ 1.5 (its `TWINNED_LIMIT`). |
+| Hold-out validation; Levenberg–Marquardt | Fit on plateaus 1, 3, 5, 7, 9, judge on 2, 4, 6, 8, 10; `fit()` is numpy-only LM (no scipy in the runtime). |
 
 ## Key decisions
 
@@ -78,7 +96,20 @@ M3.stribeck               4     0.0041   -5481.7  <- lowest BIC
 4. **Fitting is an alternative constructor.** `Stribeck.fit(log, start=m2)` returns a `Stribeck`: generic LM over
    the needed parameters the log actually moves (inertia and gear ratio never move a plateau sweep, so the
    datasheet's values ride along). A rung that adds a nonlinear term overrides `seeds()`; Stribeck tries six
-   `stribeck_velocity` starts spread over the logged speeds. `compare()` is a classmethod on the type root.
+   `stribeck_velocity` starts spread over the logged speeds.
+5. **The choice is made on held-out plateaus, against the rig's floor, along the MRO (amendment 1).**
+   `ServoModel.compare(models, held_out, fitted_on=fit)` scores each fitted instance on the plateaus it never saw
+   (`m.score(log)` is a method on the Model), divides by `noise_floor(held_out)` (pooled within-plateau std, a
+   property of the log, so a module function rather than a method of any model), and `.chosen` is the lowest rung
+   within 1.5× that floor, or `None` (climb, or measure more).
+   - **Why this rule, not BIC.** v0 picked the lowest BIC on the fit log. Held-out data makes the parsimony test
+     direct (does the richer rung predict what it never saw?), the floor puts the bar in the rig's own units, and it
+     is sim2real's rule, so a choice made here is the one sim2real would make from the same numbers. BIC always picks
+     something; this rule can honestly say no rung is good enough.
+   - **Why the class tree orders it.** "Lowest rung" needs an order; in this thesis it is the inheritance itself:
+     `compare()` sorts by MRO length and refuses a set that is not one chain (`isinstance(upper, type(lower))`, a
+     richer rung IS-A simpler one). `compare([m2, m3, load])` raises "M3.load does not extend M3.stribeck".
+   - `fitted_on=` only adds a fit-rms column for contrast; nothing is chosen on it.
 
 **Verified beyond the check:**
 - **pyright 1.1.390** reports 0 errors on `model.py` and `servo.py`.
@@ -93,11 +124,15 @@ M3.stribeck               4     0.0041   -5481.7  <- lowest BIC
 
 **Best when** rungs really are refinements (each adds terms to its base, as friction does), the people adding them
 write Python, and values flow into code: typed attributes, IDE completion, `dataclasses.replace`, `asdict`, keyword
-errors caught before run time.
+errors caught before run time. Nesting is also what makes the held-out choice well posed: a subclass that reduces to
+its base is exactly the case where training error can't choose and held-out error can.
 
 **Loses when**
 - **A rung combines two siblings.** Stribeck + load friction needs `class StribeckLoad(Stribeck, Load)`. C3
   linearizes that into one fallback (stribeck_load → stribeck → load → M2 ...), which may not be the fallback you mean.
+- **Siblings can't be chosen between.** `compare()` only orders one chain, so "Stribeck or Load at M3?" is two
+  comparisons against M2, and picking between two rungs that both reach the floor is left to you (sim2real's rule
+  has the same gap: its ladder order breaks the tie).
 - **The tree is forced.** `Learned` (M7) extends nothing, but it still has to subclass the type root to be in the
   ladder.
 - **The consumer is not Python.** robotparts' JS and JSON readers, and sim2real's cards, can't see a class. The ladder
@@ -114,12 +149,15 @@ errors caught before run time.
 ## Migration from v1
 
 - **Now (this prototype, additive):** the classes sit beside v1's records and are checked against them at import.
-  Nothing else changes:
+  The selection rule is new API (`score`, `compare`, `noise_floor`) and touches no v1 record. Nothing else changes:
   - the v1 ruler `tests/test_ladders_acceptance.py`;
   - the rung bytes in `actuators/rungs/*`, and so robotparts' `tools/sync_actuator_rungs.py` vendoring and its
     `tests/core/test_actuator_rungs_vendored.py`;
   - sim2real's `tests/test_robot_models_parity.py`, which reads `ladders()` live through `holds()`, `rung()` and
-    `fallback()`.
+    `fallback()`. Its rule 2 already checks that each sim2real card rung's base lies in the mapped rung's
+    `fallback()`, and here `fallback()` is the MRO that `compare()` walks, so the two walk the same order. The 1.5
+    limit is copied, not imported (robot_models never reads sim2real), so `SELECT_LIMIT == TWINNED_LIMIT` is the one
+    assertion worth adding to that parity test when this lands.
 - **Then (the classes become the source):** a two-line `actuators/servo/ladder.py` keeps `LADDER =
   Ladder.from_classes(ServoModel)`. That builds each `Rung` from the classes: `adds` from a class's own required
   fields, `optional` from its defaulted ones, `base` from `__bases__[0].key`. Title, equation and references move into
@@ -144,6 +182,9 @@ In this prototype, a contributor writes:
 
 In the end state, step 2 shrinks to the `Parameter`, and the equation and references go in the class body.
 
+Nothing for the choice: `Dahl.fit(fit, start=m2)` and `ServoModel.compare([m1, m2, dahl], test)` work as soon as the
+class exists, because `compare()` orders by the MRO and the floor rule is the type's, not the rung's.
+
 ## What is simulated or left out
 
 - **The rig:** the log is the fixture's simulated velocity-plateau sweep. M1 comes from the fixture's illustrative
@@ -158,4 +199,8 @@ In the end state, step 2 shrinks to the `Parameter`, and the equation and refere
 - **Not yet classes:** composes (`M4.drivetrain` → foc_controller), wears, packed and deployment-only names are still
   read from v1's `Ladder`. Only integrated_servo is expressed as a class tree; the other 11 types are not.
 - **The fit:** it frees needed parameters only, so `stribeck_exponent` stays at its default of 2, and it reports no
-  parameter uncertainty.
+  parameter uncertainty. It is unbounded: on servo B the overfit M3 lands at `stribeck_velocity = −1.16` (with the
+  exponent 2 the curve can't see the sign). Harmless to the choice, which rejects that M3, but a real fit wants a
+  positivity bound per parameter.
+- **The floor** is read from the held-out log's own repeats; it assumes each plateau is a steady hold. A log without a
+  `plateau` id can't be compared.

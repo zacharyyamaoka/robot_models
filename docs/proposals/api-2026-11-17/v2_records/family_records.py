@@ -27,6 +27,8 @@ RUNNABLE_UP_TO = 3
 COARSE_POINTS, REFINE_POINTS, REFINE_ROUNDS = 61, 21, 4   # the first grid over a nonlinear term, then finer ones
 # WHY a margin: a Stribeck knee just outside the slowest plateau still bends the slowest samples, so look past them.
 SPAN_MARGIN = 3.0
+# WHY 1.5: sim2real's rule (cards/schema.py select(), TWINNED_LIMIT), so the rung chosen here is the rung it would twin.
+FLOOR_LIMIT = 1.5
 
 
 def _named(parameter: Parameter) -> str:
@@ -283,32 +285,57 @@ class Family(Ladder):
             si[self.canonical(name)] = float(getattr(value, "si", value))   # a Stated converts by its own unit
         return Values(self, si)
 
-    def compare(self, *bound: BoundModel, observed, **inputs) -> Comparison:
-        """Score bound models on one log. BIC = n·ln(RSS/n) + k·ln(n) (Schwarz 1978), k the fitted terms: a higher
-        model must buy each term it adds with a lower residual."""
+    def compare(self, *bound: BoundModel, observed, repeats, limit: float = FLOOR_LIMIT, **inputs) -> Comparison:
+        """Score bound models on HELD-OUT data against the rig's own noise floor; `repeats` labels the samples taken at
+        one held condition (a plateau). WHY held out (Zach 2026-11-17: "if doing a more complex model doesn't actually
+        improve test time performance you are just overfitting"): a rung nests its base, so it always fits its own
+        training log at least as well; only data no fit saw can say a rung pays. WHY the Family's: "lowest" is the
+        tree's order, so rows run by depth (len of the fallback chain), same-depth siblings best first."""
         observed, rows = np.asarray(observed, float).ravel(), []
         for each in bound:
             if each.model.family != self.type:
                 raise ValueError(f"{each.model.key} is a {each.model.family} model, not {self.type}")
-            n, rss, k = observed.size, float(np.sum((observed - np.ravel(each(**inputs))) ** 2)), len(each.fitted)
-            rows.append((each.model.key, k, math.sqrt(rss / n), n * math.log(rss / n) + k * math.log(n)))
-        return Comparison(tuple(sorted(rows, key=lambda row: row[3])))
+            rows.append((each, float(np.sqrt(np.mean((observed - np.ravel(each(**inputs))) ** 2)))))
+        rows.sort(key=lambda row: (len(self.fallback(row[0].model.key)), row[1]))
+        unit = bound[0].model._physics().output[1] if bound else ""
+        return Comparison(tuple(rows), noise_floor(observed, repeats), limit, unit)
 
 
 @dataclass(frozen=True)
 class Comparison:
-    rows: tuple[tuple[str, int, float, float], ...]   # (key, fitted terms, rms, BIC), best BIC first
+    """Held-out scores, lowest rung first, read by sim2real's rule: the lowest rung whose held-out rms ÷ floor ≤ limit."""
+
+    rows: tuple[tuple[BoundModel, float], ...]   # (bound model, held-out rms), lowest rung first
+    floor: float                                 # the held-out log's noise floor, in unit
+    limit: float = FLOOR_LIMIT
+    unit: str = ""
 
     @property
-    def chosen(self) -> str:
-        return self.rows[0][0]
+    def best(self) -> BoundModel | None:
+        """The chosen model with its values (what you hand on); None when no rung reaches the floor."""
+        return next((bound for bound, rms in self.rows if rms / self.floor <= self.limit), None)
+
+    @property
+    def chosen(self) -> str | None:
+        return self.best and self.best.model.key
 
     def __repr__(self) -> str:
-        lines = [f"{'model':<20} {'fitted':>6} {'rms':>10} {'BIC':>10}"]
-        lines += [f"{key:<20} {k:>6} {rms:>10.4g} {bic:>10.1f}" for key, k, rms, bic in self.rows]
-        if len(self.rows) > 1:
-            lines.append(f"chosen: {self.chosen}, BIC {self.rows[1][3] - self.rows[0][3]:.1f} below {self.rows[1][0]}")
+        lines = [f"noise floor {self.floor:.4g} {self.unit} (pooled within-repeat std of the held-out log)",
+                 f"{'model':<20} {'fitted':>6} {'fit rms':>9} {'held-out rms':>13} {'÷ floor':>8}"]
+        lines += [f"{bound.model.key:<20} {len(bound.fitted):>6} {'—' if bound.rms is None else f'{bound.rms:.4g}':>9}"
+                  f" {rms:>13.4g} {rms / self.floor:>8.2f}" for bound, rms in self.rows]
+        lines.append(f"chosen: {self.chosen}, the lowest rung within {self.limit:g}× the floor" if self.best else
+                     f"no rung is within {self.limit:g}× the floor: climb, or look at the rig")
         return "\n".join(lines)
+
+
+def noise_floor(observed, repeats) -> float:
+    """What the rig repeats to: the pooled within-repeat standard deviation (each repeat's own mean removed, one degree
+    of freedom per repeat), observable from the log itself."""
+    observed, repeats = np.asarray(observed, float).ravel(), np.asarray(repeats).ravel()
+    labels, index = np.unique(repeats, return_inverse=True)
+    residual = observed - (np.bincount(index, observed) / np.bincount(index))[index]
+    return float(np.sqrt(residual @ residual / (observed.size - labels.size)))
 
 
 def _split(physics: Physics, free: list[str], held: dict, inputs: Mapping) -> tuple[list[str], list[str]]:

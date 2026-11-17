@@ -51,37 +51,52 @@ Values(integrated_servo, 7 stated, SI):
 >>> m1(v=np.array([-1.0, 0.0, 1.0]))
 array([-0.32,  0.  ,  0.32])
 
-## 4. Fit M2.coulomb_viscous and M3.stribeck to the rig log
->>> log = rig_log()
->>> m2 = servo["M2.coulomb_viscous"].fit(log["tau"], v=log["v"], values=values)
->>> m3 = stribeck.fit(log["tau"], v=log["v"], values=values)
+## 4. Fit M2.coulomb_viscous and M3.stribeck on the fit plateaus only (1, 3, 5, 7, 9)
+>>> case
+'A'
+>>> fit_log, test_log = rig_log(case, "fit"), rig_log(case, "test")
+>>> m2 = servo["M2.coulomb_viscous"].fit(fit_log["tau"], v=fit_log["v"], values=values)
+>>> m3 = stribeck.fit(fit_log["tau"], v=fit_log["v"], values=values)
 >>> print(m3)
-M3.stribeck fitted on 500 samples, rms 0.00406
+M3.stribeck fitted on 250 samples, rms 0.003953
   output_inertia     4.2e-05    kg·m²      given
   gear_ratio         10                    given
-  coulomb_friction   0.41992    N·m        fitted
-  viscous_friction   0.035077   N·m·s/rad  fitted
-  breakaway_torque   0.65024    N·m        fitted
-  stribeck_velocity  0.24928    rad/s      fitted
+  coulomb_friction   0.41946    N·m        fitted
+  viscous_friction   0.035285   N·m·s/rad  fitted
+  breakaway_torque   0.65005    N·m        fitted
+  stribeck_velocity  0.24901    rad/s      fitted
   + 3 optional values it reads: peak_torque, rated_torque, max_output_speed
->>> round(m2.rms, 4), round(m3.rms, 4)
-(0.0689, 0.0041)
 
-## 5. Compare them and choose the rung that pays
->>> verdict = servo.compare(m1, m2, m3, observed=log["tau"], v=log["v"])
+## 5. Compare them on the held-out plateaus (2, 4, 6, 8, 10): the lowest rung that reaches the noise floor
+>>> verdict = servo.compare(m1, m2, m3, observed=test_log["tau"], repeats=test_log["plateau"], v=test_log["v"])
 >>> verdict
-model                fitted        rms        BIC
-M3.stribeck               4    0.00406    -5481.7
-M2.coulomb_viscous        2    0.06894    -2662.1
-M1.datasheet              0     0.2322    -1460.2
-chosen: M3.stribeck, BIC 2819.7 below M2.coulomb_viscous
+noise floor 0.004171 N·m (pooled within-repeat std of the held-out log)
+model                fitted   fit rms  held-out rms  ÷ floor
+M1.datasheet              0         —         0.222    53.22
+M2.coulomb_viscous        2   0.06469       0.08458    20.28
+M3.stribeck               4  0.003953      0.004185     1.00
+chosen: M3.stribeck, the lowest rung within 1.5× the floor
 >>> verdict.chosen
 'M3.stribeck'
 
-## 6. Hand it on: MuJoCo's joint attributes, a vectorized call; a declared rung says it does not run
->>> m3.mujoco()
-{'armature': 4.2e-05, 'frictionloss': 0.6502392062209615, 'damping': 0.035076934159658735}
->>> m3(v=np.array([0.05, 0.5, 2.0])).round(4)
-array([0.6429, 0.4416, 0.4901])
->>> servo["M4.drivetrain"].fit(log["tau"], v=log["v"], values=values)  # -> NotImplementedError
+## 6. The negative control, servo B: the same calls, and the simpler rung wins
+>>> fit_b, test_b = rig_log("B", "fit"), rig_log("B", "test")
+>>> m2_b = servo["M2.coulomb_viscous"].fit(fit_b["tau"], v=fit_b["v"], values=values)
+>>> m3_b = stribeck.fit(fit_b["tau"], v=fit_b["v"], values=values)
+>>> round(m3_b.values["breakaway_torque"], 2), round(m3_b.values["stribeck_velocity"], 4)   # a knee chasing noise
+(-4.73, 0.0107)
+>>> servo.compare(m2_b, m3_b, observed=test_b["tau"], repeats=test_b["plateau"], v=test_b["v"])
+noise floor 0.00422 N·m (pooled within-repeat std of the held-out log)
+model                fitted   fit rms  held-out rms  ÷ floor
+M2.coulomb_viscous        2  0.004037      0.004326     1.03
+M3.stribeck               4   0.00398      0.004395     1.04
+chosen: M2.coulomb_viscous, the lowest rung within 1.5× the floor
+
+## 7. Hand on the chosen one: MuJoCo's joint attributes, a vectorized call; a declared rung says it does not run
+>>> best = verdict.best
+>>> best.mujoco()
+{'armature': 4.2e-05, 'frictionloss': 0.6500489938172218, 'damping': 0.03528455268066556}
+>>> best(v=np.array([0.05, 0.5, 2.0])).round(4)
+array([0.6427, 0.4412, 0.49  ])
+>>> servo["M4.drivetrain"].fit(fit_log["tau"], v=fit_log["v"], values=values)  # -> NotImplementedError
 NotImplementedError: M4.drivetrain is declared, not runnable here: physics is attached for M0-M3 only (the round's stop line)

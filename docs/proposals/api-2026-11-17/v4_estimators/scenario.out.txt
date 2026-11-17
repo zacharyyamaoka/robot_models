@@ -40,51 +40,49 @@ M1.datasheet: not fitted
 >>> m1.predict(1.0)                               # tau_r at 1 rad/s [N·m]
 0.32
 
-# Step 4 · Fit M2 and M3 to the rig log
->>> log = rig_log()                               # velocity plateaus, both directions: v [rad/s], tau [N·m]
->>> m2 = Model.from_datasheet(ds, "M2.coulomb_viscous").fit(log)
->>> m3 = Model.from_datasheet(ds, "M3.stribeck").fit(log)    # starts from the datasheet; the rest is scanned
+# Step 4 · Fit M2 and M3 on the fit plateaus only
+>>> fit, test = rig_log("A", "fit"), rig_log("A", "test")   # plateaus 1, 3, 5, 7, 9 to fit; 2, 4, 6, 8, 10 held out
+>>> m2 = Model.from_datasheet(ds, "M2.coulomb_viscous").fit(fit)
+>>> m3 = Model.from_datasheet(ds, "M3.stribeck").fit(fit)    # starts from the datasheet; the rest is scanned
 >>> print(m2)
-M2.coulomb_viscous: fitted on 500 samples, rms 0.0689 N·m
-  fitted   coulomb_friction 0.5601 N·m
-  fitted   viscous_friction -0.03347 N·m·s/rad
+M2.coulomb_viscous: fitted on 250 samples, rms 0.0647 N·m
+  fitted   coulomb_friction 0.5797 N·m
+  fitted   viscous_friction -0.06487 N·m·s/rad
   stated   output_inertia 4.2e-05 kg·m², gear_ratio 10, peak_torque 3.5 N·m, rated_torque 1.05 N·m, max_output_speed 24.09 rad/s
 >>> print(m3)
-M3.stribeck: fitted on 500 samples, rms 0.00406 N·m
-  fitted   coulomb_friction 0.4199 N·m
-  fitted   viscous_friction 0.03508 N·m·s/rad
-  fitted   breakaway_torque 0.6502 N·m
-  fitted   stribeck_velocity 0.2493 rad/s
+M3.stribeck: fitted on 250 samples, rms 0.00395 N·m
+  fitted   coulomb_friction 0.4195 N·m
+  fitted   viscous_friction 0.03528 N·m·s/rad
+  fitted   breakaway_torque 0.65 N·m
+  fitted   stribeck_velocity 0.249 rad/s
   stated   output_inertia 4.2e-05 kg·m², gear_ratio 10, peak_torque 3.5 N·m, rated_torque 1.05 N·m, max_output_speed 24.09 rad/s
->>> m1.score(log), m2.score(log), m3.score(log)  # R², sklearn's score
-(0.8136124659397225, 0.983570080208875, 0.9999430205637946)
 
-# Step 5 · Compare: climb the ladder while the next rung pays
->>> report = servo.climb(ds, log)                 # M1 from the datasheet, then fit every rung above, keep the best
+# Step 5 · Compare on the held-out plateaus: climb to the lowest rung that reaches the noise floor
+>>> report = servo.climb(ds, fit, test)           # fit each rung on `fit`, judge it on `test`, stop at the floor
 >>> print(report)
-climb integrated_servo on 500 samples: BIC = n·ln(RSS/n) + k·ln(n), climb while ΔBIC < −2
-  rung                   k  rms N·m    BIC   ΔBIC  verdict
-  M1.datasheet           0   0.2322  -1460      ·  start: the datasheet, nothing fitted
-  M2.coulomb_viscous     2   0.0689  -2662  -1202  pays → climb
-  M3.stribeck            4   0.0041  -5482  -2820  pays → climb
-  M3.load                ·        ·      ·      ·  skipped: the log has no tau_load
-  M4.ripple              ·        ·      ·      ·  skipped: declared, above the M0–M3 stop line
-  M3.lugre               ·        ·      ·      ·  skipped: the log has no dt
-  M3.weakening_capture   ·        ·      ·      ·  skipped: declared, no physics shipped
-chosen M3.stribeck: nothing above it fits this log
+climb integrated_servo: fit on 250 samples, judged on 250 held out; rms in N·m, noise floor 0.00417; climb while held out > 1.5× floor
+  rung                   k  fit rms held out ÷ floor  verdict
+  M1.datasheet           0  0.24200  0.22197   53.22  start: the datasheet, nothing fitted
+  M2.coulomb_viscous     2  0.06469  0.08458   20.28  lowest held-out → climb
+  M3.stribeck            4  0.00395  0.00418    1.00  lowest held-out → climb
+  M3.load                ·        ·        ·       ·  skipped: the log has no tau_load
+  M4.ripple              ·        ·        ·       ·  skipped: declared, above the M0–M3 stop line
+  M3.lugre               ·        ·        ·       ·  skipped: the log has no dt
+  M3.weakening_capture   ·        ·        ·       ·  skipped: declared, no physics shipped
+chosen M3.stribeck: the lowest rung within 1.5× the noise floor on held-out plateaus
 >>> report.chosen
-<Model M3.stribeck: 9 values, 4 fitted on 500 samples>
+<Model M3.stribeck: 9 values, 4 fitted on 250 samples>
 
-# Step 6 · The same climb stops where the log stops paying
->>> fast = {column: values[abs(log["v"]) >= 0.8] for column, values in log.items()}  # only plateaus ≥ 0.8 rad/s
->>> print(servo.climb(ds, fast))                  # no slow plateaus: the Stribeck drop is invisible, so M3 is not worth it
-climb integrated_servo on 200 samples: BIC = n·ln(RSS/n) + k·ln(n), climb while ΔBIC < −2
-  rung                   k  rms N·m    BIC   ΔBIC  verdict
-  M1.datasheet           0   0.1471   -767      ·  start: the datasheet, nothing fitted
-  M2.coulomb_viscous     2   0.0039  -2206  -1439  pays → climb
-  M3.stribeck            4   0.0039  -2196    +10  does not pay
-  M3.load                ·        ·      ·      ·  skipped: the log has no tau_load
-  M4.ripple              ·        ·      ·      ·  skipped: declared, above the M0–M3 stop line
-chosen M2.coulomb_viscous: M3.stribeck does not pay
+# Step 6 · The negative control: a second servo, where the simpler rung must win
+>>> fit_b, test_b = rig_log("B", "fit"), rig_log("B", "test")   # same rig, a plain Coulomb + viscous servo
+>>> print(servo.climb(ds, fit_b, test_b))         # M3 fits its own plateaus a hair better, and loses on the held-out ones
+climb integrated_servo: fit on 250 samples, judged on 250 held out; rms in N·m, noise floor 0.00422; climb while held out > 1.5× floor
+  rung                   k  fit rms held out ÷ floor  verdict
+  M1.datasheet           0  0.08662  0.09128   21.63  start: the datasheet, nothing fitted
+  M2.coulomb_viscous     2  0.00404  0.00433    1.03  lowest held-out → climb
+  M3.stribeck            4  0.00397  0.00662    1.57  not needed: M2.coulomb_viscous reaches the floor
+  M3.load                ·        ·        ·       ·  skipped: the log has no tau_load
+  M4.ripple              ·        ·        ·       ·  skipped: declared, above the M0–M3 stop line
+chosen M2.coulomb_viscous: the lowest rung within 1.5× the noise floor on held-out plateaus
 
-# run() returns: chosen M3.stribeck, M3 rms 0.0041 < M2 rms 0.0689
+# run() returns: chosen M3.stribeck; held-out rms M2 0.0846, M3 0.0042 N·m

@@ -65,29 +65,47 @@ array([-0.32 ,  0.302,  0.32 ])
 >>> servo["M3.stribeck"].from_datasheet(datasheet())        # a datasheet states no Stribeck curve
 ValueError: M3.stribeck: the datasheet states no breakaway_torque, stribeck_velocity; fit them: .fit(log, ...)
 
-# 4. Fit M2.coulomb_viscous, then climb one slot to M3.stribeck and fit again on the same rig log
->>> log = rig_log()   # velocity plateaus, both directions: v [rad/s], tau [N·m]
->>> m2_fit = servo["M2.coulomb_viscous"].fit(log, start=m1)
->>> m3_fit = m2_fit.model.redeclare(friction="stribeck").fit(log, start=m2_fit)
+# 4. Fit M2.coulomb_viscous, then climb one slot to M3.stribeck: both on the fit plateaus only
+>>> case   # the servo on the rig: run(case) passes it in; step 6 reruns steps 4 and 5 on "B"
+'A'
+>>> fit_log, test_log = rig_log(case, "fit"), rig_log(case, "test")   # plateaus 1, 3, 5, 7, 9 | 2, 4, 6, 8, 10 held out
+>>> m2_fit = servo["M2.coulomb_viscous"].fit(fit_log, start=m1)
+>>> m3_fit = m2_fit.model.redeclare(friction="stribeck").fit(fit_log, start=m2_fit)
 >>> m2_fit
-M2.coulomb_viscous from a fit to 500 samples (rms 0.06894 N·m)
-  fitted   coulomb_friction 0.5601 N·m · viscous_friction -0.03347 N·m·s/rad
+M2.coulomb_viscous from a fit to 250 samples (fit rms 0.06469 N·m)
+  fitted   coulomb_friction 0.5797 N·m · viscous_friction -0.06487 N·m·s/rad
   carried  output_inertia 4.2e-05 kg·m² · gear_ratio 10
   stated   peak_torque 3.5 N·m · rated_torque 1.05 N·m · max_output_speed 24.09 rad/s
 >>> m3_fit
-M3.stribeck from a fit to 500 samples (rms 0.00406 N·m)
-  fitted   coulomb_friction 0.4199 N·m · viscous_friction 0.03508 N·m·s/rad · breakaway_torque 0.6502 N·m · stribeck_velocity 0.2493 rad/s
+M3.stribeck from a fit to 250 samples (fit rms 0.003953 N·m)
+  fitted   coulomb_friction 0.4195 N·m · viscous_friction 0.03528 N·m·s/rad · breakaway_torque 0.65 N·m · stribeck_velocity 0.249 rad/s
   carried  output_inertia 4.2e-05 kg·m² · gear_ratio 10
   stated   peak_torque 3.5 N·m · rated_torque 1.05 N·m · max_output_speed 24.09 rad/s
 
-# 5. Compare them: does the friction swap pay?
+# 5. Does the friction swap pay? Judge on the held-out plateaus: the lowest rung that reaches the noise floor
 >>> from composed_terms import compare
->>> verdict = compare(m2_fit, m3_fit)
+>>> verdict = compare(m2_fit, m3_fit, on=test_log)   # rms on plateaus neither fit saw, ÷ the rig's own repeatability
 >>> print(verdict)
-model                 k  rms N·m      BIC  swapped
-M2.coulomb_viscous    2   0.0689  -2662.1
-M3.stribeck           4   0.0041  -5481.7  friction: coulomb_viscous → stribeck   ← chosen
+held out: 250 samples on 10 plateaus the fits never saw; rig noise floor 0.00417 N·m (pooled within-plateau std)
+model                 k   fit rms  held-out rms  ÷ floor  swapped
+M2.coulomb_viscous    2   0.06469       0.08458    20.28
+M3.stribeck           4   0.00395       0.00418     1.00  friction: coulomb_viscous → stribeck   ← chosen
+chosen: the lowest whose held-out rms ÷ floor ≤ 1.5
 >>> verdict.chosen
 'M3.stribeck'
+>>> compare(m2_fit, m3_fit, on=fit_log)               # the fit plateaus would grade the optimiser, not the choice
+ValueError: on= shares samples with the fits' own log: judge on plateaus the fits never saw
 >>> m3_fit.params   # SI values by canonical name, ready for MuJoCo or sim2real
-{'coulomb_friction': 0.4199166478341351, 'viscous_friction': 0.03507676270088142, 'breakaway_torque': 0.6502394617437682, 'stribeck_velocity': 0.24928147442400214}
+{'coulomb_friction': 0.4194638408279985, 'viscous_friction': 0.035284260351836, 'breakaway_torque': 0.6500491435740432, 'stribeck_velocity': 0.2490136003558385}
+
+# 6. Servo B, the negative control: steps 4 and 5 unchanged, and the simpler rung wins
+>>> case = "B"   # a second servo on the same rig
+>>> fit_log, test_log = rig_log(case, "fit"), rig_log(case, "test")
+>>> m2_fit = servo["M2.coulomb_viscous"].fit(fit_log, start=m1)
+>>> m3_fit = m2_fit.model.redeclare(friction="stribeck").fit(fit_log, start=m2_fit)
+>>> print(compare(m2_fit, m3_fit, on=test_log))   # M3 fits its own plateaus better and the held-out ones worse
+held out: 250 samples on 10 plateaus the fits never saw; rig noise floor 0.00422 N·m (pooled within-plateau std)
+model                 k   fit rms  held-out rms  ÷ floor  swapped
+M2.coulomb_viscous    2   0.00404       0.00433     1.03     ← chosen
+M3.stribeck           4   0.00397       0.00662     1.57  friction: coulomb_viscous → stribeck
+chosen: the lowest whose held-out rms ÷ floor ≤ 1.5

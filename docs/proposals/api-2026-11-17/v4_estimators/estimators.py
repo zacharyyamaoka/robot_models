@@ -1,7 +1,7 @@
 """v4 · Estimators that climb: a Model is an estimator (sklearn's verbs); a Family is model selection over its ladder.
 
-    m3 = Model.from_datasheet(datasheet, "M3.stribeck").fit(log)   # then predict(v), score(log), get_params(), bic(log)
-    print(families()["integrated_servo"].climb(datasheet, log))     # fit up the ladder while each next rung pays
+    m3 = Model.from_datasheet(datasheet, "M3.stribeck").fit(fit_log)   # then predict(v), rms(log), score(log), get_params()
+    print(families()["integrated_servo"].climb(datasheet, fit_log, test_log))   # up the ladder until held out hits the floor
 
 A rung's names, units, equation, references, aliases and fallback are read from robot_models.ladder; every torque
 comes from actuators/rungs/<word>/model.py. numpy + stdlib + robot_models only.
@@ -13,7 +13,6 @@ import functools
 import importlib.util
 import itertools
 import json
-import math
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -27,8 +26,10 @@ PACKAGE = Path(robot_models.__file__).resolve().parent
 TOP_RUNNABLE_LEVEL = 3     # WHY: the round's stop line; M4–M7 are declared and say so when called
 FIRST_FITTED_LEVEL = 2     # WHY: M0 and M1 state the part and fit nothing (the servo ladder's docstring)
 TARGET = "tau"             # WHY: the rig log's measured column, the torque the motor added: every rung's tau_r
-# WHY 2: Kass & Raftery (1995) call a BIC drop under 2 "not worth more than a bare mention"; a rung must beat that.
-CLIMB_MARGIN = 2.0
+PLATEAU = "plateau"        # the rig log's id per held speed and direction: what makes its noise floor observable
+# WHY 1.5: sim2real's selection rule (cards/schema.py select(), TWINNED_LIMIT): a rung within 1.5× the rig's own
+# repeatability on plateaus it never saw has nothing left to explain, so a richer rung would only fit noise.
+FLOOR_LIMIT = 1.5
 
 
 class NotRunnable(RuntimeError):
@@ -159,25 +160,18 @@ class Model:
                     best = flipped
             self.values.update(zip(free, map(float, best)))
         self.fitted_, self.n_samples_ = {name: self.values[name] for name in free}, len(tau)
-        self.rms_ = float(np.sqrt(np.mean((self._torque(self.values, log) - tau) ** 2)))
+        self.rms_ = self.rms(log)
         return self
+
+    def rms(self, log: Mapping[str, np.ndarray]) -> float:
+        """Root-mean-square residual [N·m] on any log: on held-out plateaus, the number model selection reads;
+        `rms_` is the same on the log it was fitted on."""
+        return float(np.sqrt(np.mean((self.predict(log) - np.asarray(log[TARGET], float)) ** 2)))
 
     def score(self, log: Mapping[str, np.ndarray]) -> float:
         """R², as sklearn's regressors score: 1 is exact, 0 no better than the log's mean."""
         tau = np.asarray(log[TARGET], float)
         return float(1.0 - np.sum((self.predict(log) - tau) ** 2) / np.sum((tau - tau.mean()) ** 2))
-
-    def aic(self, log: Mapping[str, np.ndarray]) -> float:
-        return self._criterion(log, 2.0)                              # Akaike (1974): 2 per fitted value
-
-    def bic(self, log: Mapping[str, np.ndarray]) -> float:
-        return self._criterion(log, math.log(len(log[TARGET])))       # Schwarz (1978): ln n per fitted value
-
-    def _criterion(self, log, charge: float) -> float:
-        """n·ln(RSS/n) + charge·k for Gaussian residuals. WHY k = the fitted values only: a value the datasheet
-        states costs this log nothing, so M1 is charged zero and each rung pays for what it adds."""
-        tau = np.asarray(log[TARGET], float)
-        return len(tau) * math.log(np.sum((self.predict(log) - tau) ** 2) / len(tau)) + charge * len(self.fitted_)
 
     # --- inside -----------------------------------------------------------------------------------------------------
 
@@ -299,51 +293,75 @@ class Family:
             walk(root, "", "")
         return "\n".join(lines)
 
-    def climb(self, datasheet, log: Mapping[str, np.ndarray], start: str = "M1.datasheet") -> Climb:
-        """Model selection up the ladder: start at the datasheet model, fit every rung that extends the current one,
-        and climb to the best of them only while it lowers BIC by more than CLIMB_MARGIN."""
-        current = Model.from_datasheet(datasheet, start).fit(log)
-        report = Climb(self.type, len(log[TARGET]), current)
-        report.add(current, log, None, "start: the datasheet, nothing fitted")
+    def climb(self, datasheet, fit: Mapping[str, np.ndarray], test: Mapping[str, np.ndarray],
+              start: str = "M1.datasheet") -> Climb:
+        """Model selection up the ladder, on held-out data: every rung is fitted on `fit` and judged on `test`.
+        Stop at the first rung within FLOOR_LIMIT× the rig's noise floor (the lowest rung that reaches it); short of
+        it, climb to the child with the lowest held-out rms, and only if that child beats the current rung there.
+        WHY held out (Zach, 2026-11-17): "if doing a more complex model doesn't actually improve test time
+        performance you are just overfitting"; a rung that nests the one below always fits its own training data at
+        least as well, so a training score can never say no."""
+        report = Climb(self.type, fit, test)
+        current = report.chosen = Model.from_datasheet(datasheet, start).fit(fit)
+        report.add(current, "start: the datasheet, nothing fitted")
         while True:
+            reached = report.held_out[current.key] <= FLOOR_LIMIT * report.floor
             candidates = [Model.from_datasheet(datasheet, key) for key in self.children(current.key)]
-            tried = [(candidate, candidate.why_not(log)) for candidate in candidates]
+            tried, held_out = [(candidate, candidate.why_not(fit)) for candidate in candidates], {}
             for candidate, reason in tried:
                 if reason is None:
                     # WHY warm-start from the rung below: its fit is the nearest model, so each step stays local
-                    candidate.set_params(**{n: v for n, v in current.values.items() if n in candidate.holds}).fit(log)
-            best = min((c for c, reason in tried if reason is None), key=lambda m: m.bic(log), default=None)
-            pays = best is not None and best.bic(log) - current.bic(log) < -CLIMB_MARGIN
+                    candidate.set_params(**{n: v for n, v in current.values.items() if n in candidate.holds}).fit(fit)
+                    held_out[candidate.key] = candidate.rms(test)
+            best = min(held_out, key=held_out.get, default=None)
+            climbs = not reached and best is not None and held_out[best] < report.held_out[current.key]
             for candidate, reason in tried:
-                verdict = (f"skipped: {reason}" if reason else "pays → climb" if candidate is best and pays
-                           else "does not pay" if candidate is best else f"fitted; {best.key} scores better")
-                report.add(None if reason else candidate, log, current, verdict, key=candidate.key)
-            if not pays:
-                report.stop = f"{best.key} does not pay" if best else "nothing above it fits this log"
+                verdict = (f"skipped: {reason}" if reason
+                           else "lowest held-out → climb" if candidate.key == best and climbs
+                           else f"not needed: {current.key} reaches the floor" if reached
+                           else f"no better held-out than {current.key}" if candidate.key == best
+                           else f"{best} is lower held-out")
+                report.add(None if reason else candidate, verdict, key=candidate.key)
+            if not climbs:
+                report.stop = (f"the lowest rung within {FLOOR_LIMIT:g}× the noise floor on held-out plateaus" if reached
+                               else f"short of the floor, and {best} does not beat it held out" if best
+                               else "short of the floor, and nothing above it fits this log")
                 return report
-            current = report.chosen = best
+            current = report.chosen = report.fits[best]
+
+
+def noise_floor(log: Mapping[str, np.ndarray]) -> float:
+    """What the rig repeats to [N·m]: the pooled within-plateau standard deviation, i.e. the held-out rms of the one
+    estimator no rung can beat, the one that knows each plateau's own mean (charged one value per plateau)."""
+    if PLATEAU not in log:
+        raise ValueError(f"the log has no {PLATEAU!r} ids: the noise floor is the spread within each held speed")
+    tau = np.asarray(log[TARGET], float)
+    ids, which = np.unique(np.asarray(log[PLATEAU]), return_inverse=True)
+    means = np.bincount(which, tau) / np.bincount(which)
+    return float(np.sqrt(np.sum((tau - means[which]) ** 2) / (len(tau) - len(ids))))
 
 
 class Climb:
-    """The climb's table: one row per rung it looked at, in the order it looked, and the rung it chose."""
+    """The climb's table: one row per rung it looked at, in the order it looked; the rung it chose and why it stopped."""
 
-    def __init__(self, type_name: str, n_samples: int, chosen: Model):
-        self.type, self.n_samples, self.chosen = type_name, n_samples, chosen
-        self.rows, self.fits, self.stop = [], {}, ""     # fits: {key: fitted Model}
+    def __init__(self, type_name: str, fit: Mapping[str, np.ndarray], test: Mapping[str, np.ndarray]):
+        self.type, self.test, self.floor = type_name, test, noise_floor(test)
+        self.n_fit, self.n_test = len(fit[TARGET]), len(test[TARGET])
+        self.rows, self.fits, self.held_out, self.chosen, self.stop = [], {}, {}, None, ""   # fits: {key: Model}
 
-    def add(self, model, log, below, verdict, key=None):
+    def add(self, model, verdict, key=None):
         if model is None:
             self.rows.append((key, "·", "·", "·", "·", verdict))
             return
-        self.fits[model.key] = model
-        delta = f"{model.bic(log) - below.bic(log):+.0f}" if below else "·"
-        self.rows.append((model.key, len(model.fitted_), f"{model.rms_:.4f}", f"{model.bic(log):.0f}", delta, verdict))
+        self.fits[model.key], self.held_out[model.key] = model, model.rms(self.test)
+        self.rows.append((model.key, len(model.fitted_), f"{model.rms_:.5f}", f"{self.held_out[model.key]:.5f}",
+                          f"{self.held_out[model.key] / self.floor:.2f}", verdict))
 
     def __str__(self) -> str:
-        table = [("rung", "k", "rms N·m", "BIC", "ΔBIC", "verdict"), *self.rows]
-        return "\n".join([f"climb {self.type} on {self.n_samples} samples: BIC = n·ln(RSS/n) + k·ln(n), climb while "
-                          f"ΔBIC < −{CLIMB_MARGIN:g}",
-                          *(f"  {r[0]:<21} {r[1]!s:>2} {r[2]:>8} {r[3]:>6} {r[4]:>6}  {r[5]}" for r in table),
+        table = [("rung", "k", "fit rms", "held out", "÷ floor", "verdict"), *self.rows]
+        return "\n".join([f"climb {self.type}: fit on {self.n_fit} samples, judged on {self.n_test} held out; rms in N·m, "
+                          f"noise floor {self.floor:.5f}; climb while held out > {FLOOR_LIMIT:g}× floor",
+                          *(f"  {r[0]:<21} {r[1]!s:>2} {r[2]:>8} {r[3]:>8} {r[4]:>7}  {r[5]}" for r in table),
                           f"chosen {self.chosen.key}: {self.stop}"])
 
 
@@ -353,4 +371,4 @@ def families() -> dict[str, Family]:
     return {name: Family(ladder) for name, ladder in ladders().items()}
 
 
-__all__ = ["Climb", "Family", "Model", "NotRunnable", "families"]
+__all__ = ["Climb", "Family", "Model", "NotRunnable", "families", "noise_floor"]

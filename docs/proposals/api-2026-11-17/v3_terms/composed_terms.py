@@ -1,8 +1,8 @@
 """Composed terms (v3): a Model is a sum of term models, one per slot; a ladder rung is a named preset of slot choices.
 
     m3 = servo["M2.coulomb_viscous"].redeclare(friction="stribeck")   # climbing = swapping one slot -> M3.stribeck
-    m3_fit = m3.fit(log, start=servo["M1.datasheet"].from_datasheet(sheet))
-    compare(m2_fit, m3_fit).chosen                                    # does the swap pay?
+    m3_fit = m3.fit(fit_log, start=servo["M1.datasheet"].from_datasheet(sheet))
+    compare(m2_fit, m3_fit, on=test_log).chosen      # does the swap pay on plateaus neither fit saw?
 
 Borrowed: Modelica's replaceable components and `redeclare`, lmfit's composite models (`model_a + model_b`, one
 parameter set, `fit` on the composite, a result that predicts), Drake's Diagram of LeafSystems (each term runs alone;
@@ -29,6 +29,8 @@ PACKAGE = Path(robot_models.__file__).resolve().parent
 RUNNABLE_UP_TO = 3
 GRID_POINTS, ZOOMS = 41, 4
 EMPTY = "·"
+# WHY 1.5 and this rule: sim2real's select() (cards/schema.py), so the rung chosen here is the one the twin would take
+REACHES_FLOOR = 1.5
 
 
 def _ordered(names) -> tuple[str, ...]:
@@ -274,8 +276,7 @@ class Model:
             grids = [np.geomspace(best[n] * g[0] / g[1], best[n] * g[1] / g[0], GRID_POINTS).tolist()
                      for n, g in zip(nonlinear, grids)]
         fitted = tuple(name for name in self.parameters if name in best)
-        return Bound(self, {**base, **best}, f"a fit to {tau.size} samples", fitted, math.sqrt(rss / tau.size),
-                     tau.size)
+        return Bound(self, {**base, **best}, f"a fit to {tau.size} samples", fitted, math.sqrt(rss / tau.size), tau)
 
     def _grid(self, name: str, guess: float, inputs: dict) -> list[float]:
         # WHY the log's own range: a parameter in an input's unit (stribeck_velocity, rad/s) lives where the log ran
@@ -286,56 +287,85 @@ class Model:
 
 
 class Bound:
-    """A Model with values (lmfit's ModelResult): it predicts, hands its values on, and compares."""
+    """A Model with values (lmfit's ModelResult): it predicts, hands its values on, and scores itself on a log."""
 
-    def __init__(self, model: Model, values: dict, source: str, fitted=(), rms=None, samples=0):
+    def __init__(self, model: Model, values: dict, source: str, fitted=(), rms=None, trained_on=()):
         self.model, self.values, self.source = model, values, source
-        self.fitted, self.rms, self.samples = tuple(fitted), rms, samples
+        self.fitted, self.rms, self.trained_on = tuple(fitted), rms, np.asarray(trained_on, float)
+        self.samples = self.trained_on.size
 
     def predict(self, v, **inputs):
         out = self.model.torque(self.values, v=v, **inputs)
         return float(out) if out.ndim == 0 else out
+
+    def score(self, log: dict) -> float:
+        """The rms error [N·m] on a log. Pass one the fit never saw: a law nesting another fits its own log better."""
+        inputs = {name: np.asarray(log[name], float) for name in self.model.inputs}
+        return float(np.sqrt(np.mean((self.model.torque(self.values, **inputs) - np.asarray(log["tau"])) ** 2)))
 
     @property
     def params(self) -> dict[str, float]:
         """What the data set: the fitted values, SI, by canonical name (ready for MuJoCo or sim2real)."""
         return {name: self.values[name] for name in self.fitted}
 
-    @property
-    def bic(self) -> float:
-        """Schwarz (1978): n·ln(rss/n) + k·ln(n), k the fitted parameters."""
-        return self.samples * math.log(self.rms ** 2) + len(self.fitted) * math.log(self.samples)
-
     def __repr__(self) -> str:
         def show(names):
             return " · ".join(f"{n} {self.values[n]:.4g} {self.model.parameter(n).unit}".rstrip() for n in names)
         carried = [n for n in self.model.parameters if n in self.values and n not in self.fitted]
         stated = [n for n in self.model.optional if n in self.values]
-        lines = [f"{self.model.label} from {self.source}" + (f" (rms {self.rms:.4g} N·m)" if self.fitted else "")]
+        lines = [f"{self.model.label} from {self.source}" + (f" (fit rms {self.rms:.4g} N·m)" if self.fitted else "")]
         lines += [f"  fitted   {show(self.fitted)}"] if self.fitted else []
         lines += [f"  {'carried' if self.fitted else 'needs':<8} {show(carried)}"] if carried else []
         return "\n".join(lines + ([f"  stated   {show(stated)}"] if stated else []))
 
 
-class Comparison:
-    """Fits of one log side by side, each row naming the slot it swapped; the lowest BIC is chosen."""
+def noise_floor(log: dict) -> float:
+    """What the rig repeats to [N·m]: the pooled within-plateau std of tau, observable from the log itself."""
+    tau, plateau = np.asarray(log["tau"], float), np.asarray(log["plateau"])
+    ids = np.unique(plateau)
+    spread = sum(float(np.sum((tau[plateau == p] - tau[plateau == p].mean()) ** 2)) for p in ids)
+    return math.sqrt(spread / (tau.size - ids.size))
 
-    def __init__(self, fits):
+
+class Comparison:
+    """Fits of one log, judged on a held-out log, lowest first; each row names the slot it swapped.
+
+    The chosen one is the lowest whose held-out rms ÷ the rig's noise floor ≤ REACHES_FLOOR: climbing swaps one slot,
+    and a swap pays only when the rung below it misses the floor. WHY held out (Zach, 2026-11-17): "if doing a more
+    complex model doesn't actually improve test time performance you are just overfitting"; a friction option that
+    nests the one it replaces (stribeck holds coulomb_viscous) always wins on its own fit log.
+    """
+
+    def __init__(self, fits, on: dict):
         if len({fit.samples for fit in fits}) != 1 or any(fit.rms is None for fit in fits):
             raise ValueError("compare fits of one log: each a .fit(log) over the same samples")
-        self.fits, self.chosen = tuple(fits), min(fits, key=lambda fit: fit.bic).model.key
+        if any(np.isin(np.asarray(on["tau"], float), fit.trained_on).any() for fit in fits):
+            raise ValueError("on= shares samples with the fits' own log: judge on plateaus the fits never saw")
+        ladder = {key: index for index, key in enumerate(fits[0].model.family.keys())}
+        # WHY fewest fitted parameters first, then ladder order: "lowest" must also rank a sum that no rung names
+        self.fits = tuple(sorted(fits, key=lambda fit: (len(fit.fitted), ladder.get(fit.model.key, len(ladder)))))
+        self.floor, self.samples, self.plateaus = noise_floor(on), len(on["tau"]), np.unique(on["plateau"]).size
+        self.held_out = tuple(fit.score(on) for fit in self.fits)
+        reached = [fit for fit, rms in zip(self.fits, self.held_out) if rms <= REACHES_FLOOR * self.floor]
+        self.chosen = reached[0].model.label if reached else None
 
     def __str__(self) -> str:
-        rows = [f"{'model':<20} {'k':>2} {'rms N·m':>8} {'BIC':>8}  swapped"]
-        for previous, fit in zip((None, *self.fits), self.fits):
+        rows = [f"held out: {self.samples} samples on {self.plateaus} plateaus the fits never saw; rig noise floor "
+                f"{self.floor:.5f} N·m (pooled within-plateau std)",
+                f"{'model':<20} {'k':>2}  {'fit rms':>8}  {'held-out rms':>12}  {'÷ floor':>7}  swapped"]
+        for previous, fit, held_out in zip((None, *self.fits), self.fits, self.held_out):
             change = fit.model.changes(previous.model) if previous else ""
-            row = f"{fit.model.label:<20} {len(fit.fitted):>2} {fit.rms:>8.4f} {fit.bic:>8.1f}  {change}"
-            rows.append(row + ("   ← chosen" if fit.model.key == self.chosen else ""))
+            row = (f"{fit.model.label:<20} {len(fit.fitted):>2}  {fit.rms:>8.5f}  {held_out:>12.5f}  "
+                   f"{held_out / self.floor:>7.2f}  {change}")
+            rows.append(row + ("   ← chosen" if fit.model.label == self.chosen else ""))
+        rows.append(f"chosen: the lowest whose held-out rms ÷ floor ≤ {REACHES_FLOOR}" if self.chosen else
+                    f"none reaches {REACHES_FLOOR} × the floor: swap or fill another slot and fit again")
         return "\n".join(row.rstrip() for row in rows)
 
 
-def compare(*fits: Bound) -> Comparison:
-    return Comparison(fits)
+def compare(*fits: Bound, on: dict) -> Comparison:
+    """Judge fits of one log on `on`, a held-out log (v, tau, plateau) from the same rig that none of them saw."""
+    return Comparison(fits, on)
 
 
 class Slots:

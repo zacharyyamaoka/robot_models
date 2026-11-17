@@ -15,7 +15,6 @@ import dataclasses
 import importlib.util
 import inspect
 import json
-import math
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from functools import cache
 from pathlib import Path
@@ -30,7 +29,10 @@ PACKAGE = Path(robot_models.__file__).resolve().parent
 # WHY the contract's stop line: M0-M3 run; M4-M7 are declared (fields, fallback, prose) and refuse to run.
 TOP_RUNNABLE_LEVEL = 3
 KIND_ANNOTATION = {"number": "float | None", "integer": "int | None", "text": "str | None"}
-Log = Mapping[str, np.ndarray]  # a rig log: {"v": output speed [rad/s], "tau": torque the motor added [N·m]}
+# WHY 1.5 x the floor: sim2real's selection rule (cards/schema.py TWINNED_LIMIT, select()), so a rung chosen here is the
+# rung sim2real would choose from the same held-out numbers.
+SELECT_LIMIT = 1.5
+Log = Mapping[str, np.ndarray]  # a rig log: v [rad/s], tau [N·m] (the torque the motor added), plateau (an id per hold)
 
 
 def _ordered(names: Iterable[str]) -> tuple[str, ...]:
@@ -284,42 +286,76 @@ class Model:
         return not np.array_equal(cls(**values).torque(log["v"]), cls(**bumped).torque(log["v"]))
 
     def score(self, log: Log) -> Score:
+        """The torque error on `log` [N·m rms]. Choose on held-out plateaus: on its own fit data a rung never loses to
+        one it nests (M3.stribeck with breakaway_torque = coulomb_friction IS M2.coulomb_viscous)."""
         residual = self.torque(log["v"]) - log["tau"]
-        n, rss = residual.size, float(residual @ residual)
         fitted = sum(type(self)._moves(self.terms(), name, log) for name in self.needs())
-        return Score(self.key, fitted, math.sqrt(rss / n), n * math.log(rss / n) + fitted * math.log(n))
+        return Score(self.key, fitted, float(np.sqrt(np.mean(residual ** 2))))
 
     @classmethod
-    def compare(cls, models: Iterable[Model], log: Log) -> Comparison:
-        models = tuple(models)
-        return Comparison(models, tuple(model.score(log) for model in models))
+    def compare(cls, models: Iterable[Model], held_out: Log, fitted_on: Log | None = None,
+                limit: float = SELECT_LIMIT) -> Comparison:
+        """Score rungs on held-out plateaus against the rig's own noise floor.
+
+        WHY one fallback chain: "the lowest rung that reaches the floor" needs an order, and the class tree is it: each
+        model must be an instance of the class before it (a richer rung IS-A simpler one). Siblings are refused."""
+        models = tuple(sorted(models, key=lambda model: len(model.fallback())))
+        for lower, upper in zip(models, models[1:]):
+            if not isinstance(upper, type(lower)):
+                raise TypeError(f"{upper.key} does not extend {lower.key}: compare rungs on one fallback chain")
+        fit_rms = None if fitted_on is None else tuple(model.score(fitted_on).rms for model in models)
+        return Comparison(models, tuple(model.score(held_out) for model in models), noise_floor(held_out), limit,
+                          fit_rms)
+
+
+def noise_floor(log: Log) -> float:
+    """What the rig repeats to [N·m]: the pooled within-plateau standard deviation of tau, read from the log itself."""
+    plateaus = np.unique(log["plateau"])
+    spread = np.concatenate([log["tau"][log["plateau"] == p] - log["tau"][log["plateau"] == p].mean()
+                             for p in plateaus])
+    return float(np.sqrt(spread @ spread / (spread.size - plateaus.size)))
 
 
 @dataclasses.dataclass(frozen=True)
 class Score:
     key: str
-    fitted: int              # parameters the log moves (the BIC's k)
+    fitted: int              # parameters the log moves
     rms: float               # N·m
-    bic: float
 
 
 @dataclasses.dataclass(frozen=True)
 class Comparison:
-    """Rungs scored on one log. WHY BIC (Schwarz 1978): a rung pays only when its drop in residual beats ln(n) for
-    each parameter it fits, so a richer rung has to earn its place."""
+    """Rungs on one fallback chain (lowest first), scored on held-out plateaus.
+
+    WHY held out and the floor (amendment 1; Zach 2026-11-17: "if doing a more complex model doesn't actually improve
+    test time performance you are just overfitting"): a richer rung pays only when it predicts plateaus it never saw to
+    within `limit` x what the rig itself repeats to. Below that, the simpler rung is as good as the data can tell."""
 
     models: tuple[Model, ...]
-    scores: tuple[Score, ...]
+    scores: tuple[Score, ...]                 # on the held-out log
+    floor: float                              # N·m
+    limit: float
+    fit_rms: tuple[float, ...] | None = None  # on the fit log, shown for contrast, never chosen on
 
     @property
-    def chosen(self) -> Model:
-        return min(zip(self.scores, self.models), key=lambda pair: pair[0].bic)[1]
+    def chosen(self) -> Model | None:
+        """The lowest rung whose held-out rms / floor <= limit; None when no rung reaches it (climb, or measure more)."""
+        return next((model for model, score in zip(self.models, self.scores) if score.rms / self.floor <= self.limit),
+                    None)
 
     def __str__(self) -> str:
-        lines = [f"{'rung':<20}{'fitted':>7}{'rms [N·m]':>11}{'BIC':>10}"]
-        for score in self.scores:
-            mark = "  <- lowest BIC" if score.key == self.chosen.key else ""
-            lines.append(f"{score.key:<20}{score.fitted:>7}{score.rms:>11.4f}{score.bic:>10.1f}{mark}")
+        # WHY mN·m on screen (the numbers stay N·m): at the rig's floor, 4 decimals of N·m hide the overfit (3.97 vs 4.04)
+        chosen, fit_header = self.chosen, "  fit rms" if self.fit_rms is not None else ""
+        lines = [f"held-out plateaus · floor {1e3 * self.floor:.2f} mN·m · choose the lowest rung within "
+                 f"{self.limit}× floor",
+                 f"{'rung':<20}{'fitted':>7}{fit_header}{'held-out rms':>14}{'÷ floor':>9}   [rms in mN·m]"]
+        for index, (model, score) in enumerate(zip(self.models, self.scores)):
+            fit_column = f"{1e3 * self.fit_rms[index]:>9.2f}" if self.fit_rms is not None else ""
+            mark = "  <- chosen" if model is chosen else ""
+            lines.append(f"{score.key:<20}{score.fitted:>7}{fit_column}{1e3 * score.rms:>14.2f}"
+                         f"{score.rms / self.floor:>9.2f}{mark}")
+        if chosen is None:
+            lines.append("no rung reaches the floor: climb a rung, or measure more")
         return "\n".join(lines)
 
 
