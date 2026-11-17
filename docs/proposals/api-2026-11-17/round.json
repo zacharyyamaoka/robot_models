@@ -1,0 +1,1374 @@
+{
+ "built": [
+  {
+   "check_output": "PASS  v1_subclass\n      · case A: chose M3.stribeck; held-out rms ÷ floor (0.0042 N·m): M2.coulomb_viscous 20.28, M3.stribeck 1.00\n      · case B: chose M2.coulomb_viscous; held-out rms ÷ floor (0.0042 N·m): M2.coulomb_viscous 1.03, M3.stribeck 1.57",
+   "passed": true,
+   "core_lines": 411,
+   "thesis": "A Model is a frozen dataclass whose fields are its parameters, and a rung subclasses the rung it extends. The type's ladder is its class tree and the fallback is its MRO. The held-out choice walks that MRO upward and takes the first fitted instance whose held-out rms is within 1.5× the rig's noise floor.",
+   "shape": "Model  (PEP 681 dataclass_transform base: every subclass is a frozen kw-only dataclass)\n└── ServoModel(Model, type=\"integrated_servo\")   the TYPE: tree() ladder() canonical() compare()\n    ├── Ideal(level=0) -> Datasheet(1, fields_from=IntegratedServo) -> CoulombViscous(2)\n    │       ├── Stribeck(3) [seeds()] -> LuGre(3) / WeakeningCapture(3) -> ... M4-M6 declared, not run\n    │       ├── Load(3)   └── Ripple(4)\n    └── Learned(7)\nrung classmethods: fallback() = MRO as keys · needs()/reads() = fields · describe() · from_datasheet(ds) · fit(log, start=) -> Self\ninstance: .coulomb_friction ... · torque(v) · terms() · mujoco() · score(log) -> Score(key, fitted, rms)\nServoModel.compare(models, held_out, fitted_on=) -> Comparison: sorts by MRO, refuses non-chains (isinstance(upper, type(lower)))\nComparison.chosen = lowest rung with held-out rms / noise_floor(held_out) <= 1.5, else None\nnoise_floor(log): pooled within-plateau std (a property of the log, so a module function)",
+   "steps": [
+    {
+     "label": "browse the ladder",
+     "code": ">>> from subclass_ladder.servo import ServoModel, Drivetrain\n>>> print(ServoModel.tree())\n>>> ServoModel.ladder()\n>>> Drivetrain.runnable, Drivetrain.needs()[-3:]",
+     "output": "integrated_servo · class ServoModel · 14 models (a -> b: b subclasses a)\n├── M0.ideal -> M1.datasheet -> M2.coulomb_viscous\n│   ├── M3.stribeck\n│   │   ├── M3.lugre -> M5.dcmotor\n│   │   └── M3.weakening_capture -> M4.drivetrain -> M5.envelope -> M5.wear -> M6.residual\n│   ├── M3.load\n│   └── M4.ripple\n└── M7.learned\n('M0.ideal', 'M1.datasheet', 'M2.coulomb_viscous', 'M3.stribeck', 'M3.load', 'M3.lugre', 'M3.weakening_capture', 'M4.ripple', 'M4.drivetrain', 'M5.dcmotor', 'M5.envelope', 'M5.wear', 'M6.residual', 'M7.learned')\n(False, ('harmonics', 'backlash', 'torsional_stiffness'))",
+     "caption": "The ladder is the subclass tree, found when each class is declared; a rung above the stop line is declared but not runnable."
+    },
+    {
+     "label": "pick M3.stribeck",
+     "code": ">>> from subclass_ladder.servo import Stribeck\n>>> print(Stribeck.describe())\n>>> [klass.__name__ for klass in Stribeck.__mro__]\n>>> Stribeck.fallback()\n>>> ServoModel.canonical(\"frictionloss_nm\")",
+     "output": "M3.stribeck · class Stribeck(CoulombViscous) · Stribeck friction: breakaway falling to Coulomb with speed\n  tau_r = (coulomb_friction + (breakaway_torque − coulomb_friction)·exp(−(|v|/stribeck_velocity)^stribeck_exponent))·sign(v) + viscous_friction·v\n  needs breakaway_torque [N·m]: Static friction at the output: the torque that starts it moving from rest, the top of the Stribeck curve.\n  needs stribeck_velocity [rad/s]: Output speed over which friction falls from breakaway_torque to coulomb_friction.\n  reads stribeck_exponent [1]: Shape exponent of the Stribeck curve, how sharply friction falls with speed; 2 when absent.\n  inherits output_inertia [kg·m²], gear_ratio [1], coulomb_friction [N·m], viscous_friction [N·m·s/rad]; reads 31 more when stated\n  cites Armstrong-Hélouvry, Dupont, Canudas de Wit (1994); Olsson, Åström, Canudas de Wit, Gäfvert, Lischinsky (1998)\n  runs actuators/rungs/stribeck/model.py · also at M3: M3.load, M3.lugre, M3.weakening_capture\n['Stribeck', 'CoulombViscous', 'Datasheet', 'Ideal', 'ServoModel', 'Model', 'object']\n('M3.stribeck', 'M2.coulomb_viscous', 'M1.datasheet', 'M0.ideal')\n'coulomb_friction'",
+     "caption": "The parameters are the class fields and the fallback is the MRO read as rung keys, so the same chain later orders the held-out choice."
+    },
+    {
+     "label": "datasheet to M1",
+     "code": ">>> import numpy as np\n>>> from fixture import datasheet, rig_log\n>>> from subclass_ladder.servo import Datasheet\n>>> m1 = Datasheet.from_datasheet(datasheet())\n>>> m1\n>>> m1.torque(1.0)\n>>> m1.torque(np.array([-1.0, 0.0, 0.5]))",
+     "output": "Datasheet(output_inertia=4.2e-05, gear_ratio=10.0, peak_torque=3.5, rated_torque=1.05, max_output_speed=24.085543677521745, coulomb_friction=0.3, viscous_friction=0.02)\n0.32\narray([-0.32,  0.  ,  0.31])",
+     "caption": "Catalogue units go in and a typed instance comes out with SI fields, and it predicts on scalars or numpy arrays."
+    },
+    {
+     "label": "fit on fit plateaus",
+     "code": ">>> from subclass_ladder.servo import CoulombViscous\n>>> fit, test = rig_log(\"A\", \"fit\"), rig_log(\"A\", \"test\")\n>>> m2 = CoulombViscous.fit(fit, start=m1)\n>>> m3 = Stribeck.fit(fit, start=m2)\n>>> m2.coulomb_friction, m2.viscous_friction\n>>> m3.coulomb_friction, m3.breakaway_torque, m3.stribeck_velocity, m3.viscous_friction",
+     "output": "(0.5796651921887966, -0.06486525392562947)\n(0.41946330400066684, 0.6500489870777648, 0.24901459910120474, 0.0352845658354351)",
+     "caption": "Fitting is an alternative constructor on each class that sees only plateaus 1, 3, 5, 7 and 9, and M3 climbs from the fitted M2."
+    },
+    {
+     "label": "held out, choose",
+     "code": ">>> comparison = ServoModel.compare([m1, m2, m3], test, fitted_on=fit)\n>>> print(comparison)\n>>> chosen = comparison.chosen\n>>> chosen.key, chosen.mujoco()",
+     "output": "held-out plateaus · floor 4.17 mN·m · choose the lowest rung within 1.5× floor\nrung                 fitted  fit rms  held-out rms  ÷ floor   [rms in mN·m]\nM1.datasheet              0   242.00        221.97    53.22\nM2.coulomb_viscous        2    64.69         84.58    20.28\nM3.stribeck               4     3.95          4.18     1.00  <- chosen\n('M3.stribeck', {'armature': 4.2e-05, 'frictionloss': 0.6500489870777648, 'damping': 0.0352845658354351})",
+     "caption": "Each rung is scored on plateaus it never saw, divided by the rig's own noise floor, and the lowest rung on the MRO chain within 1.5× is chosen; here that is M3."
+    },
+    {
+     "label": "servo B: simpler wins",
+     "code": ">>> fit, test = rig_log(\"B\", \"fit\"), rig_log(\"B\", \"test\")\n>>> m2 = CoulombViscous.fit(fit, start=m1)\n>>> m3 = Stribeck.fit(fit, start=m2)\n>>> print(ServoModel.compare([m1, m2, m3], test, fitted_on=fit))\n>>> m2.coulomb_friction, m2.viscous_friction",
+     "output": "held-out plateaus · floor 4.22 mN·m · choose the lowest rung within 1.5× floor\nrung                 fitted  fit rms  held-out rms  ÷ floor   [rms in mN·m]\nM1.datasheet              0    86.62         91.28    21.63\nM2.coulomb_viscous        2     4.04          4.33     1.03  <- chosen\nM3.stribeck               4     3.97          6.62     1.57\n(0.38016642120718813, 0.02941921234064266)",
+     "caption": "These are the same calls on the negative control. M3 fits its training plateaus better (3.97 vs 4.04) but predicts held-out plateaus worse (6.62 vs 4.33), so the rule picks M2."
+    }
+   ],
+   "decisions": [
+    {
+     "label": "Rule",
+     "value": "This is sim2real's select(): the lowest rung whose held-out rms ÷ noise floor is at most 1.5 (SELECT_LIMIT, copied from TWINNED_LIMIT). It replaces v0's training-log BIC: the held-out test is the direct parsimony question, the bar is in the rig's own units, the rule matches sim2real's choice, and it can return None when no rung is good enough."
+    },
+    {
+     "label": "Order = MRO",
+     "value": "compare() sorts models by MRO length and refuses a set that is not one inheritance chain, checked with isinstance(upper, type(lower)). The class tree itself defines \"lowest rung\", and comparing siblings (Stribeck vs Load) raises TypeError."
+    },
+    {
+     "label": "Where it lives",
+     "value": "score(log) is an instance method on Model and compare() is a classmethod on the type root. noise_floor(log) is a module function because it belongs to the log, not to any model. Comparison.chosen applies the rule, and fitted_on= only adds a fit-rms column for contrast."
+    },
+    {
+     "label": "Fit only on fit split",
+     "value": "Scenario step 4 fits on rig_log(case, \"fit\"), and steps 5-6 compare on rig_log(case, \"test\"). run(case) substitutes the case into a \"<case>\" placeholder in steps 1-5 and never branches on it. Step 6 (servo B) is a literal transcript-only repeat of the same calls."
+    },
+    {
+     "label": "Display in mN·m",
+     "value": "Values stay SI (N·m), but the table prints mN·m to 2 decimals, because at the floor 4 decimals of N·m hid the overfit (0.0040 vs 0.0040)."
+    },
+    {
+     "label": "No seed change",
+     "value": "Stribeck.seeds is unchanged, and the fits reproduce the README's reference numbers: A M2 20.28 / M3 1.00, B M2 1.03 / M3 1.57."
+    }
+   ],
+   "best_when": "Rungs really are refinements that nest their base (friction does), contributors write Python, and values flow into code as typed attributes that pyright checks (still 0 errors at pyright 1.1.390). Nesting is also what makes the held-out choice well posed: a subclass that reduces to its base is exactly where training error cannot choose and held-out error can. Inheritance gives the order for free, so the rule needs no separate ladder ranking.",
+   "loses_when": "This loses in four cases. First, a choice between siblings (Stribeck or Load at M3): compare() orders only one chain, so it takes two comparisons against M2, and a tie between two siblings that both reach the floor is left to the user. Second, a rung that combines siblings (multiple inheritance gives a C3 fallback you may not mean). Third, non-Python consumers (robotparts JS/JSON, sim2real cards) cannot see a class. Fourth, \"optional below, needed above\" fields conflict with pyright for hand-declared M1 fields. Smaller costs: parameters share a namespace with the API, and a rung's fields are spread across 4-9 class bodies. The fit is unbounded: on servo B the overfit M3 lands at stribeck_velocity = -1.16.",
+   "keep_parts": [
+    "Order the held-out choice by the fallback chain itself: sort candidates by fallback length and refuse a set that is not one chain (isinstance(upper, type(lower))). Any variant can do this with its own fallback().",
+    "A Comparison table that shows fit rms beside held-out rms and ÷ floor, in mN·m, with chosen = None when no rung reaches 1.5× floor ('climb a rung, or measure more'). It makes the overfit visible: on case B, M3 is 3.97 vs 4.04 on fit and 6.62 vs 4.33 held out.",
+    "Typed rung classes via PEP 681 dataclass_transform with __init_subclass__ registration and an import-time guard against v1's rung records (the ladder is found by declaration, so no registry)."
+   ],
+   "migration": "The plan is unchanged by the amendment and stays additive. score, compare and noise_floor are new API and touch no v1 record. Now: the classes sit beside v1's records and are checked against them at import, so tests/test_ladders_acceptance.py, the actuators/rungs/* bytes (robotparts' tools/sync_actuator_rungs.py and tests/core/test_actuator_rungs_vendored.py) and sim2real's tests/test_robot_models_parity.py (which reads ladders() live via holds/rung/fallback) are all untouched. Then: actuators/servo/ladder.py becomes LADDER = Ladder.from_classes(ServoModel), which builds each Rung from the classes (adds = a class's own required fields, optional = its defaulted ones, base = __bases__[0].key, with title, equation and references moved into the class body). ladders() keeps its signature, so sim2real's parity test and the ruler's per-rung assertions run unchanged. robotparts keeps vendoring model.py and model.json bytes, which do not move. The ruler needs edits only for what the classes don't hold yet (vocabulary, aliases, packed, deployment-only, wears, composes), landed first and alone. Selection parity: sim2real's parity rule 2 already checks that each card rung's base is in the mapped rung's fallback(), which here is the MRO that compare() walks. The 1.5 limit is copied, not imported (robot_models never reads sim2real), so add one assertion SELECT_LIMIT == TWINNED_LIMIT to sim2real's parity test when this lands.",
+   "new_rung_cost": "1) One class in the type's models module (servo.py), e.g. `class Dahl(CoulombViscous, level=3, name=\"dahl\"):` with `dahl_stiffness: float` in its body. 2) While v1's records are the ruler, the matching Rung(...) record and a Parameter for dahl_stiffness in actuators/servo/ladder.py; the import-time guard refuses a class with no record. In the end state this shrinks to the Parameter. 3) To make it runnable, actuators/rungs/dahl/model.py and model.json. 4) Only if it adds a term the fit can't start linearly, a seeds() override (Stribeck's is 5 lines). Nothing is needed for selection: Dahl.fit(fit, start=m2) and ServoModel.compare([m1, m2, dahl], test) work as soon as the class exists, because compare() orders by the MRO and the floor rule belongs to the type.",
+   "simulated": "- The rig: both logs are the fixture's simulated velocity-plateau sweeps, and M1 comes from the fixture's illustrative datasheet.\n- Runnable rungs: only M0-M3. M4-M7 are declared and raise NotImplementedError. M3.weakening_capture is declared only (v1 ships no code for it). M3.lugre runs only its steady-state curve, and M3.load needs tau_load=.\n- Speed: torque() loops the stdlib reference per sample (one copy of the physics). That is fine for 250-sample logs but too slow for simulation.\n- The fit: it frees needed parameters only (stribeck_exponent stays 2), gives no parameter uncertainty, and has no bounds (servo B's overfit M3 lands at stribeck_velocity = -1.16, which the choice rejects anyway).\n- noise_floor assumes each plateau id is a steady hold; a log without plateau ids can't be compared.\n- Sibling rungs are refused by compare(), not ranked.\n- Only integrated_servo is a class tree. Composes, wears, packed and deployment-only names are still read from v1's Ladder.\n- Files changed, all in /home/bam/robot_models/docs/proposals/api-2026-11-17/v1_subclass/: scenario.py, scenario.out.txt, README.md, subclass_ladder/model.py, subclass_ladder/__init__.py.",
+   "id": "v1",
+   "slug": "v1_subclass",
+   "name": "Subclass ladder"
+  },
+  {
+   "check_output": "PASS  v2_records\n      · case A: chose M3.stribeck; held-out rms ÷ floor (0.0042 N·m): M2.coulomb_viscous 20.28, M3.stribeck 1.00\n      · case B: chose M2.coulomb_viscous; held-out rms ÷ floor (0.0042 N·m): M2.coulomb_viscous 1.03, M3.stribeck 1.04",
+   "passed": true,
+   "core_lines": 305,
+   "thesis": "A Model is a frozen record (key, level, base, parameters with units, equation, references) that carries its attached physics and binds to separately held values to become a callable, lmfit-style fittable BoundModel; a Family, literally a subclass of v1's Ladder, holds the type's vocabulary, aliases and model tree, and because only it knows the tree, it also judges it: family.compare(...) scores fitted models on held-out data and picks the lowest rung within 1.5x the rig's noise floor.",
+   "shape": "families() -> {type: Family}                  today's ladders(), each read as a Family\nFamily(Ladder)                                  vocabulary, aliases, rungs + every v1 call (fallback, canonical, holds...)\n  family[key] -> Model ; .tree() .children() .siblings()\n  .values(datasheet | {name: number|Stated}) -> Values (SI dict, PyBaMM ParameterValues)\n  .compare(*bound, observed=, repeats=, limit=1.5, **inputs) -> Comparison (held-out data)\nComparison  rows (BoundModel, held-out rms) lowest rung first, .floor, .chosen (key), .best (BoundModel)\nnoise_floor(observed, repeats)                  pooled within-repeat std of a log\nModel (frozen record)  key level base adds parameters optional equation references physics\n  .bind(values) -> BoundModel ; .fit(observed, values=, grid=, **inputs) -> BoundModel\nPhysics  model.py torque() + model.json inputs/required/mujoco maps, compiled in place (no import)\nBoundModel  model, values (SI dict), fitted, rms (training), samples; __call__(**inputs) numpy; .mujoco()",
+   "steps": [
+    {
+     "label": "The Model card",
+     "code": "stribeck = servo[\"M3.stribeck\"]\nprint(stribeck)",
+     "output": "M3.stribeck  Stribeck friction: breakaway falling to Coulomb with speed\n  base      M2.coulomb_viscous\n  inherits  output_inertia [kg·m²], gear_ratio, coulomb_friction [N·m], viscous_friction [N·m·s/rad]\n  adds      breakaway_torque [N·m]: Static friction at the output: the torque that starts it moving from rest, the top of the Stribeck curve.\n            stribeck_velocity [rad/s]: Output speed over which friction falls from breakaway_torque to coulomb_friction.\n  optional  stribeck_exponent (+31 inherited, read when stated)\n  equation  tau_r = (coulomb_friction + (breakaway_torque − coulomb_friction)·exp(−(|v|/stribeck_velocity)^stribeck_exponent))·sign(v) + viscous_friction·v\n  refs      Armstrong-Hélouvry, Dupont, Canudas de Wit (1994)… https://doi.org/10.1016/0005-1098(94)90209-7\n            Olsson, Åström, Canudas de Wit, Gäfvert, Lischinsky (1998)… https://doi.org/10.1016/S0947-3580(98)70113-X\n  physics   actuators/rungs/stribeck/model.py: torque(v [rad/s]) -> tau_r [N·m]; a fit varies coulomb_friction, viscous_friction, breakaway_torque, stribeck_velocity",
+     "caption": "The record you hold describes itself: what it needs with units, its equation, its references and the physics it computes with (step 2 also shows servo.fallback and the frictionloss_nm alias)."
+    },
+    {
+     "label": "Datasheet model M1",
+     "code": "from fixture import datasheet, rig_log\nvalues = servo.values(datasheet())\nvalues\nm1 = servo[\"M1.datasheet\"].bind(values)\nm1(v=1.0)\nm1(v=np.array([-1.0, 0.0, 1.0]))",
+     "output": "Values(integrated_servo, 7 stated, SI):\n  peak_torque        3.5          N·m\n  rated_torque       1.05         N·m\n  max_output_speed   24.0855      rad/s\n  coulomb_friction   0.3          N·m\n  viscous_friction   0.02         N·m·s/rad\n  gear_ratio         10\n  output_inertia     4.2e-05      kg·m²\n0.32\narray([-0.32,  0.  ,  0.32])",
+     "caption": "Values are held apart from any model and converted to SI once by the datasheet's own units; binding them makes M1 callable on numpy arrays."
+    },
+    {
+     "label": "Fit on fit plateaus",
+     "code": "case\nfit_log, test_log = rig_log(case, \"fit\"), rig_log(case, \"test\")\nm2 = servo[\"M2.coulomb_viscous\"].fit(fit_log[\"tau\"], v=fit_log[\"v\"], values=values)\nm3 = stribeck.fit(fit_log[\"tau\"], v=fit_log[\"v\"], values=values)\nprint(m3)",
+     "output": "'A'\nM3.stribeck fitted on 250 samples, rms 0.003953\n  output_inertia     4.2e-05    kg·m²      given\n  gear_ratio         10                    given\n  coulomb_friction   0.41946    N·m        fitted\n  viscous_friction   0.035285   N·m·s/rad  fitted\n  breakaway_torque   0.65005    N·m        fitted\n  stribeck_velocity  0.24901    rad/s      fitted\n  + 3 optional values it reads: peak_torque, rated_torque, max_output_speed",
+     "caption": "Both rungs are fitted on the 250 fit-plateau samples only; the case is passed straight through to rig_log, never branched on."
+    },
+    {
+     "label": "Choose on held-out",
+     "code": "verdict = servo.compare(m1, m2, m3, observed=test_log[\"tau\"], repeats=test_log[\"plateau\"], v=test_log[\"v\"])\nverdict\nverdict.chosen",
+     "output": "noise floor 0.004171 N·m (pooled within-repeat std of the held-out log)\nmodel                fitted   fit rms  held-out rms  ÷ floor\nM1.datasheet              0         —         0.222    53.22\nM2.coulomb_viscous        2   0.06469       0.08458    20.28\nM3.stribeck               4  0.003953      0.004185     1.00\nchosen: M3.stribeck, the lowest rung within 1.5× the floor\n'M3.stribeck'",
+     "caption": "The Family walks its own tree order on held-out plateaus and picks the lowest rung within 1.5x the floor the log itself reveals; fit rms sits beside held-out rms so overfitting is visible."
+    },
+    {
+     "label": "Negative control B",
+     "code": "fit_b, test_b = rig_log(\"B\", \"fit\"), rig_log(\"B\", \"test\")\nm2_b = servo[\"M2.coulomb_viscous\"].fit(fit_b[\"tau\"], v=fit_b[\"v\"], values=values)\nm3_b = stribeck.fit(fit_b[\"tau\"], v=fit_b[\"v\"], values=values)\nround(m3_b.values[\"breakaway_torque\"], 2), round(m3_b.values[\"stribeck_velocity\"], 4)   # a knee chasing noise\nservo.compare(m2_b, m3_b, observed=test_b[\"tau\"], repeats=test_b[\"plateau\"], v=test_b[\"v\"])",
+     "output": "(-4.73, 0.0107)\nnoise floor 0.00422 N·m (pooled within-repeat std of the held-out log)\nmodel                fitted   fit rms  held-out rms  ÷ floor\nM2.coulomb_viscous        2  0.004037      0.004326     1.03\nM3.stribeck               4   0.00398      0.004395     1.04\nchosen: M2.coulomb_viscous, the lowest rung within 1.5× the floor",
+     "caption": "On the plain Coulomb+viscous servo, M3 trains better but tests worse (it bends a nonphysical knee below the slowest plateau), and the rule picks M2 because M2 already reaches the floor, not because of a 1% rms gap."
+    },
+    {
+     "label": "Hand on the winner",
+     "code": "best = verdict.best\nbest.mujoco()\nbest(v=np.array([0.05, 0.5, 2.0])).round(4)\nservo[\"M4.drivetrain\"].fit(fit_log[\"tau\"], v=fit_log[\"v\"], values=values)  # -> NotImplementedError",
+     "output": "{'armature': 4.2e-05, 'frictionloss': 0.6500489938172218, 'damping': 0.03528455268066556}\narray([0.6427, 0.4412, 0.49  ])\nNotImplementedError: M4.drivetrain is declared, not runnable here: physics is attached for M0-M3 only (the round's stop line)",
+     "caption": "The comparison hands back the chosen BoundModel itself, so MuJoCo attributes and vectorized calls need no lookup; a declared rung says plainly that it does not run (scenario step 7; step 1, the tree, is in scenario.out.txt)."
+    }
+   ],
+   "decisions": [
+    {
+     "label": "Where the held-out comparison lives",
+     "value": "On the Family: family.compare(*bound, observed=, repeats=, **inputs). 'Lowest rung' is the tree's order, which only the Family knows; rows sort by depth (len(family.fallback(key))), and same-depth siblings sort best first."
+    },
+    {
+     "label": "Selection rule",
+     "value": "sim2real's select(): the lowest rung whose held-out rms / noise floor <= 1.5 (FLOOR_LIMIT, the same value as sim2real's TWINNED_LIMIT; limit= can override it). Checked against the alternatives on the data: training rms fails case B (a mutated scratch copy gives FAIL). Training BIC happens to pick M2 (delta 4.0) but is graded on data the fit saw. Lowest held-out rms picks M2 by only 1.03 vs 1.04. The floor rule gives an absolute stop and does not depend on that 1% gap."
+    },
+    {
+     "label": "Noise floor is data, not model state",
+     "value": "noise_floor(observed, repeats) is the pooled within-repeat std; compare takes repeats=log['plateau'] alongside observed. In the PyBaMM spirit, values and data stay apart from the record, and nothing about the rig is stored on a Model."
+    },
+    {
+     "label": "BIC removed",
+     "value": "v0's training-data BIC column and rule are gone. The Comparison shows fit rms beside held-out rms and the ratio to the floor, so a reader can see a rung that trains better and tests worse."
+    },
+    {
+     "label": "Comparison.best",
+     "value": "It returns the chosen BoundModel, not just the key, so the winner is handed on (verdict.best.mujoco()) with no lookup. chosen is None when no rung reaches the floor, and the table then says 'climb, or look at the rig'."
+    },
+    {
+     "label": "Fitter unchanged",
+     "value": "Model.fit (generic separable least squares over model.json's required terms) is untouched; the scenario now passes it rig_log(case, 'fit') only. Its lack of bounds shows on case B (breakaway -4.73 N·m). I report this in the README instead of fixing it, to keep the core small and the change scoped to the amendment."
+    },
+    {
+     "label": "Case B in the transcript",
+     "value": "Step 6 runs the same calls on rig_log('B', ...) as a demo. run(case) passes case through untouched and never branches on it."
+    }
+   ],
+   "best_when": "Landing without breaking anyone matters most: the Family IS a v1 Ladder, so ladders() could hand out Families with no consumer edit. Also good when rungs keep arriving as robotparts-style model.py + model.json folders: binding, fitting and the held-out comparison against the floor all come free. And when the rung chosen in robot_models should be the same one sim2real twins, because both use the same select() rule and limit.",
+   "loses_when": "The Model should stand alone. It can describe and compute itself, but fallback, siblings and choosing a rung all need its Family, and parameters are names in a dict that type checkers cannot see. The fitter has no physical bounds: on case B, M3 fits breakaway -4.73 N·m at 0.0107 rad/s. The held-out choice discards that fit, but nothing flags it on the BoundModel. Stateful (LuGre dt) or jointly nonlinear physics needs more than the linear/nonlinear probe. FLOOR_LIMIT duplicates sim2real's TWINNED_LIMIT, because robot_models cannot import sim2real.",
+   "keep_parts": [
+    "Family.compare ordering rows by depth in the tree (len(fallback(key))) and reading sim2real's floor rule, returning a Comparison whose .best is the chosen BoundModel ready to hand on (.mujoco(), callable on numpy)",
+    "noise_floor(observed, repeats) plus the fit-rms | held-out-rms | / floor table: the floor comes from the log's own repeats, and overfitting is visible at a glance (case B: M3 trains better, tests worse)",
+    "The generic separable fit on Model: probe model.py to split required terms into linear (lstsq) and nonlinear (log grid over the logged input range), so a new rung brings no fitting or scoring code"
+   ],
+   "migration": "Land it as an additive src/robot_models/family.py (this module without RUNNABLE_UP_TO); nothing else changes. Later, optionally, ladders() returns Family.from_ladder(...).\n- v1 ruler tests/test_ladders_acceptance.py: untouched. Rung records, keys, bases, adds, code strings and rung bytes are unchanged, and isinstance(LADDER, Ladder) holds for a Family. The fresh-interpreter import test sees one more module (numpy is already a runtime dependency). A landing would port case B's held-out negative control into tests/ as a new test, without editing existing ones.\n- robotparts vendoring of actuators/rungs/*: untouched. Physics.load compiles model.py from source and reads model.json in place, never importing, so no __pycache__/ lands there and the byte-identical and RUNG_FILES sha256 checks stay green.\n- sim2real tests/test_robot_models_parity.py: still green. It calls ladders(), .keys, .rung(), .resolve(), .holds() and .composed(), all inherited. The one addition a landing should make is a parity assertion family.FLOOR_LIMIT == sim2real.cards.schema.TWINNED_LIMIT (1.5), since robot_models cannot import sim2real. sim2real may later fit and select through family[key].fit(...) and family.compare(...), additively.",
+   "new_rung_cost": "Exactly what v1 asks today. First, one Rung(level=3, name=..., base=..., adds=(...), code=\"actuators/rungs/<word>\", equation=..., references=(...)) entry in actuators/servo/ladder.py, plus a Parameter for any new quantity. Second, the folder actuators/rungs/<word>/ with model.py (torque(terms, inputs, state, dt) -> (tau_r, state)) and model.json (terms marked required or not, inputs, output, MuJoCo maps). robotparts parity also wants model.js and the ruler's sha256 entry. The Family finds the folder through code and places the rung in the comparison by its depth in the tree. Binding, the card, fitting, the held-out floor comparison and the MuJoCo export come free, with no registration and no fitting or scoring code.",
+   "simulated": "- The Family is derived at runtime from today's ladders(), not declared in src/.\n- Physics is attached for M0-M3 only (stop line). M4.ripple has a model.py but is not attached. M3.weakening_capture and M4+ are declared records whose fit/call raises NotImplementedError.\n- Physics.__call__ loops the scalar stdlib torque() over samples, with no state or dt, so LuGre runs at steady state.\n- The fitter has no parameter bounds (case B's M3 fit has breakaway -4.73 N·m) and no uncertainties.\n- Selection uses one fit/test split, not cross-validation folds. sim2real's coverage rule for residual and learned rungs (RungScore.in_coverage) is not modelled. FLOOR_LIMIT is a local copy of sim2real's 1.5.\n- Servo B reuses the fixture's single datasheet for terms a fit does not vary (inertia, gear ratio), which the friction physics never reads.\n- Composed types (foc_controller) are not modelled.\n- Core: 305 non-blank lines in /home/bam/robot_models/docs/proposals/api-2026-11-17/v2_records/family_records.py, up from 282 before the amendment.\n- Files changed, all in /home/bam/robot_models/docs/proposals/api-2026-11-17/v2_records/: family_records.py, scenario.py, scenario.out.txt and README.md. No git operations were run. src/ was not touched.",
+   "id": "v2",
+   "slug": "v2_records",
+   "name": "Records in a Family"
+  },
+  {
+   "check_output": "PASS  v3_terms\n      · case A: chose M3.stribeck; held-out rms ÷ floor (0.0042 N·m): M2.coulomb_viscous 20.28, M3.stribeck 1.00\n      · case B: chose M2.coulomb_viscous; held-out rms ÷ floor (0.0042 N·m): M2.coulomb_viscous 1.03, M3.stribeck 1.57",
+   "passed": true,
+   "core_lines": 374,
+   "thesis": "A Model is a sum of small term models, one per slot (inertia, friction, ripple, drivetrain, electrics, wear, correction), with parameters that are the union of the terms' parameters. A ladder key such as M3.stribeck is a named preset of slot choices. Climbing means swapping or filling one slot, and a swap pays only when the rung below it misses the rig's noise floor on plateaus neither fit saw.",
+   "shape": "Slots (servo = Slots(ladders()[\"integrated_servo\"], SLOT_OF))   the type: slot order, options per slot, 14 presets\n├─ Term     one physics law filling one slot; runs its rung's own model.py; needs/reads/aliases/equation/refs\n├─ Model    sum of Terms, at most one per slot; .key when the sum matches a preset\n│    + Term, .redeclare(friction=\"stribeck\"), .fallback(), .changes(other), .describe(), .canonical(alias)\n│    .parameters (union), .torque(values, v=...), .from_datasheet(sheet) -> Bound, .fit(fit_log, start=) -> Bound\n├─ Bound    Model + values: .predict(v), .params, .rms (fit log), .score(log) (any other log), .trained_on\n├─ noise_floor(log)                    pooled within-plateau std of tau, read from the log itself\n└─ compare(*bounds, on=test_log) -> Comparison\n     lowest first (fewest fitted params, then ladder order); held-out rms / floor per row; row names its slot swap\n     .chosen = lowest with held-out rms <= 1.5 x floor (sim2real select()), else None; refuses on= sharing fit samples",
+   "steps": [
+    {
+     "label": "Browse slot grid",
+     "code": "from servo_slots import servo\nprint(servo)   # * = runs in this prototype (M0-M3); every other row is declared, not run",
+     "output": "integrated_servo       inertia  friction           ripple  drivetrain  electrics  wear  correction\nM0.ideal             * ideal    ·                  ·       ·           ·          ·     ·\nM1.datasheet         * ideal    datasheet          ·       ·           ·          ·     ·\nM2.coulomb_viscous   * ideal    coulomb_viscous    ·       ·           ·          ·     ·\nM3.stribeck          * ideal    stribeck           ·       ·           ·          ·     ·\nM3.load              * ideal    load               ·       ·           ·          ·     ·\nM3.lugre             * ideal    lugre              ·       ·           ·          ·     ·\nM3.weakening_capture   ideal    weakening_capture  ·       ·           ·          ·     ·\nM4.ripple              ideal    coulomb_viscous    ripple  ·           ·          ·     ·\nM4.drivetrain          ideal    weakening_capture  ·       drivetrain  ·          ·     ·\nM5.dcmotor             ideal    lugre              ·       ·           dcmotor    ·     ·\nM5.envelope            ideal    weakening_capture  ·       drivetrain  envelope   ·     ·",
+     "caption": "Today's 14 ladder keys are rows. Each column is a slot, so moving up one rung changes one cell (the full grid continues to M7.learned)."
+    },
+    {
+     "label": "Pick M3 by swapping",
+     "code": "m3 = servo[\"M3.stribeck\"]\nm3 == servo[\"M2.coulomb_viscous\"].redeclare(friction=\"stribeck\")\nprint(m3.describe())   # each term's equation, what the model needs (units, meaning), what it reads, references",
+     "output": "True\nM3.stribeck = inertia:ideal + friction:stribeck\n  inertia:ideal      tau_r = 0; armature = output_inertia\n  friction:stribeck  tau_r = (coulomb_friction + (breakaway_torque − coulomb_friction)·exp(−(|v|/stribeck_velocity)^stribeck_exponent))·sign(v) + viscous_friction·v\n  needs output_inertia     kg·m²      The part's own inertia about its axis, referred to the output (MuJoCo's armature).\n        gear_ratio         —          Rotor turns per output turn, > 0: 10 for a 10:1 reducer.\n        coulomb_friction   N·m        Coulomb friction torque at the output.\n        viscous_friction   N·m·s/rad  Viscous friction coefficient at the output.\n        breakaway_torque   N·m        Static friction at the output: the torque that starts it moving from rest, the top of the Stribeck curve.\n        stribeck_velocity  rad/s      Output speed over which friction falls from breakaway_torque to coulomb_friction.\n  reads 32 more when stated (.optional): peak_torque, rated_torque, max_output_speed, …, stribeck_exponent\n  refs  Siciliano, Sciavicco, Villani, Oriolo (2009) · MuJoCo (2026) · Armstrong-Hélouvry, Dupont, Canudas de Wit (1994) · Olsson, Åström, Canudas de Wit, Gäfvert, Lischinsky (1998)",
+     "caption": "A preset is a named composition: M3.stribeck is M2 with its friction slot redeclared, and the model describes itself term by term."
+    },
+    {
+     "label": "Datasheet model M1",
+     "code": "import numpy as np\nfrom fixture import datasheet, rig_log\nm1 = servo[\"M1.datasheet\"].from_datasheet(datasheet())   # catalogue units in: rpm, kg·cm², mN·m·s/rad\nm1\nm1.predict(1.0)\nm1.predict(np.array([-1.0, 0.1, 1.0]))\nservo[\"M3.stribeck\"].from_datasheet(datasheet())        # a datasheet states no Stribeck curve",
+     "output": "M1.datasheet from the datasheet\n  needs    output_inertia 4.2e-05 kg·m² · gear_ratio 10\n  stated   peak_torque 3.5 N·m · rated_torque 1.05 N·m · max_output_speed 24.09 rad/s · coulomb_friction 0.3 N·m · viscous_friction 0.02 N·m·s/rad\n0.32\narray([-0.32 ,  0.302,  0.32 ])\nValueError: M3.stribeck: the datasheet states no breakaway_torque, stribeck_velocity; fit them: .fit(log, ...)",
+     "caption": "Catalogue units arrive in SI by canonical name. Predict is vectorised. M3 refuses to be built from a datasheet and says what to fit."
+    },
+    {
+     "label": "Fit on fit plateaus",
+     "code": "case   # the servo on the rig: run(case) passes it in; step 6 reruns steps 4 and 5 on \"B\"\nfit_log, test_log = rig_log(case, \"fit\"), rig_log(case, \"test\")   # plateaus 1, 3, 5, 7, 9 | 2, 4, 6, 8, 10 held out\nm2_fit = servo[\"M2.coulomb_viscous\"].fit(fit_log, start=m1)\nm3_fit = m2_fit.model.redeclare(friction=\"stribeck\").fit(fit_log, start=m2_fit)\nm2_fit\nm3_fit",
+     "output": "'A'\nM2.coulomb_viscous from a fit to 250 samples (fit rms 0.06469 N·m)\n  fitted   coulomb_friction 0.5797 N·m · viscous_friction -0.06487 N·m·s/rad\n  carried  output_inertia 4.2e-05 kg·m² · gear_ratio 10\n  stated   peak_torque 3.5 N·m · rated_torque 1.05 N·m · max_output_speed 24.09 rad/s\nM3.stribeck from a fit to 250 samples (fit rms 0.003953 N·m)\n  fitted   coulomb_friction 0.4195 N·m · viscous_friction 0.03528 N·m·s/rad · breakaway_torque 0.65 N·m · stribeck_velocity 0.249 rad/s\n  carried  output_inertia 4.2e-05 kg·m² · gear_ratio 10\n  stated   peak_torque 3.5 N·m · rated_torque 1.05 N·m · max_output_speed 24.09 rad/s",
+     "caption": "Both fits see only the odd plateaus. Climbing is one redeclare on the fitted M2, and the rms shown is labelled as fit rms (on training data)."
+    },
+    {
+     "label": "Choose on held-out",
+     "code": "from composed_terms import compare\nverdict = compare(m2_fit, m3_fit, on=test_log)   # rms on plateaus neither fit saw, ÷ the rig's own repeatability\nprint(verdict)\nverdict.chosen\ncompare(m2_fit, m3_fit, on=fit_log)               # the fit plateaus would grade the optimiser, not the choice\nm3_fit.params   # SI values by canonical name, ready for MuJoCo or sim2real",
+     "output": "held out: 250 samples on 10 plateaus the fits never saw; rig noise floor 0.00417 N·m (pooled within-plateau std)\nmodel                 k   fit rms  held-out rms  ÷ floor  swapped\nM2.coulomb_viscous    2   0.06469       0.08458    20.28\nM3.stribeck           4   0.00395       0.00418     1.00  friction: coulomb_viscous → stribeck   ← chosen\nchosen: the lowest whose held-out rms ÷ floor ≤ 1.5\n'M3.stribeck'\nValueError: on= shares samples with the fits' own log: judge on plateaus the fits never saw\n{'coulomb_friction': 0.4194638408279985, 'viscous_friction': 0.035284260351836, 'breakaway_torque': 0.6500491435740432, 'stribeck_velocity': 0.2490136003558385}",
+     "caption": "Each row is one slot swap with its held-out rms divided by the floor. M2 misses the floor by 20x, so the stribeck swap pays. Passing the fit log as on= raises an error."
+    },
+    {
+     "label": "Case B: simpler wins",
+     "code": "case = \"B\"   # a second servo on the same rig\nfit_log, test_log = rig_log(case, \"fit\"), rig_log(case, \"test\")\nm2_fit = servo[\"M2.coulomb_viscous\"].fit(fit_log, start=m1)\nm3_fit = m2_fit.model.redeclare(friction=\"stribeck\").fit(fit_log, start=m2_fit)\nprint(compare(m2_fit, m3_fit, on=test_log))   # M3 fits its own plateaus better and the held-out ones worse",
+     "output": "held out: 250 samples on 10 plateaus the fits never saw; rig noise floor 0.00422 N·m (pooled within-plateau std)\nmodel                 k   fit rms  held-out rms  ÷ floor  swapped\nM2.coulomb_viscous    2   0.00404       0.00433     1.03     ← chosen\nM3.stribeck           4   0.00397       0.00662     1.57  friction: coulomb_viscous → stribeck\nchosen: the lowest whose held-out rms ÷ floor ≤ 1.5",
+     "caption": "Steps 4 and 5 run unchanged on the negative control. M3 wins on fit rms (0.00397 vs 0.00404) but loses on held-out (1.57 vs 1.03), so the rule keeps M2."
+    }
+   ],
+   "decisions": [
+    {
+     "label": "Where the held-out choice lives",
+     "value": "On the comparison of Bounds, not on the Model or Slots: compare(*fits, on=test_log). A climb is one slot swap, so each row of the Comparison is one swap plus its held-out rms ÷ floor. 'This swap did not pay' (case B) is a row, not a separate report."
+    },
+    {
+     "label": "Selection rule",
+     "value": "sim2real's select() (cards/schema.py), mirrored rather than imported so the runtime stays numpy + stdlib: the lowest fit whose held-out rms ÷ noise floor ≤ 1.5 (REACHES_FLOOR). When none reaches it, chosen is None and the printout says to swap or fill another slot. Preferred over an information criterion because the floor is observable on the rig and the ratio is the number sim2real already reports."
+    },
+    {
+     "label": "Noise floor",
+     "value": "noise_floor(log) is a module function: the pooled within-plateau std of tau, computed from the held-out log's own plateau ids (the same formula as the check, which gives identical ratios: 20.28/1.00 and 1.03/1.57)."
+    },
+    {
+     "label": "BIC removed",
+     "value": "Bound.bic and the BIC-based Comparison are gone. A BIC on the fit log is the training-data choice the amendment rules out, and keeping it beside the new rule would have offered two choosers."
+    },
+    {
+     "label": "What 'lowest' means",
+     "value": "Fewest fitted parameters first, then ladder key order. v3 can fit sums that no rung names (m3 + ripple), which have no place on the fallback chain. For M2 → M3 this equals the chain's order."
+    },
+    {
+     "label": "Leakage guard",
+     "value": "Each Bound keeps the samples it was fitted to (trained_on). compare(..., on=) raises when the held-out log shares any of them, and step 5 shows this error. Choosing on training data can no longer happen silently through this API."
+    },
+    {
+     "label": "Case threading",
+     "value": "run(case) puts the opaque case into the REPL namespace, and the scenario only ever passes it to rig_log. The transcript adds step 6 (CONTROL), which reruns the step 4-5 lines with case = \"B\". The check's run(\"B\") executes the same steps 1-5 code path."
+    },
+    {
+     "label": "Ruler probe",
+     "value": "I ran three mutations in-process with no file edits: a training-rms rule and an always-richer rule both FAIL case B, an always-lowest rule FAILs case A, and the real rule PASSes."
+    }
+   ],
+   "best_when": "Effects are orthogonal and you want combinations no rung names (stribeck + ripple, dcmotor on load friction) through + or redeclare, with no new rung. It also suits a ladder that is mostly 'fill the next slot', and a reviewer who wants each climb shown as one named slot swap. The held-out table makes 'this swap paid (20.28 → 1.00)' or 'did not pay (1.03 → 1.57)' a single row labelled with the slot it changed.",
+   "loses_when": "It loses when effects inside one slot interact: stribeck AND load-dependent friction cannot be written as stribeck + load, so it needs a combined option or nested slots. It also loses when one rung spans slots (v1's drivetrain repeats ripple's harmonics), and when the fallback is not 'undo the last slot change'. The held-out rule needs a log with repeated plateaus (plateau ids) to read the floor from. Without them this compare cannot judge until the floor is stated some other way. The core is 347 lines, against a 250-line target.",
+   "keep_parts": [
+    "The held-out Comparison table: each row is one slot swap ('friction: coulomb_viscous → stribeck') showing fit rms, held-out rms and ÷ floor, plus a closing line naming the rule. It splices onto any variant that can say what changed between two rungs.",
+    "The leakage guard: a fitted result remembers its training samples, and compare(..., on=) refuses a held-out log that shares any of them. That is 3 lines, and it makes 'choose on training data' an error rather than a silent mistake.",
+    "Slots(ladder, SLOT_OF) raises unless every composed preset reproduces v1's parameters, optional and fallback exactly. A new view of the ladder is pinned to today's ruler by its own constructor, and the variable-projection fit needs no per-rung fitting code."
+   ],
+   "migration": "Nothing in src/, robotparts or sim2real changes; v3 is an additive layer. (1) The v1 ruler, tests/test_ladders_acceptance.py, is untouched: Ladder, Rung and ladders() stay as they are and Slots reads them. Adding one line, Slots(LADDER, SLOT_OF), to that suite pins the composed view to v1, because the constructor already raises on any difference. (2) robotparts' vendoring of actuators/rungs/* is untouched: each Term loads its rung's model.py by path and reads model.json (inputs, spellings such as sigma2), so no rung bytes or sha256 pins move. (3) sim2real's tests/test_robot_models_parity.py is untouched: keys, fallback chains and parameter lists equal v1's. The selection rule is sim2real's own select() with limit 1.5, so a later parity test can assert compare(...).chosen == select(ladder, held_out).key on the same scores without changing sim2real. (4) If Zach picks this variant, SLOT_OF becomes a slot= field on Rung (or a slots.py beside each type's ladder.py, found by the ladders() walk), and composed_terms is exported as robot_models.slots with compare and noise_floor. That is one new field and one new module, with nothing renamed. (5) The amendment's fit/test split cost the core nothing on the fit side: Model.fit takes whatever log it is handed, and only compare gained on= and the need for plateau ids.",
+   "new_rung_cost": "For M3.dahl: (1) actuators/rungs/dahl/model.py and model.json (plus model.js for robotparts parity), the runnable law and its inputs exactly as today; (2) one Rung(level=3, name=\"dahl\", base=\"M2.coulomb_viscous\", adds=(...), code=\"actuators/rungs/dahl\", equation=..., references=...) in actuators/servo/ladder.py plus a Parameter per new quantity; (3) one line \"dahl\": \"friction\" in SLOT_OF. Everything else follows with no further code: the preset M3.dahl, its grid row, its fallback, redeclare(friction=\"dahl\"), fitting (linear and nonlinear parameters are detected automatically) and the held-out compare(..., on=test_log), which ranks dahl against its siblings by fitted-parameter count and then ladder order. Steps 2 and 3 merge if slot= moves onto Rung.",
+   "simulated": "- Only M0-M3 run; M4-M7 are declared and raise NotImplementedError with the reason.\n- predict is the steady-state map (dt=None); LuGre's bristle state is not stepped through time.\n- Vectorisation is a Python loop over the stdlib reference model.py.\n- The fit grid assumes at most 2 positive nonlinear parameters, and optional parameters such as stribeck_exponent stay at the rung default.\n- The noise floor assumes each plateau is one held condition, so drift inside a plateau would inflate it and make the rule too lenient.\n- The leakage guard matches samples by exact float value: it catches the same log passed twice, not a re-measured copy of the fit plateaus.\n- Only one experiment is used (velocity plateaus split into fit and held-out halves), so the inertia is carried from the datasheet and never identified.\n- composes and wears are carried on the terms but unused.\n- The selection rule mirrors sim2real's select() rather than importing it, and has no coverage or RungScore concept: the M7 learned rung is not runnable here.\n- Files written: v3_terms/composed_terms.py, scenario.py, scenario.out.txt and README.md only.\n- Pre-adapt copies are in /tmp/claude-1000/-home-bam-zach-brain--claude-worktrees-robot-models-package-setup-1f872f/d7308654-ea8a-44bc-bdb5-29d975763f6b/scratchpad/v3_adapt_backup/. The cp briefly wrote README.md, scenario.py and scenario.out.txt at the scratchpad root before I moved them. If the orchestrator had files with those names there, they were overwritten.",
+   "id": "v3",
+   "slug": "v3_terms",
+   "name": "Composed terms"
+  },
+  {
+   "check_output": "PASS  v4_estimators\n      · case A: chose M3.stribeck; held-out rms ÷ floor (0.0042 N·m): M2.coulomb_viscous 20.28, M3.stribeck 1.00\n      · case B: chose M2.coulomb_viscous; held-out rms ÷ floor (0.0042 N·m): M2.coulomb_viscous 1.03, M3.stribeck 1.57",
+   "passed": true,
+   "core_lines": 313,
+   "thesis": "A Model is a scikit-learn-style estimator for one rung (from_datasheet, fit, predict, rms, score, get_params). A Family is model selection over its ladder: climb(datasheet, fit, test) fits each child rung on the fit plateaus, judges it on the held-out ones, and climbs only while the current rung is above 1.5x the rig's noise floor and a child beats it on held-out data.",
+   "shape": "families() -> {type: Family}            built from robot_models.ladder.ladders(), nothing retyped\nFamily (one type's models, as its ladder)\n  print(family) .model(key, **values) .models() .children() .siblings() .canonical(alias)\n  .climb(datasheet, fit, test) -> Climb  greedy walk up the tree, judged on held-out data\nModel (an estimator for one rung: family + Rung + {canonical name: SI value})\n  what it is  .key .needs .holds .free .fallback .inputs .describe()   (from Ladder + model.json)\n  verbs       Model.from_datasheet(ds, key) .set_params(**any_name) .get_params()\n              .fit(log) -> self  .predict(v | log)  .rms(log)  .score(log)  (R²)\n  learned     .fitted_ .rms_ .n_samples_                            (sklearn trailing underscore)\nnoise_floor(log)  pooled within-plateau std: the held-out rms no rung can beat\nClimb  .rows (rung, k, fit rms, held out, ÷ floor, verdict) .fits .held_out .floor .chosen .stop\ntorque always from actuators/rungs/<word>/model.py, loaded by path",
+   "steps": [
+    {
+     "label": "Browse the ladder",
+     "code": "from estimators import Model, families\nservo = families()[\"integrated_servo\"]       # the type's models, organized as its ladder: the climb's search order\nprint(servo)\nladder = list(servo.models())                # every key, in today's order: each one an unfitted Model",
+     "output": "integrated_servo: 14 models (a → b: b extends a; ° declared, not run here)\nM0.ideal → M1.datasheet → M2.coulomb_viscous\n├── M3.stribeck\n│   ├── M3.lugre → M5.dcmotor°\n│   └── M3.weakening_capture° → M4.drivetrain° → M5.envelope° → M5.wear° → M6.residual°\n├── M3.load\n└── M4.ripple°\nM7.learned°",
+     "caption": "The Family prints as a tree, and that tree is the search order the climb walks later."
+    },
+    {
+     "label": "Pick M3.stribeck",
+     "code": "stribeck = servo.model(\"M3.stribeck\")\nprint(stribeck.describe())\nservo.canonical(\"frictionloss_nm\")                               # the rack twin's name for the quantity\nservo.model(\"M3.stribeck\", frictionloss_nm=0.3).get_params()     # set by an alias, held by the canonical name",
+     "output": "M3.stribeck  Stribeck friction: breakaway falling to Coulomb with speed\n  falls back  M3.stribeck → M2.coulomb_viscous → M1.datasheet → M0.ideal   (siblings: M3.load, M4.ripple)\n  needs       output_inertia [kg·m²], gear_ratio [1], coulomb_friction [N·m], viscous_friction [N·m·s/rad], breakaway_torque [N·m], stribeck_velocity [rad/s]\n  fits        coulomb_friction, viscous_friction, breakaway_torque, stribeck_velocity\n  optional    stribeck_exponent [1] (+31 datasheet fields below it, read when stated)\n  equation    tau_r = (coulomb_friction + (breakaway_torque − coulomb_friction)·exp(−(|v|/stribeck_velocity)^stribeck_exponent))·sign(v) + viscous_friction·v\n  reference   Armstrong-Hélouvry, Dupont, Canudas de Wit (1994). A survey of models, analysis tools and compensation methods for the control of machines with friction. Automatica.\n  reference   Olsson, Åström, Canudas de Wit, Gäfvert, Lischinsky (1998). Friction models and friction compensation. European Journal of Control.\n  physics     actuators/rungs/stribeck/model.py: tau_r(v)\n'coulomb_friction'\n{'coulomb_friction': 0.3}",
+     "caption": "One Model object describes its needs, what fit() will estimate, fallback, siblings, equation, references and physics file; an alias lands on the canonical name."
+    },
+    {
+     "label": "Datasheet model M1",
+     "code": "from fixture import datasheet, rig_log\nds = datasheet()                              # the catalogue's units: rpm, kg·cm², mN·m·s/rad\nm1 = Model.from_datasheet(ds)                 # M1.datasheet by default: every stated value it holds, in SI\nprint(m1)\nm1.predict(1.0)                               # tau_r at 1 rad/s [N·m]",
+     "output": "M1.datasheet: not fitted\n  stated   output_inertia 4.2e-05 kg·m², gear_ratio 10, peak_torque 3.5 N·m, rated_torque 1.05 N·m, max_output_speed 24.09 rad/s, coulomb_friction 0.3 N·m, viscous_friction 0.02 N·m·s/rad\n0.32",
+     "caption": "from_datasheet finds the family by the datasheet's class and converts catalogue units to SI; predict is direct."
+    },
+    {
+     "label": "Fit on fit plateaus",
+     "code": "fit, test = rig_log(\"A\", \"fit\"), rig_log(\"A\", \"test\")   # plateaus 1, 3, 5, 7, 9 to fit; 2, 4, 6, 8, 10 held out\nm2 = Model.from_datasheet(ds, \"M2.coulomb_viscous\").fit(fit)\nm3 = Model.from_datasheet(ds, \"M3.stribeck\").fit(fit)    # starts from the datasheet; the rest is scanned\nprint(m2)\nprint(m3)",
+     "output": "M2.coulomb_viscous: fitted on 250 samples, rms 0.0647 N·m\n  fitted   coulomb_friction 0.5797 N·m\n  fitted   viscous_friction -0.06487 N·m·s/rad\n  stated   output_inertia 4.2e-05 kg·m², gear_ratio 10, peak_torque 3.5 N·m, rated_torque 1.05 N·m, max_output_speed 24.09 rad/s\nM3.stribeck: fitted on 250 samples, rms 0.00395 N·m\n  fitted   coulomb_friction 0.4195 N·m\n  fitted   viscous_friction 0.03528 N·m·s/rad\n  fitted   breakaway_torque 0.65 N·m\n  fitted   stribeck_velocity 0.249 rad/s\n  stated   output_inertia 4.2e-05 kg·m², gear_ratio 10, peak_torque 3.5 N·m, rated_torque 1.05 N·m, max_output_speed 24.09 rad/s",
+     "caption": "fit() sees only the odd plateaus; one generic Levenberg-Marquardt over model.py, and fitted_ separates learned from stated values."
+    },
+    {
+     "label": "Climb on held-out",
+     "code": "report = servo.climb(ds, fit, test)           # fit each rung on `fit`, judge it on `test`, stop at the floor\nprint(report)\nreport.chosen",
+     "output": "climb integrated_servo: fit on 250 samples, judged on 250 held out; rms in N·m, noise floor 0.00417; climb while held out > 1.5× floor\n  rung                   k  fit rms held out ÷ floor  verdict\n  M1.datasheet           0  0.24200  0.22197   53.22  start: the datasheet, nothing fitted\n  M2.coulomb_viscous     2  0.06469  0.08458   20.28  lowest held-out → climb\n  M3.stribeck            4  0.00395  0.00418    1.00  lowest held-out → climb\n  M3.load                ·        ·        ·       ·  skipped: the log has no tau_load\n  M4.ripple              ·        ·        ·       ·  skipped: declared, above the M0–M3 stop line\n  M3.lugre               ·        ·        ·       ·  skipped: the log has no dt\n  M3.weakening_capture   ·        ·        ·       ·  skipped: declared, no physics shipped\nchosen M3.stribeck: the lowest rung within 1.5× the noise floor on held-out plateaus\n<Model M3.stribeck: 9 values, 4 fitted on 250 samples>",
+     "caption": "Every candidate shows fit rms beside held-out rms and its ratio to the rig's noise floor; the climb stops at M3 because it is the first rung to reach 1.5x the floor (1.00, matching the check's oracle)."
+    },
+    {
+     "label": "Negative control B",
+     "code": "fit_b, test_b = rig_log(\"B\", \"fit\"), rig_log(\"B\", \"test\")   # same rig, a plain Coulomb + viscous servo\nprint(servo.climb(ds, fit_b, test_b))         # M3 fits its own plateaus a hair better, and loses on the held-out ones",
+     "output": "climb integrated_servo: fit on 250 samples, judged on 250 held out; rms in N·m, noise floor 0.00422; climb while held out > 1.5× floor\n  rung                   k  fit rms held out ÷ floor  verdict\n  M1.datasheet           0  0.08662  0.09128   21.63  start: the datasheet, nothing fitted\n  M2.coulomb_viscous     2  0.00404  0.00433    1.03  lowest held-out → climb\n  M3.stribeck            4  0.00397  0.00662    1.57  not needed: M2.coulomb_viscous reaches the floor\n  M3.load                ·        ·        ·       ·  skipped: the log has no tau_load\n  M4.ripple              ·        ·        ·       ·  skipped: declared, above the M0–M3 stop line\nchosen M2.coulomb_viscous: the lowest rung within 1.5× the noise floor on held-out plateaus",
+     "caption": "M3 wins on training rms (0.00397 vs 0.00404) but is 1.5x worse held out: it fit a spurious Stribeck hump between the fit plateaus. The climb stops at M2, which already reaches the floor."
+    }
+   ],
+   "decisions": [
+    {
+     "label": "Held-out floor rule replaces training BIC",
+     "value": "climb(datasheet, fit, test) fits on the fit plateaus, judges on the held-out ones, and stops at the first rung with held-out rms ≤ 1.5x the noise floor (sim2real's select() rule). The old ΔBIC < −2 climb was measured on the fit split: it reached M2 on servo B by only 3.2 BIC points, with M3's training rms lower. Held-out data separates the same two fits by 1.5x (1.03 vs 1.57). Undo: restore Model.bic/aic and the ΔBIC comparison from git."
+    },
+    {
+     "label": "Lowest rung wins at the floor",
+     "value": "Once the current rung reaches the floor, the climb stops even if a child scores lower held-out. Short of the floor, it climbs only to a child that beats the current rung held-out (Zach: if it doesn't improve test time performance, you are overfitting). Undo: drop the `reached` test in Family.climb."
+    },
+    {
+     "label": "Noise floor belongs to the log",
+     "value": "noise_floor(test) is a module function: the pooled within-plateau std, framed as the held-out rms of the one estimator no rung can beat (each plateau's own mean). The climb computes 0.00417 / 0.00422 N·m; the check's own oracle prints 0.0042 for both."
+    },
+    {
+     "label": "One-rung lookahead in the table",
+     "value": "The climb fits the children of the rung it stops at, so the table shows why it stopped (servo B: M3 1.57 next to M2 1.03). A rung no log can feed is listed with the reason it was skipped."
+    },
+    {
+     "label": "Check grades the climb's own fits",
+     "value": "scenario.run(case) returns report.fits, so the check recomputes held-out rms on exactly the fits the choice was made on, and its ratios match the climb's table to 2 decimals. The case reaches the step text as the literal a user would type (rig_log(\"A\", \"fit\")) via a <case> placeholder. Nothing branches on it."
+    },
+    {
+     "label": "BIC/AIC removed from the core",
+     "value": "Model.aic, Model.bic and CLIMB_MARGIN are gone, which keeps the core small. Training-data information criteria are what the amendment rules out. Model.rms(log) was added as the held-out verb next to sklearn's score (R²)."
+    }
+   ],
+   "best_when": "The question is 'which rung does this unit's data justify, and with which numbers'. You have a rig log split into fit and held-out plateaus, and you want a defensible pick explained by a table of held-out rms against the rig's own noise floor, plus SI values ready for MuJoCo/sim2real. The 'what now' flow is three calls: from_datasheet, fit, climb.",
+   "loses_when": "- **Browsing or authoring the type.** Parameters are a dict, so type checkers see no fields.\n- **Logs without repeated conditions.** The floor needs plateau ids; a free trajectory would need a floor passed in.\n- **Siblings that need different experiments.** LuGre needs dt and M3.load needs tau_load, so one plateau log mostly prints 'skipped'.\n- **Terms the plateaus never excite.** The climb then picks the lower rung, which is right for the data and wrong for the servo.\n- **A rung that pays only as part of a pair.** The greedy climb can miss it.\n- **Two copies of the 1.5 limit.** The selection rule is restated from sim2real, so it now lives in two repos.",
+   "keep_parts": [
+    "Family.climb + Climb table: a greedy, tree-shaped version of sim2real's select(), judged on held-out data. Each row shows fit rms, held-out rms and ÷ floor, plus a verdict, and lists skipped rungs with their reason. It drops onto any variant's Family or Type kit.",
+    "noise_floor(log) framed as an estimator: the held-out rms of the 'knows every plateau mean' model, about 8 numpy lines with bincount. It is the yardstick the rule divides by.",
+    "The generic Levenberg–Marquardt fit over model.py: a warm start from the rung below, unit-scanned starting points, and sign canonicalisation for squared terms. It needs no per-rung fitting code and recovers the hidden truth from the fit plateaus alone."
+   ],
+   "migration": "- **The layer is additive.** It ships as robot_models/estimators.py beside ladder.py and only reads ladders() (Ladder, Rung, Parameter, Alias) and the rung folders' model.py/model.json.\n- **v1 ruler (tests/test_ladders_acceptance.py): untouched.** The ladder data and the rung bytes it pins do not change. One new test file would grade the scenario: from the fit plateaus, M3 recovers a hidden Stribeck truth. On held-out plateaus the climb picks M3 on a Stribeck servo and M2 on a Coulomb+viscous one.\n- **robotparts vendoring of actuators/rungs/*: untouched.** model.py and model.json are read and never rewritten, so the model.json sha256s and the ruler's byte check stay valid.\n- **sim2real tests/test_robot_models_parity.py: untouched today.** It checks card names against ladder.resolve()/holds(), and those do not change. Because the climb restates sim2real's select() rule, the 1.5 limit lives in two repos. If v4 is picked, the parity test gains one assertion, estimators.FLOOR_LIMIT == sim2real.cards.schema.TWINNED_LIMIT. robot_models cannot import sim2real, so the parity test is where the two meet.\n- **Later, opt-in:** sim2real could take model.get_params() (canonical names, SI) instead of mapping fitted values itself.",
+   "new_rung_cost": "The same as v1 today:\n1. Add a Rung(level=3, name=..., base=..., adds=..., code=\"actuators/rungs/<word>\", equation=..., references=...) to actuators/servo/ladder.py.\n2. Add the actuators/rungs/<word>/ folder with model.py (torque(terms, inputs, state, dt)) and model.json (inputs, terms).\n\nNothing in estimators.py changes. The rung then appears in the tree, from_datasheet fills it, and fit() fits its required terms above M1. climb() tries it as a child of its base. It climbs to the new rung only when the base is still above 1.5x the noise floor held-out and the new rung is the child with the lowest held-out rms. A rung that least squares cannot fit would need a per-rung fit override, and that hook is not built.",
+   "simulated": "- **Runnable physics stops at M0–M3.** M4–M7 raise NotRunnable with the reason, and M3.weakening_capture has no physics shipped.\n- **M3.lugre only predicts.** It carries state through a time series, but no log here has dt, so its fit never runs.\n- **predict loops in Python** over the scalar stdlib model.py. The whole scenario (three M3 fits across both servos) takes about 10 s.\n- **The rig logs are fixture simulations:** velocity plateaus plus i.i.d. noise, two servos. The variant never reads _truth.py and never branches on the case.\n- **Validation is one fixed split,** the rig's odd/even plateaus. There is no k-fold and no parameter covariance.\n- **The floor needs a plateau column.** There is no floor for logs without repeated conditions.\n- **Not built:** cross-type composition (M4.drivetrain over foc_controller) and sklearn clone/check_estimator compliance. fit takes a dict of columns, not (X, y).\n\nFiles changed, all inside the variant folder:\n- /home/bam/robot_models/docs/proposals/api-2026-11-17/v4_estimators/estimators.py\n- /home/bam/robot_models/docs/proposals/api-2026-11-17/v4_estimators/scenario.py\n- /home/bam/robot_models/docs/proposals/api-2026-11-17/v4_estimators/scenario.out.txt\n- /home/bam/robot_models/docs/proposals/api-2026-11-17/v4_estimators/README.md\n\nsrc/ and the ruler files were not touched, and no git operations were run.",
+   "id": "v4",
+   "slug": "v4_estimators",
+   "name": "Estimators that climb"
+  },
+  {
+   "check_output": "PASS  v5_kit\n      · case A: chose M3.stribeck; held-out rms ÷ floor (0.0042 N·m): M2.coulomb_viscous 20.28, M3.stribeck 1.00\n      · case B: chose M2.coulomb_viscous; held-out rms ÷ floor (0.0042 N·m): M2.coulomb_viscous 1.03, M3.stribeck 1.57",
+   "passed": true,
+   "core_lines": 345,
+   "thesis": "The Type is the entry point. It hands you a kit with its Models (the ladder), its Datasheet class, the rig Experiments that identify each Model, and its fidelity metric plus the rig's floor. So \"datasheet + rig log, what now?\" is servo.identify(fit, datasheet=ds), which returns every model those two cover and names the motion still missing. The kit owns the choice too: servo.compare(found, held_out) scores on plateaus the fit never saw and picks the lowest rung within 1.5x the floor.",
+   "shape": "types                 Types {name: Kit}; types.of(datasheet) picks the kit from the datasheet's class\n└─ Kit (types.integrated_servo)   a layer over v1's Ladder, kept whole as kit.ladder\n   ├─ models       Models {key: Model} in ladder order; print() draws the tree with each model's motions\n   ├─ datasheet    IntegratedServo (v1's Datasheet class)\n   ├─ experiments  Experiments {id: Experiment(id, motion, identifies)}; .covered_by(log)\n   ├─ fidelity     FidelityMetric(\"tau_r_rms\"): RMS ÷ pooled within-plateau std, twinned at 1.5x\n   ├─ from_datasheet(ds) -> Model;  identify(fit_log, datasheet) -> Identified\n   └─ compare(found, held_out) -> Comparison(rows, chosen | None, on_fit); raises on plateaus the fit saw\nIdentified  {key: Model with values}  .missing {key: \"run <motion>\"}  .log (what it was fitted on)\nModel  rung, needs, reads, identified_by {param: Experiment}, base, physics (the rung's model.py), values, sources\n       .fallback  .experiments  .with_values(**si) -> Model  .predict(v) -> numpy  print() -> its card",
+   "steps": [
+    {
+     "label": "Take the type's kit",
+     "code": "import numpy as np\nfrom type_kit import types\nfrom fixture import datasheet, rig_log\nservo = types.of(datasheet())       # Hugging Face AutoModel's move: the datasheet's class names its type\nservo                               # types.integrated_servo is the same kit",
+     "output": "<integrated_servo kit> A joint in one housing: a motor, its drive, a reducer or none, and an encoder.\n  models       14 on the ladder: 6 runs, 1 structure only, 7 declared\n  datasheet    IntegratedServo, 35 typed fields\n  experiments  chirps, reading_datasheet, velocity_plateaus, slow_plateaus, pendulum_sweeps, small_reversals, rotor_angle_sweep, measure_only_board_calibration\n  fidelity     tau_r_rms on held-out plateaus over the rig floor",
+     "caption": "One object per type holds everything it has, and the fidelity metric now states that it is judged on held-out plateaus."
+    },
+    {
+     "label": "Pick M3.stribeck",
+     "code": "stribeck = servo.models[\"M3.stribeck\"]\nprint(stribeck)\n[model.key for model in stribeck.fallback]\nservo.canonical(\"frictionloss_nm\")  # one vocabulary per type: the rack twin's name resolves to the type's own",
+     "output": "M3.stribeck  Stribeck friction: breakaway falling to Coulomb with speed\n  identified by\n    chirps              output_inertia [kg·m²]\n    reading_datasheet   gear_ratio []\n    velocity_plateaus   coulomb_friction [N·m], viscous_friction [N·m·s/rad]\n    slow_plateaus       breakaway_torque [N·m], stribeck_velocity [rad/s], stribeck_exponent [] (optional, 2 when absent)\n  equation    tau_r = (coulomb_friction + (breakaway_torque − coulomb_friction)·exp(−(|v|/stribeck_velocity)^stribeck_exponent))·sign(v) + viscous_friction·v\n  references  Armstrong-Hélouvry, Dupont, Canudas de Wit (1994); Olsson, Åström, Canudas de Wit, Gäfvert, Lischinsky (1998)\n  fallback    M3.stribeck -> M2.coulomb_viscous -> M1.datasheet -> M0.ideal\n  physics     actuators/rungs/stribeck/model.py (runs)\n['M3.stribeck', 'M2.coulomb_viscous', 'M1.datasheet', 'M0.ideal']\n'coulomb_friction'",
+     "caption": "Each parameter is grouped under the rig motion that identifies it, read from robotparts' measured_by."
+    },
+    {
+     "label": "Identify on fit half",
+     "code": "case                                # the servo on the rig (check_scenario.py replays this session on \"B\" too)\nfit, held_out = rig_log(case, \"fit\"), rig_log(case, \"test\")\nservo.experiments.covered_by(fit)\nfound = servo.identify(fit, datasheet=datasheet())\nprint(found)",
+     "output": "'A'\n('velocity_plateaus', 'slow_plateaus')\n  M0.ideal            the datasheet's 2 stated values\n  M1.datasheet        the datasheet's 7 stated values\n  M2.coulomb_viscous  coulomb_friction=0.5797, viscous_friction=-0.06487\n  M3.stribeck         coulomb_friction=0.4195, viscous_friction=0.03528, breakaway_torque=0.65, stribeck_velocity=0.249\n  not yet: M3.load: run pendulum_sweeps\n  not yet: M3.lugre: run small_reversals\n  not yet: M3.weakening_capture: structure only: no published physics (the type holds its terms)\n  not yet: M4.ripple, M4.drivetrain, M5.dcmotor, M5.envelope, M5.wear, M6.residual, M7.learned: declared: this round runs M0-M3 only",
+     "caption": "identify sees only the odd plateaus, values every model they cover, and names the motion each other model still needs; M2's negative viscous term is it bending to imitate the Stribeck drop."
+    },
+    {
+     "label": "Choose on held-out",
+     "code": "servo.compare(found, fit)           # refused: a rung that nests another always fits its own plateaus as well\ncomparison = servo.compare(found, held_out)\nprint(comparison)",
+     "output": "ValueError: the fit saw 10 of these plateaus: choose on plateaus it never saw\n  model                fit x floor  held-out rms N·m   floor  x floor  twinned (<= 1.5x)\n  M0.ideal                  135.90            0.5319  0.0042   127.54  no\n  M1.datasheet               60.49            0.2220  0.0042    53.22  no\n  M2.coulomb_viscous         16.17            0.0846  0.0042    20.28  no\n  M3.stribeck                 0.99            0.0042  0.0042     1.00  yes\n  chosen: M3.stribeck, the lowest rung the rig cannot tell from the part on plateaus the fit never saw",
+     "caption": "The kit refuses to score on the fit log, then picks the lowest rung within 1.5x the floor on held-out plateaus; its numbers match the check's oracle (20.28, 1.00)."
+    },
+    {
+     "label": "Negative control, case B",
+     "code": "found_b = servo.identify(rig_log(\"B\", \"fit\"), datasheet=datasheet())\nprint(servo.compare(found_b, rig_log(\"B\", \"test\")))",
+     "output": "  model                fit x floor  held-out rms N·m   floor  x floor  twinned (<= 1.5x)\n  M0.ideal                   99.57            0.4120  0.0042    97.64  no\n  M1.datasheet               21.57            0.0913  0.0042    21.63  no\n  M2.coulomb_viscous          1.01            0.0043  0.0042     1.03  yes\n  M3.stribeck                 0.99            0.0066  0.0042     1.57  no\n  chosen: M2.coulomb_viscous, the lowest rung the rig cannot tell from the part on plateaus the fit never saw",
+     "caption": "M3 fits its own plateaus slightly better (0.99 vs 1.01), but held out it misses the 1.5x limit at 1.57, so the simpler M2 is chosen."
+    },
+    {
+     "label": "What now",
+     "code": "chosen = comparison.chosen\ndict(chosen.values)\nchosen.predict(np.array([-1.0, -0.1, 0.1, 1.0]))\nfound.missing[\"M3.lugre\"]\nprint(servo.experiments[\"small_reversals\"])",
+     "output": "{'output_inertia': 4.2e-05, 'gear_ratio': 10.0, 'coulomb_friction': 0.4194633038475971, 'viscous_friction': 0.035284565922791986, 'breakaway_torque': 0.6500489870334133, 'stribeck_velocity': 0.24901459937475945}\narray([-0.4547, -0.6192,  0.6192,  0.4547])\n'run small_reversals'\nsmall_reversals: \"small reversals, recorded fast\"\n  identifies sigma0, sigma1\n  on M3.lugre",
+     "caption": "The chosen model hands on SI values and predicts numpy in and out, and the kit names the rig motion that unlocks the next rung."
+    }
+   ],
+   "decisions": [
+    {
+     "label": "Where the held-out comparison lives",
+     "value": "In the Kit, next to the fidelity metric and the floor it divides by: Kit.compare(found, held_out). The type owns the metric, so it owns the choice, and every caller chooses the same way. The Model stays a declaration with values; it gets no score method."
+    },
+    {
+     "label": "Selection rule",
+     "value": "sim2real's cards.schema.select(): the lowest rung whose held-out RMS ÷ the rig's pooled within-plateau std is at most TWINNED_LIMIT = 1.5. Same-level siblings are ranked by ratio, and chosen is None when no rung reaches the limit (the table then says to climb). No information criterion: the type already has a physical yardstick, the rig's repeatability."
+    },
+    {
+     "label": "compare refuses the fit log",
+     "value": "Identified keeps the log it was fitted on (.log). compare raises ValueError when the held-out log shares a plateau with it. Choosing on training data is impossible, not merely discouraged. A plain dict of models, with no .log, still compares."
+    },
+    {
+     "label": "Training ratio shown, never chosen on",
+     "value": "Comparison.on_fit puts the fit-plateau ratio beside the held-out ratio, so case B shows the overfit itself: M3 0.99 on fit and 1.57 held out, against M2 1.01 and 1.03."
+    },
+    {
+     "label": "Floor from plateau ids",
+     "value": "The floor uses the log's plateau ids (pooled within-plateau std), the same formula the check uses, and falls back to exact speed repeats. The kit's held-out numbers match the oracle to two decimals (20.28, 1.00, 1.03, 1.57)."
+    },
+    {
+     "label": "Coverage threshold 6 -> 5",
+     "value": "COVERAGE now treats velocity_plateaus as at least 5 speeds held both ways. robotparts' '6-8 speeds' describes the whole rig run, and the alternating split leaves 5 of 10 speeds in the fit half. It is documented as a known gap: the real fix is to judge coverage on the run as a whole."
+    },
+    {
+     "label": "Honest finding",
+     "value": "On this fixture, the 1.5x-floor rule would have picked M2 for case B even on training data, because M2 trains at 1.01x. A rule that takes the lowest training RMS picks M3 in both cases. Held-out data adds the evidence that M3 does worse on unseen plateaus, not just that it is unneeded; the check cannot tell this rule on fit data from the same rule on held-out data, and the refusal guard is what enforces held-out."
+    },
+    {
+     "label": "Case passed through, never branched on",
+     "value": "run(case) binds case into the replayed session's namespace, and step 4 echoes it ('A'). Step 5b runs case B with literal rig_log(\"B\", ...) calls so the transcript shows the negative control. run() asserts that the only error the session raises is step 5's ValueError refusal."
+    }
+   ],
+   "best_when": "The question is \"what do I run next, and when do I stop climbing?\" A new part arrives, and the kit says which models the datasheet already gives, which rig motion unlocks which rung, and which rung is good enough, judged on held-out plateaus against the rig's own floor. The rule and the floor live in one place per type, so every caller (scenario, sim2real cards, robotparts) chooses the same way. That place matches how sim2real already organizes kits per type.",
+   "loses_when": "You want the Model alone, or your own selection rule. Model parameters are a values mapping, not typed fields, so type checkers see nothing. A hand-built Model outside a kit is awkward because identified_by points at the kit's Experiment objects. The choice rule belongs to the kit, so a caller who wants AIC, a margin or another split has to go around compare: it takes the held-out log, never the rule. The rule restates sim2real's select() and its 1.5 limit, so two repos hold copies until one imports the other. A type with no rung folders gets no experiments and no fidelity metric.",
+   "keep_parts": [
+    "Kit.compare(found, held_out) with the refusal guard: Identified remembers its fit log, and comparing on overlapping plateaus raises. This makes 'choose on test, not train' a property of the API, and it splices onto any variant whose fit returns an object.",
+    "The comparison table with a 'fit x floor' column beside 'held-out rms / floor / x floor / twinned', which shows overfitting on its own (case B: M3 0.99 on fit, 1.57 held out).",
+    "Identified.missing plus Experiment ids derived from robotparts' measured_by: 'M3.lugre: run small_reversals' is the 'what now' answer when no rung reaches the floor."
+   ],
+   "migration": "Additive; nothing in v1 moves. (1) v1 ruler tests/test_ladders_acceptance.py: unchanged. Kit wraps Ladder (kit.ladder), so rung keys, bases, parameters(), aliases and packed names stay v1's. Landing it means adding src/robot_models/types.py plus two tests: every measured_by motion in a rung's model.json has a COVERAGE entry or is declared unreadable, and compare chooses on held-out plateaus (case A to M3.stribeck, case B to M2) and raises on the fit log. (2) robotparts vendoring of actuators/rungs/*: unchanged. The kit reads model.json and model.py read-only and exec's the rung source rather than importing it, so it leaves no __pycache__ and robotparts' byte-for-byte sha256 sync holds. (3) sim2real tests/test_robot_models_parity.py: unchanged; it reads ladders(), which stays. New coupling: Kit.compare restates sim2real's select() and TWINNED_LIMIT = 1.5, so landing should either share one constant (a parity assertion that both equal 1.5) or move select() into robot_models for sim2real to call. Later, sim2real's CameraKit and this Kit can converge on one shape. Rig logs passed to identify and compare need a plateau id per sample, or exact speed repeats as the fallback.",
+   "new_rung_cost": "Two steps, both as today. (1) Add Rung(level=3, name=..., base=..., adds=..., code=\"actuators/rungs/<word>\", equation=..., references=...) to actuators/servo/ladder.py. (2) Add the folder actuators/rungs/<word>/ with model.py (torque(terms, inputs, state, dt)) and model.json, with a measured_by on each term, in robotparts' format. With no registration, the kit then gives it a card, a place on the tree, Experiments (a new motion text becomes a new Experiment), predict, identify once a log covers its motions, and a row in compare's held-out choice. One more line is needed only when the rung names a new motion that identify should read from a log (a COVERAGE entry). A new fitter is needed only when the rung is not linear in levels and slopes plus one speed scale.",
+   "simulated": "The rig logs are the fixture's simulation, read through rig_log(case, \"fit\"|\"test\"); _truth.py is never read. Only velocity-plateau logs are read (velocity_plateaus, slow_plateaus). Chirps, reversals, pendulum sweeps and board calibration are named as Experiments, but their logs are not read. COVERAGE accepts 5 plateau speeds held both ways, not robotparts' 6-8, because the fit half of the alternating split holds 5; judging coverage on the whole run is left out. Physics runs for M0-M3 only: M3.load needs a tau_load input, M3.lugre runs at steady state, M3.weakening_capture is structure only, and M4-M7 are declared and raise on predict. The fitter is separable least squares (lstsq on levels and slopes, a scan plus golden-section search on one speed scale), numpy only; optional terms such as stribeck_exponent are defaulted, never fitted. The selection rule is a local copy of sim2real's select() and 1.5 limit, not an import. The module is type_kit.py, not robot_models.types, so it does not shadow the stdlib types module. Building every kit at import takes about 0.4 s.",
+   "id": "v5",
+   "slug": "v5_kit",
+   "name": "Type kit"
+  }
+ ],
+ "v0": [
+  {
+   "check_output": "PASS  v1_subclass",
+   "passed": true,
+   "core_lines": 379,
+   "thesis": "A Model is a frozen dataclass whose fields are its parameters, and a rung subclasses the rung it extends. So a type's ladder is its class tree, the fallback is the MRO, and a value is a typed instance that pyright and IDEs read field by field.",
+   "shape": "Model  (frozen-dataclass base: PEP 681 dataclass_transform; __init_subclass__ applies @dataclass(frozen, kw_only))\n└── ServoModel(Model, type=\"integrated_servo\")   the TYPE = root class: tree() ladder() rung(key) canonical(alias) compare(models, log)\n    ├── Ideal(level=0, name=\"ideal\")   output_inertia: float, gear_ratio: float   (no default = the rung needs it)\n    │   └── Datasheet(level=1, fields_from=IntegratedServo)   33 fields \"= None\" (read when stated)\n    │       └── CoulombViscous(2)   coulomb_friction: float, viscous_friction: float  (redeclared without a default = needed from here)\n    │           ├── Stribeck(3) breakaway_torque, stribeck_velocity, stribeck_exponent=None; overrides seeds()\n    │           │   ├── LuGre(3) -> DcMotor(5)      └── WeakeningCapture(3) -> Drivetrain(4) -> Envelope(5) -> Wear(5) -> Residual(6)\n    │           ├── Load(3)      └── Ripple(4)\n    └── Learned(7)\nclass methods: fallback() = MRO as keys, needs(), reads(), parameter(name) from field metadata, alternatives(), describe(), from_datasheet(ds), fit(log, start=) -> Self\ninstance: typed attributes, torque(v, **inputs) running today's rungs/<word>/model.py, terms(), mujoco(), score(log)",
+   "steps": [
+    {
+     "label": "Browse the ladder",
+     "code": ">>> from subclass_ladder.servo import ServoModel\n>>> print(ServoModel.tree())\n>>> ServoModel.ladder()",
+     "output": "integrated_servo · class ServoModel · 14 models (a -> b: b subclasses a)\n├── M0.ideal -> M1.datasheet -> M2.coulomb_viscous\n│   ├── M3.stribeck\n│   │   ├── M3.lugre -> M5.dcmotor\n│   │   └── M3.weakening_capture -> M4.drivetrain -> M5.envelope -> M5.wear -> M6.residual\n│   ├── M3.load\n│   └── M4.ripple\n└── M7.learned\n('M0.ideal', 'M1.datasheet', 'M2.coulomb_viscous', 'M3.stribeck', 'M3.load', 'M3.lugre', 'M3.weakening_capture', 'M4.ripple', 'M4.drivetrain', 'M5.dcmotor', 'M5.envelope', 'M5.wear', 'M6.residual', 'M7.learned')",
+     "caption": "The type is a root class and its ladder is the subclass tree; each rung was found when its class was defined, and runs of single children print on one line."
+    },
+    {
+     "label": "Pick M3.stribeck",
+     "code": ">>> from subclass_ladder.servo import Stribeck\n>>> print(Stribeck.describe())\n>>> [klass.__name__ for klass in Stribeck.__mro__]\n>>> Stribeck.fallback()\n>>> ServoModel.canonical(\"frictionloss_nm\")",
+     "output": "M3.stribeck · class Stribeck(CoulombViscous) · Stribeck friction: breakaway falling to Coulomb with speed\n  tau_r = (coulomb_friction + (breakaway_torque − coulomb_friction)·exp(−(|v|/stribeck_velocity)^stribeck_exponent))·sign(v) + viscous_friction·v\n  needs breakaway_torque [N·m]: Static friction at the output: the torque that starts it moving from rest, the top of the Stribeck curve.\n  needs stribeck_velocity [rad/s]: Output speed over which friction falls from breakaway_torque to coulomb_friction.\n  reads stribeck_exponent [1]: Shape exponent of the Stribeck curve, how sharply friction falls with speed; 2 when absent.\n  inherits output_inertia [kg·m²], gear_ratio [1], coulomb_friction [N·m], viscous_friction [N·m·s/rad]; reads 31 more when stated\n  cites Armstrong-Hélouvry, Dupont, Canudas de Wit (1994); Olsson, Åström, Canudas de Wit, Gäfvert, Lischinsky (1998)\n  runs actuators/rungs/stribeck/model.py · also at M3: M3.load, M3.lugre, M3.weakening_capture\n['Stribeck', 'CoulombViscous', 'Datasheet', 'Ideal', 'ServoModel', 'Model', 'object']\n('M3.stribeck', 'M2.coulomb_viscous', 'M1.datasheet', 'M0.ideal')\n'coulomb_friction'",
+     "caption": "The fallback is the MRO read as rung keys, and the units and definitions come from each field's metadata; an alias resolves on the type."
+    },
+    {
+     "label": "Datasheet to M1",
+     "code": ">>> import numpy as np\n>>> from fixture import datasheet, rig_log\n>>> from subclass_ladder.servo import Datasheet\n>>> m1 = Datasheet.from_datasheet(datasheet())\n>>> m1\n>>> m1.torque(1.0)\n>>> m1.torque(np.array([-1.0, 0.0, 0.5]))",
+     "output": "Datasheet(output_inertia=4.2e-05, gear_ratio=10.0, peak_torque=3.5, rated_torque=1.05, max_output_speed=24.085543677521745, coulomb_friction=0.3, viscous_friction=0.02)\n0.32\narray([-0.32,  0.  ,  0.31])",
+     "caption": "Catalogue units (kg·cm², rpm, mN·m·s/rad) go in and SI fields come out; torque() runs today's datasheet/model.py, mapped over a numpy array."
+    },
+    {
+     "label": "Fit M2 and M3",
+     "code": ">>> from subclass_ladder.servo import CoulombViscous\n>>> log = rig_log()\n>>> m2 = CoulombViscous.fit(log, start=m1)\n>>> m3 = Stribeck.fit(log, start=m2)\n>>> m2.coulomb_friction, m2.viscous_friction\n>>> m3.coulomb_friction, m3.breakaway_torque, m3.stribeck_velocity, m3.viscous_friction\n>>> m3.output_inertia, m3.gear_ratio",
+     "output": "(0.5601499382598149, -0.03347063727300118)\n(0.4199164192197515, 0.6502393102767854, 0.2492821541292309, 0.03507686433678171)\n(4.2e-05, 10.0)",
+     "caption": "fit is an alternative constructor that returns a typed Stribeck. It frees only the needed parameters the log moves, so the datasheet's inertia and ratio ride along; M2's negative viscous term is the Stribeck drop it can't express."
+    },
+    {
+     "label": "Compare and choose",
+     "code": ">>> comparison = ServoModel.compare([m1, m2, m3], log)\n>>> print(comparison)\n>>> chosen = comparison.chosen\n>>> chosen.key, isinstance(chosen, CoulombViscous)",
+     "output": "rung                 fitted  rms [N·m]       BIC\nM1.datasheet              0     0.2322   -1460.2\nM2.coulomb_viscous        2     0.0689   -2662.1\nM3.stribeck               4     0.0041   -5481.7  <- lowest BIC\n('M3.stribeck', True)",
+     "caption": "BIC makes the richer rung earn its place. The chosen M3 is still an instance of M2's class, because it is a subclass."
+    },
+    {
+     "label": "Hand it on",
+     "code": ">>> chosen.mujoco()\n>>> from subclass_ladder.servo import Drivetrain\n>>> Drivetrain.runnable, Drivetrain.needs()[-3:]",
+     "output": "{'armature': 4.2e-05, 'frictionloss': 0.6502393102767854, 'damping': 0.03507686433678171}\n(False, ('harmonics', 'backlash', 'torsional_stiffness'))",
+     "caption": "The values map to MuJoCo joint attributes through the rung's model.json. A rung above the stop line is declared, with its fields and fallback, but does not run."
+    }
+   ],
+   "decisions": [
+    {
+     "label": "Ladder = class tree, found on definition",
+     "value": "__init_subclass__ registers each rung class (level=, name= class keywords) with its type root, so there is no registry file. fallback() is the MRO read as keys. Same-level alternatives are the classes at the same level: Stribeck and Load are siblings, while LuGre and WeakeningCapture are Stribeck's M3 children."
+    },
+    {
+     "label": "Fields are parameters; metadata not retyped",
+     "value": "A field with no default is needed and one with `= None` is read when stated. A subclass redeclares a field without a default to make it required. Unit and definition go into field.metadata['parameter'] from v1's vocabulary by name. A field named by an alias is refused at class creation (G4). M1's 33 optional fields are injected from IntegratedServo (fields_from=, PEP 0003 §6), so they are not typed twice; the cost is that type checkers don't see them."
+    },
+    {
+     "label": "One copy of physics and prose; guarded against v1",
+     "value": "torque() loads today's actuators/rungs/<word>/model.py by path and loops it over numpy arrays. The reference's own term names (LuGre's sigma2) resolve through aliases. Title, equation and references are read from v1's Rung by key. At import, each class is checked against its v1 record (base, adds, optional), and all 14 keys match v1's fallback, needs and optional."
+    },
+    {
+     "label": "Fit is an alternative constructor",
+     "value": "Stribeck.fit(log, start=m2) -> Stribeck (typed as Self). It runs a generic numpy Levenberg–Marquardt over the needed parameters the log moves, which it detects by perturbing each one. A rung that adds a nonlinear term overrides seeds(), like nn.Module.reset_parameters; Stribeck tries 6 stribeck_velocity starts spread geometrically over the logged speeds. compare() is a classmethod on the type root and picks the lowest BIC."
+    }
+   ],
+   "best_when": "Rungs are real refinements (each adds terms to its base, as friction does), the people adding rungs write Python, and values flow into code. Then IDE completion, pyright-checked constructors (missing parameter, alias keyword and frozen assignment are all caught; verified with pyright 1.1.390), dataclasses.replace/asdict, and `isinstance(m3, CoulombViscous)` all come for free.",
+   "loses_when": "- **Two siblings combined:** a rung that combines siblings (Stribeck + load) needs multiple inheritance, and C3 linearizes it into a fallback you may not mean.\n- **Optional below, required above:** pyright rejects redeclaring `x: float | None = None` as `x: float` (\"overrides a field ... missing a default value\"). Hand-declaring M1, the pure form, would raise 5 such errors; the prototype dodges them only by injecting M1's fields.\n- **Non-Python consumers:** robotparts JS/JSON and sim2real cards can't see classes, so the ladder must be exported back to records.\n- **Forced tree:** M7.learned extends nothing but still has to subclass the root.\n- **Shared namespace:** parameters share the class namespace with the API (key, level, torque, fit), and nothing checks for collisions.\n- **Scattered fields:** a rung's needs are spread across 4–9 class bodies; describe() gathers them back.\n- **Size:** the core is 379 non-blank lines, above the 250 aim.",
+   "keep_parts": [
+    "`dataclass_transform` on the base, with `__init_subclass__` applying `@dataclass(frozen=True, kw_only=True)` and filling each field's metadata from the type vocabulary. This makes parameters typed, IDE-visible attributes with no decorator; pyright confirms types, missing arguments, alias keywords and frozen assignment.",
+    "The import-time guard that checks each new-API object against its v1 Rung record (base, adds, optional). It makes any variant an additive layer: the ruler, the rung bytes, robotparts vendoring and sim2real parity stay untouched while both exist.",
+    "`fit(log, start=)` that frees only the needed parameters the log numerically moves (so datasheet inertia and ratio ride along), plus a per-rung `seeds()` hook for nonlinear terms. Also the tree printer that collapses single-child chains, putting all 14 rungs in 8 lines."
+   ],
+   "migration": "Now (additive, as built): the classes live beside v1's records and are checked against them at import. Unchanged:\n- tests/test_ladders_acceptance.py, the v1 ruler;\n- actuators/rungs/* bytes, so robotparts' tools/sync_actuator_rungs.py and tests/core/test_actuator_rungs_vendored.py are unaffected;\n- sim2real's tests/test_robot_models_parity.py, which calls ladders()/holds()/rung()/fallback() live.\n\nThen (classes become the source): actuators/servo/ladder.py shrinks to `LADDER = Ladder.from_classes(ServoModel)`. That builds each Rung from the class tree: adds = a class's own required fields, optional = its own defaulted fields, base = `__bases__[0].key`. Title, equation and references move into the class body.\n- ladders() keeps its signature, so sim2real's parity test and the ruler's per-rung assertions (keys, bases, adds, optional, equation, references) run unchanged against the generated records.\n- robotparts vendors model.py/model.json bytes that never move.\n- The ruler changes only where classes don't yet hold the data: vocabulary, aliases, packed, deployment-only, wears and composes stay as module-level records or become class attributes. That ruler edit lands first, alone.\n- Hand-declaring M1 would also need a pyright workaround for the five optional-to-required redeclarations.",
+   "new_rung_cost": "In this prototype, a contributor writes:\n1. One class in the type's models module (servo.py): `class Dahl(CoulombViscous, level=3, name=\"dahl\"):` with `dahl_stiffness: float` in its body. It is found automatically on import.\n2. While v1's records are the ruler, the matching `Rung(level=3, name=\"dahl\", base=\"M2.coulomb_viscous\", adds=(\"dahl_stiffness\",), code=..., equation=..., references=...)` plus a `Parameter(\"dahl_stiffness\", unit, definition)` in actuators/servo/ladder.py. The import guard refuses a class with no matching record.\n3. To make it runnable, actuators/rungs/dahl/model.py + model.json.\n4. Only if a term can't be started linearly, a ~5-line `seeds()` override.\n\nEnd state: steps 1 and 3 plus the Parameter, with equation and references written in the class body.",
+   "simulated": "- **Inputs:** the rig log is the fixture's simulated velocity-plateau sweep, and M1 comes from the fixture's illustrative datasheet.\n- **Not runnable:**\n  - M4–M7 are declared (fields, fallback, prose) and raise NotImplementedError on torque().\n  - M3.weakening_capture is declared only, because v1 ships no code for it.\n  - M3.lugre runs only its steady-state sliding curve (no state carried between calls).\n  - M3.load needs tau_load=.\n- **Speed:** torque() loops the stdlib reference per sample rather than using a numpy port. The full session takes about 0.75 s.\n- **Not yet classes:** composes, wears, packed and deployment-only names are still read from v1's Ladder. Only integrated_servo is a class tree; the other 11 types are not.\n- **Fit:** it frees needed parameters only (stribeck_exponent stays at its default of 2) and reports no uncertainty.\n- **Where the work is:** /home/bam/robot_models/docs/proposals/api-2026-11-17/v1_subclass/ (README.md, scenario.py, scenario.out.txt, subclass_ladder/model.py, subclass_ladder/servo.py, subclass_ladder/__init__.py). Nothing is committed.",
+   "id": "v1",
+   "slug": "v1_subclass",
+   "name": "Subclass ladder"
+  },
+  {
+   "check_output": "PASS  v2_records",
+   "passed": true,
+   "core_lines": 282,
+   "thesis": "A Model is a frozen record (key, level, base, parameters with units, equation, references) that carries its attached physics and binds to separately held values (PyBaMM) to become a callable, lmfit-style fittable BoundModel; a Family, which is literally a subclass of v1's Ladder, holds the type's vocabulary, aliases and model tree, so v1 consumers keep working unchanged.",
+   "shape": "families() -> {type: Family}                  today's ladders(), each read as a Family\nFamily(Ladder)                                 every v1 call inherited: fallback, canonical, holds, resolve, composed\n  family[key] -> Model ; .tree() .children(key) .siblings(key)\n  .values(datasheet | {name: number|Stated}) -> Values (canonical -> SI; PyBaMM ParameterValues)\n  .compare(*bound, observed=, **inputs) -> Comparison (rms, BIC; .chosen)\nModel (frozen record)  key level name title base(key) kind adds reads parameters optional equation references physics\n  .bind(values) -> BoundModel                  checks what it needs, keeps what it holds\n  .fit(observed, values=, grid=, **inputs) -> BoundModel   varies model.json's required terms\n  .physics: Physics | None                     model.py torque() + model.json inputs/required/MuJoCo maps\nBoundModel  model, values (plain dict, SI), fitted, rms, samples\n  __call__(**inputs) numpy in/out ; .mujoco() -> joint attributes",
+   "steps": [
+    {
+     "label": "Browse the family",
+     "code": "from family_records import families    # robot_models.family once landed\nservo = families()[\"integrated_servo\"]\nprint(servo.tree())\nservo.children(\"M2.coulomb_viscous\")",
+     "output": "integrated_servo: A joint in one housing: a motor, its drive, a reducer or none, and an encoder.\nM0.ideal* → M1.datasheet* → M2.coulomb_viscous*\n├── M3.stribeck*\n│   ├── M3.lugre* → M5.dcmotor\n│   └── M3.weakening_capture → M4.drivetrain → M5.envelope → M5.wear → M6.residual\n├── M3.load*\n└── M4.ripple\nM7.learned\n* runnable here: 6 of 14 (physics attached for M0-M3 only); the rest are declared records\n('M3.stribeck', 'M3.load', 'M4.ripple')",
+     "caption": "The Family prints its 14 models as a tree of bases; a chain with no branch sits on one line, and * marks the 6 whose physics is attached."
+    },
+    {
+     "label": "Pick M3.stribeck",
+     "code": "stribeck = servo[\"M3.stribeck\"]\nprint(stribeck)\nservo.fallback(\"M3.stribeck\")\nservo.canonical(\"frictionloss_nm\")",
+     "output": "M3.stribeck  Stribeck friction: breakaway falling to Coulomb with speed\n  base      M2.coulomb_viscous\n  inherits  output_inertia [kg·m²], gear_ratio, coulomb_friction [N·m], viscous_friction [N·m·s/rad]\n  adds      breakaway_torque [N·m]: Static friction at the output: the torque that starts it moving from rest, the top of the Stribeck curve.\n            stribeck_velocity [rad/s]: Output speed over which friction falls from breakaway_torque to coulomb_friction.\n  optional  stribeck_exponent (+31 inherited, read when stated)\n  equation  tau_r = (coulomb_friction + (breakaway_torque − coulomb_friction)·exp(−(|v|/stribeck_velocity)^stribeck_exponent))·sign(v) + viscous_friction·v\n  refs      Armstrong-Hélouvry, Dupont, Canudas de Wit (1994)… https://doi.org/10.1016/0005-1098(94)90209-7\n            Olsson, Åström, Canudas de Wit, Gäfvert, Lischinsky (1998)… https://doi.org/10.1016/S0947-3580(98)70113-X\n  physics   actuators/rungs/stribeck/model.py: torque(v [rad/s]) -> tau_r [N·m]; a fit varies coulomb_friction, viscous_friction, breakaway_torque, stribeck_velocity\n('M3.stribeck', 'M2.coulomb_viscous', 'M1.datasheet', 'M0.ideal')\n'coulomb_friction'",
+     "caption": "One record lists what the model needs (with units), what it means, where it comes from and which code computes it; fallback and alias resolution are Family calls."
+    },
+    {
+     "label": "Datasheet to M1",
+     "code": "from fixture import datasheet, rig_log\nvalues = servo.values(datasheet())\nvalues\nm1 = servo[\"M1.datasheet\"].bind(values)\nm1(v=1.0)\nm1(v=np.array([-1.0, 0.0, 1.0]))",
+     "output": "Values(integrated_servo, 7 stated, SI):\n  peak_torque        3.5          N·m\n  rated_torque       1.05         N·m\n  max_output_speed   24.0855      rad/s\n  coulomb_friction   0.3          N·m\n  viscous_friction   0.02         N·m·s/rad\n  gear_ratio         10\n  output_inertia     4.2e-05      kg·m²\n0.32\narray([-0.32,  0.  ,  0.32])",
+     "caption": "Values are kept apart from any model (PyBaMM): the catalogue's rpm, kg·cm² and mN·m·s/rad come out in SI once, and bind() turns M1 into a numpy-callable."
+    },
+    {
+     "label": "Fit M2 and M3",
+     "code": "log = rig_log()\nm2 = servo[\"M2.coulomb_viscous\"].fit(log[\"tau\"], v=log[\"v\"], values=values)\nm3 = stribeck.fit(log[\"tau\"], v=log[\"v\"], values=values)\nprint(m3)\nround(m2.rms, 4), round(m3.rms, 4)",
+     "output": "M3.stribeck fitted on 500 samples, rms 0.00406\n  output_inertia     4.2e-05    kg·m²      given\n  gear_ratio         10                    given\n  coulomb_friction   0.41992    N·m        fitted\n  viscous_friction   0.035077   N·m·s/rad  fitted\n  breakaway_torque   0.65024    N·m        fitted\n  stribeck_velocity  0.24928    rad/s      fitted\n  + 3 optional values it reads: peak_torque, rated_torque, max_output_speed\n(0.0689, 0.0041)",
+     "caption": "lmfit's call shape (data first, inputs by name): the fit varies the terms model.json marks required and takes the rest from the datasheet values, with no fitting code in the rung."
+    },
+    {
+     "label": "Compare and choose",
+     "code": "verdict = servo.compare(m1, m2, m3, observed=log[\"tau\"], v=log[\"v\"])\nverdict\nverdict.chosen",
+     "output": "model                fitted        rms        BIC\nM3.stribeck               4    0.00406    -5481.7\nM2.coulomb_viscous        2    0.06894    -2662.1\nM1.datasheet              0     0.2322    -1460.2\nchosen: M3.stribeck, BIC 2819.7 below M2.coulomb_viscous\n'M3.stribeck'",
+     "caption": "The Family scores bound models on one log with BIC, so a higher rung has to pay for each term it adds; the datasheet's M1 is visibly off on this unit."
+    },
+    {
+     "label": "Hand it on",
+     "code": "m3.mujoco()\nm3(v=np.array([0.05, 0.5, 2.0])).round(4)\nservo[\"M4.drivetrain\"].fit(log[\"tau\"], v=log[\"v\"], values=values)  # -> NotImplementedError",
+     "output": "{'armature': 4.2e-05, 'frictionloss': 0.6502392062209615, 'damping': 0.035076934159658735}\narray([0.6429, 0.4416, 0.4901])\nNotImplementedError: M4.drivetrain is declared, not runnable here: physics is attached for M0-M3 only (the round's stop line)",
+     "caption": "model.json's MuJoCo map exports the fit directly (frictionloss is the static breakaway level), and a declared rung says plainly that it does not run."
+    }
+   ],
+   "decisions": [
+    {
+     "label": "Family subclasses v1's Ladder",
+     "value": "A Family IS a Ladder plus .models, so every v1 call and check (fallback, canonical, parameters, holds, resolve, composed) is inherited unchanged; ladders() could return Families with no consumer edit."
+    },
+    {
+     "label": "Base stays a key; the Family owns the tree",
+     "value": "A Model carries its resolved Parameter records (inherited ones included, with units and definitions), so it describes itself. Fallback, children, siblings and tree() are Family calls: the records are flat and the tree is data, not inheritance."
+    },
+    {
+     "label": "Physics attached from the unchanged rung folder",
+     "value": "Physics.load compiles model.py from source; an import would write __pycache__ into a folder robotparts pins byte for byte. model.json gives the inputs, output, required terms and MuJoCo maps, translated to canonical names through the family's aliases (LuGre's sigma2 -> viscous_friction). Attached for M0-M3 only."
+    },
+    {
+     "label": "Fit on the Model, compare on the Family",
+     "value": "Model.fit is generic separable least squares: it probes the physics to split terms into linear ones (solved by lstsq) and nonlinear ones (a log-spaced grid over the logged input range, refined 4x), then checks the linear terms superpose at the answer. Compare uses BIC and sits on the Family because it is a question about the tree."
+    }
+   ],
+   "best_when": "Landing without breaking anyone matters most. Three repos read ladders() today, and this layer is purely additive because its Family is a Ladder. It also suits rungs that keep arriving as robotparts-style folders (model.py + model.json): the record picks them up, and binding, fitting, comparison and the MuJoCo export come with no extra code.",
+   "loses_when": "You want the Model to stand alone and be typed. It can describe and compute itself, but fallback, siblings and comparison need its Family. Parameters are names in a vocabulary, not attributes a type checker sees (values is a dict). Stateful or non-separable physics outgrows the linearity probe: LuGre runs at steady state only, and a jointly nonlinear term needs an explicit grid=.",
+   "keep_parts": [
+    "Model.fit: generic separable least squares probed on the physics itself. Any rung's model.py fits with no fitting code: linear terms by lstsq, nonlinear terms on a refined log grid spanning the logged range of the input that shares their unit, plus a check that the linear terms superpose at the answer.",
+    "Physics.load: compile + exec model.py from the pinned rung folder (no __pycache__) and read model.json's required terms, inputs and MuJoCo maps through the family's aliases. This gives BoundModel.mujoco() and fit's free set for free.",
+    "Family as a subclass of Ladder (zero-edit migration for the ruler, robotparts and sim2real), plus its compact tree(): single-child chains collapse to 'a → b' and * marks the runnable models."
+   ],
+   "migration": "To land it, add src/robot_models/family.py (family_records.py without RUNNABLE_UP_TO); nothing else changes. Optionally later, ladders() returns Family.from_ladder(...) and type folders write LADDER = Family(...). v1 ruler (tests/test_ladders_acceptance.py): untouched. Rung records, keys, bases, adds, the code strings and every rung byte stay as they are; isinstance(LADDER, Ladder) holds for a Family; the value scan judges type folders, not a root module; test_every_module_imports_in_a_fresh_interpreter picks up one more module (numpy is already a runtime dependency in pyproject). robotparts vendoring of actuators/rungs/*: untouched. The folders are read in place and exec'd from source, never imported, so no __pycache__ lands in them and the byte-identical folder test and the RUNG_FILES sha256 table stay green. sim2real tests/test_robot_models_parity.py: untouched. It calls ladders(), .keys, .rung(), .resolve(), .holds() and .composed(), all inherited by Family; sim2real can later fit through families()[t][key].fit(...) as an additive step.",
+   "new_rung_cost": "Exactly what v1 asks today, nothing more. (1) One Rung(level=3, name='<word>', title=..., base='M2.coulomb_viscous', adds=(...), code='actuators/rungs/<word>', equation=..., references=(...)) entry in actuators/servo/ladder.py, plus a Parameter in FRICTION_VOCABULARY for any new quantity. (2) The folder actuators/rungs/<word>/ with model.py (torque(terms, inputs, state, dt) -> (tau_r, state)) and model.json (terms marked required or not, inputs, output, MuJoCo maps); robotparts' parity also wants model.js and the ruler's RUNG_FILES sha256 row. The Family finds the folder through code=, and the card, bind, fit (free terms = model.json's required ones), compare and mujoco() come free. No registration and no fitting code.",
+   "simulated": "The Family is derived at runtime from today's ladders() instead of being declared in src/. Physics is attached for M0-M3 only (ideal, datasheet, coulomb_viscous, stribeck, load, lugre). M4.ripple has a model.py but is deliberately not attached (the stop line), and M3.weakening_capture and M4-M7 have no runnable code: bind()(...) or fit() on them raises NotImplementedError. Physics.__call__ vectorizes by looping the scalar stdlib torque() over the samples; state and dt are not threaded through, so LuGre runs at steady state only. Values canonicalizes names on build but does not resolve aliases on read, and refuses a bare number for an alias in a non-SI unit (asks for a Stated). There are no fit uncertainties, no held-out validation and no composed types (foc_controller). The core is 282 non-blank lines, over the 250 aim; about 50 of them are docstrings and WHY comments. Files: /home/bam/robot_models/docs/proposals/api-2026-11-17/v2_records/family_records.py, scenario.py, scenario.out.txt, README.md.",
+   "id": "v2",
+   "slug": "v2_records",
+   "name": "Records in a Family"
+  },
+  {
+   "check_output": "PASS  v3_terms",
+   "passed": true,
+   "core_lines": 347,
+   "thesis": "A Model is a sum of small term models, one per slot (inertia, friction, ripple, drivetrain, electrics, wear, correction), whose parameters are the union of the terms'; a ladder key such as M3.stribeck is a named preset of slot choices, and climbing the ladder means swapping or filling one slot.",
+   "shape": "Slots (servo)      the type: slot order, each slot's options, 14 presets (today's keys, in order)\n├─ Term            one law filling one slot; runs its rung's own model.py (loaded by path)\n│    needs / reads / vocabulary / aliases / equation / references / falls_back_to (within its slot)\n├─ Model           a sum of Terms, at most one per slot; .key is set when the sum matches a preset\n│    + Term|Model, .redeclare(friction=\"stribeck\"), .down(), .fallback(), .changes(other)\n│    .parameters (union of needs), .optional, .canonical(alias), .parameter(name), .describe()\n│    .torque(values, v=..), .from_datasheet(sheet) -> Bound, .fit(log, start=..) -> Bound\n└─ Bound           a Model with values (lmfit ModelResult): .predict(v), .params, .rms, .bic\ncompare(*bounds) -> Comparison: a BIC table with each row labelled by the slot it swapped; .chosen\nservo = Slots(ladders()[\"integrated_servo\"], SLOT_OF)   # SLOT_OF is the type's only new table",
+   "steps": [
+    {
+     "label": "Browse slots × presets",
+     "code": "from servo_slots import servo\nprint(servo)   # * = runs in this prototype (M0-M3); every other row is declared, not run",
+     "output": "integrated_servo       inertia  friction           ripple  drivetrain  electrics  wear  correction\nM0.ideal             * ideal    ·                  ·       ·           ·          ·     ·\nM1.datasheet         * ideal    datasheet          ·       ·           ·          ·     ·\nM2.coulomb_viscous   * ideal    coulomb_viscous    ·       ·           ·          ·     ·\nM3.stribeck          * ideal    stribeck           ·       ·           ·          ·     ·\nM3.load              * ideal    load               ·       ·           ·          ·     ·\nM3.lugre             * ideal    lugre              ·       ·           ·          ·     ·\nM3.weakening_capture   ideal    weakening_capture  ·       ·           ·          ·     ·\nM4.ripple              ideal    coulomb_viscous    ripple  ·           ·          ·     ·\nM4.drivetrain          ideal    weakening_capture  ·       drivetrain  ·          ·     ·\nM5.dcmotor             ideal    lugre              ·       ·           dcmotor    ·     ·\nM5.envelope            ideal    weakening_capture  ·       drivetrain  envelope   ·     ·\nM5.wear                ideal    weakening_capture  ·       drivetrain  envelope   wear  ·\nM6.residual            ideal    weakening_capture  ·       drivetrain  envelope   wear  residual\nM7.learned             ·        ·                  ·       ·           ·          ·     learned",
+     "caption": "The ladder is a grid: each row differs from the one it falls back on in exactly one cell. All 14 rows are derived from v1 and checked against its parameters, optional names and fallback. (15 lines, over the 12-line limit, kept whole rather than cut.)"
+    },
+    {
+     "label": "Pick M3.stribeck",
+     "code": "m3 = servo[\"M3.stribeck\"]\nm3 == servo[\"M2.coulomb_viscous\"].redeclare(friction=\"stribeck\")\nprint(m3.describe())   # each term's equation, what the model needs (units, meaning), what it reads, references",
+     "output": "True\nM3.stribeck = inertia:ideal + friction:stribeck\n  inertia:ideal      tau_r = 0; armature = output_inertia\n  friction:stribeck  tau_r = (coulomb_friction + (breakaway_torque − coulomb_friction)·exp(−(|v|/stribeck_velocity)^stribeck_exponent))·sign(v) + viscous_friction·v\n  needs output_inertia     kg·m²      The part's own inertia about its axis, referred to the output (MuJoCo's armature).\n        gear_ratio         —          Rotor turns per output turn, > 0: 10 for a 10:1 reducer.\n        coulomb_friction   N·m        Coulomb friction torque at the output.\n        viscous_friction   N·m·s/rad  Viscous friction coefficient at the output.\n        breakaway_torque   N·m        Static friction at the output: the torque that starts it moving from rest, the top of the Stribeck curve.\n        stribeck_velocity  rad/s      Output speed over which friction falls from breakaway_torque to coulomb_friction.\n  reads 32 more when stated (.optional): peak_torque, rated_torque, max_output_speed, …, stribeck_exponent\n  refs  Siciliano, Sciavicco, Villani, Oriolo (2009) · MuJoCo (2026) · Armstrong-Hélouvry, Dupont, Canudas de Wit (1994) · Olsson, Åström, Canudas de Wit, Gäfvert, Lischinsky (1998)",
+     "caption": "A preset is a named composition: M2 with its friction slot redeclared is M3.stribeck. The single object lists each term's equation, every parameter's unit and meaning, and its references, all read from v1."
+    },
+    {
+     "label": "Fallback, alias, off-ladder",
+     "code": "for lower in m3.fallback(): print(lower)   # each step down steps back or empties one slot\nm3.canonical(\"frictionloss_nm\")            # the rack twin's name for one of its quantities\nm3 + servo.term(\"ripple\")                  # lmfit-style +: the parameters are the union\n(m3 + servo.term(\"ripple\")).parameters[-1]\nm3 + servo.term(\"lugre\")                   # a slot holds one option",
+     "output": "M3.stribeck = inertia:ideal + friction:stribeck\nM2.coulomb_viscous = inertia:ideal + friction:coulomb_viscous\nM1.datasheet = inertia:ideal + friction:datasheet\nM0.ideal = inertia:ideal\n'coulomb_friction'\noff the ladder = inertia:ideal + friction:stribeck + ripple:ripple\n'harmonics'\nValueError: two terms fill friction: a slot holds one option; swap it with .redeclare(friction=...)",
+     "caption": "The fallback is derived from the slots (step friction back, then empty it), not stored. `+` builds compositions no rung names, and two options for one slot are refused with the redeclare hint."
+    },
+    {
+     "label": "Datasheet model M1",
+     "code": "import numpy as np\nfrom fixture import datasheet, rig_log\nm1 = servo[\"M1.datasheet\"].from_datasheet(datasheet())   # catalogue units in: rpm, kg·cm², mN·m·s/rad\nm1\nm1.predict(1.0)\nm1.predict(np.array([-1.0, 0.1, 1.0]))\nservo[\"M3.stribeck\"].from_datasheet(datasheet())        # a datasheet states no Stribeck curve",
+     "output": "M1.datasheet from the datasheet\n  needs    output_inertia 4.2e-05 kg·m² · gear_ratio 10\n  stated   peak_torque 3.5 N·m · rated_torque 1.05 N·m · max_output_speed 24.09 rad/s · coulomb_friction 0.3 N·m · viscous_friction 0.02 N·m·s/rad\n0.32\narray([-0.32 ,  0.302,  0.32 ])\nValueError: M3.stribeck: the datasheet states no breakaway_torque, stribeck_velocity; fit them: .fit(log, ...)",
+     "caption": "from_datasheet converts catalogue units to SI through Stated.si under the canonical names, and predict is vectorised over numpy arrays. A rung the datasheet cannot fill says which parameters are missing and how to get them."
+    },
+    {
+     "label": "Fit, climb one slot",
+     "code": "log = rig_log()   # velocity plateaus, both directions: v [rad/s], tau [N·m]\nm2_fit = servo[\"M2.coulomb_viscous\"].fit(log, start=m1)\nm3_fit = m2_fit.model.redeclare(friction=\"stribeck\").fit(log, start=m2_fit)\nm2_fit\nm3_fit",
+     "output": "M2.coulomb_viscous from a fit to 500 samples (rms 0.06894 N·m)\n  fitted   coulomb_friction 0.5601 N·m · viscous_friction -0.03347 N·m·s/rad\n  carried  output_inertia 4.2e-05 kg·m² · gear_ratio 10\n  stated   peak_torque 3.5 N·m · rated_torque 1.05 N·m · max_output_speed 24.09 rad/s\nM3.stribeck from a fit to 500 samples (rms 0.00406 N·m)\n  fitted   coulomb_friction 0.4199 N·m · viscous_friction 0.03508 N·m·s/rad · breakaway_torque 0.6502 N·m · stribeck_velocity 0.2493 rad/s\n  carried  output_inertia 4.2e-05 kg·m² · gear_ratio 10\n  stated   peak_torque 3.5 N·m · rated_torque 1.05 N·m · max_output_speed 24.09 rad/s",
+     "caption": "Fitting lives on the composition. It finds for itself which parameters the log cannot move (the inertia is carried) and which are linear (solved by least squares), and grid-searches stribeck_velocity over the log's own speed range. Climbing is one redeclare that starts from M2's values."
+    },
+    {
+     "label": "Compare and choose",
+     "code": "from composed_terms import compare\nverdict = compare(m2_fit, m3_fit)\nprint(verdict)\nverdict.chosen\nm3_fit.params   # SI values by canonical name, ready for MuJoCo or sim2real",
+     "output": "model                 k  rms N·m      BIC  swapped\nM2.coulomb_viscous    2   0.0689  -2662.1\nM3.stribeck           4   0.0041  -5481.7  friction: coulomb_viscous → stribeck   ← chosen\n'M3.stribeck'\n{'coulomb_friction': 0.4199166478341351, 'viscous_friction': 0.03507676270088142, 'breakaway_torque': 0.6502394617437682, 'stribeck_velocity': 0.24928147442400214}",
+     "caption": "Each row of the comparison names the slot swap it tests. BIC picks M3.stribeck, and the fitted values come out as plain SI floats under canonical names."
+    }
+   ],
+   "decisions": [
+    {
+     "label": "A slot holds a whole law, not a delta",
+     "value": "friction:stribeck includes Coulomb and viscous; it is not coulomb_viscous + a Stribeck excess, because LuGre and weakening_capture replace Stribeck rather than add to it. Terms add across slots and replace each other within one (Modelica replaceable, not lmfit + everywhere). M1.datasheet is a friction option, since a slot of its own would count friction twice under M2."
+    },
+    {
+     "label": "Derived from v1 and checked against it",
+     "value": "A term's needs are what its own slot's rungs add down the v1 fallback. A preset is the nearest option per slot down that fallback. The Slots constructor raises unless all 14 presets match v1's parameters(), optional() and fallback() exactly. The type adds one table, SLOT_OF (word -> slot)."
+    },
+    {
+     "label": "The ladder tree comes from the slots",
+     "value": "Model.down() steps one term back within its slot or empties the slot, and must land on exactly one preset. This reproduces all 14 v1 base chains. For an off-ladder sum it reports the ambiguity instead of guessing."
+    },
+    {
+     "label": "Fit on the composite, with no per-rung fitting code",
+     "value": "Model.fit nudges each parameter to find the unseen ones (carried from start), the linear ones (solved by lstsq) and the nonlinear ones (log grid over the log's own range when the unit matches an input, then zoomed). This is variable projection, numpy only. compare() uses BIC and labels each row by the slot it swapped."
+    },
+    {
+     "label": "Runnable cap by level",
+     "value": "RUNNABLE_UP_TO = 3 follows the round's stop line, so M4.ripple stays declared even though its model.py exists (and would compose as a pure term, since it .get()s friction with a default of 0). Calling a declared term raises NotImplementedError with the reason."
+    }
+   ],
+   "best_when": "Effects are orthogonal and you want combinations no rung names (stribeck + ripple, dcmotor electrics on load friction) through + or redeclare without adding a rung. Also when most of the ladder is 'fill the next slot' (M4 to M6 are exactly that), and when a reviewer needs to see what differs between two models: changes() prints 'friction: coulomb_viscous → stribeck', and the preset × slot grid shows the whole ladder at a glance.",
+   "loses_when": "Effects inside one slot interact: Stribeck and load-dependent friction together cannot be written as stribeck + load, because both are friction options, so the combination needs a new option or nested slots. It also loses when one rung spans slots (v1's M4.drivetrain re-adds ripple's harmonics; the composed view surfaces this but keeps it as v1 has it), when a ladder's fallback is not 'undo one slot change', and when fitting needs more than two nonlinear unknowns or negative nonlinear parameters (the grid is logarithmic). Within this round's scope, the core is 320 lines plus a 27-line table, over the 250-line target.",
+   "keep_parts": [
+    "Slots(ladder, SLOT_OF): a 27-line table plus a constructor that derives the presets from v1 and raises unless every preset's parameters, optional names and fallback equal v1's. Any variant could use it as a cheap bridge or ruler.",
+    "The preset × slot grid printout together with Model.changes(other) ('friction: coulomb_viscous → stribeck'). It makes the ladder readable at a glance and labels each comparison row by what was swapped.",
+    "The generic fit, which needs no per-rung code: numeric detection of unseen, linear and nonlinear parameters, lstsq for the linear ones, and a zooming log grid over the log's own range for the rest (variable projection, numpy only). Also the term-spelling map read from model.json, which passes viscous_friction to LuGre's model.py as sigma2."
+   ],
+   "migration": "This is an additive layer and nothing in src/ changes. (1) The v1 ruler, tests/test_ladders_acceptance.py, is untouched: Ladder, Rung, ladders() and the RUNG_FILES sha256 pins stay as they are, and Slots only reads them. Optionally one test adds `Slots(LADDER, SLOT_OF)`, which raises on any difference between the composed view and v1. (2) robotparts' vendoring of actuators/rungs/* is untouched: each Term loads <word>/model.py by path with importlib and reads model.json for inputs and term spellings, so no rung bytes or implementation_sha256 change. (3) sim2real's tests/test_robot_models_parity.py is untouched: keys, fallback chains and parameters() and optional() are identical to v1's by construction. Later, if picked, SLOT_OF becomes a `slot=` field on Rung (or a slots.py beside each type's ladder.py, found by the same walk as ladders()), and Slots ships as robot_models.slots: one new field and one new module, nothing renamed.",
+   "new_rung_cost": "For M3.dahl: (1) actuators/rungs/dahl/model.py and model.json (plus model.js for robotparts' parity), which is the runnable law and its inputs exactly as today; (2) one Rung(level=3, name=\"dahl\", base=\"M2.coulomb_viscous\", adds=(...), code=\"actuators/rungs/dahl\", equation=..., references=...) in actuators/servo/ladder.py, plus a Parameter for each new quantity; (3) one line in servo_slots.SLOT_OF: \"dahl\": \"friction\". The preset M3.dahl, its grid row, its fallback, redeclare(friction=\"dahl\"), fitting (linear and nonlinear parameters are found automatically) and compare() follow with no further code. Steps 2 and 3 merge into one declaration if `slot=` moves onto Rung.",
+   "simulated": "Only M0 to M3 run. M4 to M7 are declared, and calling them raises NotImplementedError with the reason: the prototype's level cap for M4.ripple, or no runnable code for weakening_capture, drivetrain, dcmotor (model.json only), envelope, wear, residual and learned. predict is the steady-state map (dt=None); LuGre's bristle state is never stepped through time. Vectorisation is a Python loop over the stdlib reference model.py, with no numpy backend per term. The fit assumes at most two nonlinear parameters, all positive (logarithmic grid). Optional parameters such as stribeck_exponent stay at the rung default and are not fitted. BIC assumes equal-variance Gaussian residuals. There is one velocity-plateau log, so the inertia is carried from the datasheet and never identified. Terms carry composes (the foc_controller delay loop) and wears but do not use them. Files are in /home/bam/robot_models/docs/proposals/api-2026-11-17/v3_terms/: composed_terms.py, servo_slots.py, scenario.py, scenario.out.txt, README.md.",
+   "id": "v3",
+   "slug": "v3_terms",
+   "name": "Composed terms"
+  },
+  {
+   "check_output": "PASS  v4_estimators",
+   "passed": true,
+   "core_lines": 295,
+   "thesis": "A Model is a scikit-learn-style estimator for one rung (from_datasheet, fit, predict, score, get_params, bic). A Family is model selection over its ladder: climb(datasheet, log) starts at M1 and moves up to the best child rung only while BIC, which charges for every value fit added, drops by more than 2.",
+   "shape": "families() -> {type: Family}            built from robot_models.ladder.ladders(); nothing retyped\nFamily (one type's models, as its ladder)\n  print(family) = the tree; .model(key, **values) / .models() -> unfitted Models\n  .children(key) .siblings(key) .canonical(name)    .climb(datasheet, log) -> Climb\nModel (estimator for one rung: family + Rung + {canonical name: SI value})\n  what it is: .key .needs .holds .free .fallback .inputs .describe()   (Ladder + model.json)\n  Model.from_datasheet(ds, key=\"M1.datasheet\")   family found from the datasheet's class\n  .set_params(**any name, aliases resolve, alias units -> SI)   .get_params() -> SI dict\n  .fit(log) -> self (generic Levenberg-Marquardt over model.py)  .predict(v | log)  .score(log) R²  .aic/.bic(log)\n  learned: .fitted_ .rms_ .n_samples_ ; physics = actuators/rungs/<word>/model.py loaded by path\nClimb: .rows (rung, k, rms, BIC, ΔBIC, verdict)  .fits {key: Model}  .chosen  .stop",
+   "steps": [
+    {
+     "label": "Browse the ladder",
+     "code": "from estimators import Model, families\nservo = families()[\"integrated_servo\"]       # the type's models, organized as its ladder: the climb's search order\nprint(servo)\nladder = list(servo.models())                # every key, in today's order: each one an unfitted Model",
+     "output": "integrated_servo: 14 models (a → b: b extends a; ° declared, not run here)\nM0.ideal → M1.datasheet → M2.coulomb_viscous\n├── M3.stribeck\n│   ├── M3.lugre → M5.dcmotor°\n│   └── M3.weakening_capture° → M4.drivetrain° → M5.envelope° → M5.wear° → M6.residual°\n├── M3.load\n└── M4.ripple°\nM7.learned°",
+     "caption": "The family prints as a tree of bases. Runs of single children collapse onto one line, and the ° marks show which rungs have no runnable physics here."
+    },
+    {
+     "label": "Pick M3.stribeck",
+     "code": "stribeck = servo.model(\"M3.stribeck\")\nprint(stribeck.describe())\nservo.canonical(\"frictionloss_nm\")                               # the rack twin's name for the quantity\nservo.model(\"M3.stribeck\", frictionloss_nm=0.3).get_params()     # set by an alias, held by the canonical name",
+     "output": "M3.stribeck  Stribeck friction: breakaway falling to Coulomb with speed\n  falls back  M3.stribeck → M2.coulomb_viscous → M1.datasheet → M0.ideal   (siblings: M3.load, M4.ripple)\n  needs       output_inertia [kg·m²], gear_ratio [1], coulomb_friction [N·m], viscous_friction [N·m·s/rad], breakaway_torque [N·m], stribeck_velocity [rad/s]\n  fits        coulomb_friction, viscous_friction, breakaway_torque, stribeck_velocity\n  optional    stribeck_exponent [1] (+31 datasheet fields below it, read when stated)\n  equation    tau_r = (coulomb_friction + (breakaway_torque − coulomb_friction)·exp(−(|v|/stribeck_velocity)^stribeck_exponent))·sign(v) + viscous_friction·v\n  reference   Armstrong-Hélouvry, Dupont, Canudas de Wit (1994). A survey of models, analysis tools and compensation methods for the control of machines with friction. Automatica.\n  reference   Olsson, Åström, Canudas de Wit, Gäfvert, Lischinsky (1998). Friction models and friction compensation. European Journal of Control.\n  physics     actuators/rungs/stribeck/model.py: tau_r(v)\n'coulomb_friction'\n{'coulomb_friction': 0.3}",
+     "caption": "The unfitted Model describes itself: fallback, siblings, units, what fit() will estimate, equation, references and its physics file. An alias passed to set_params lands on the canonical name."
+    },
+    {
+     "label": "Datasheet model M1",
+     "code": "from fixture import datasheet, rig_log\nds = datasheet()                              # the catalogue's units: rpm, kg·cm², mN·m·s/rad\nm1 = Model.from_datasheet(ds)                 # M1.datasheet by default: every stated value it holds, in SI\nprint(m1)\nm1.predict(1.0)                               # tau_r at 1 rad/s [N·m]",
+     "output": "M1.datasheet: not fitted\n  stated   output_inertia 4.2e-05 kg·m², gear_ratio 10, peak_torque 3.5 N·m, rated_torque 1.05 N·m, max_output_speed 24.09 rad/s, coulomb_friction 0.3 N·m, viscous_friction 0.02 N·m·s/rad\n0.32",
+     "caption": "from_datasheet finds the family from the datasheet's class and converts every stated value to SI (230 rpm becomes 24.09 rad/s). predict calls the M1 model.py physics directly."
+    },
+    {
+     "label": "Fit M2 and M3",
+     "code": "log = rig_log()                               # velocity plateaus, both directions: v [rad/s], tau [N·m]\nm2 = Model.from_datasheet(ds, \"M2.coulomb_viscous\").fit(log)\nm3 = Model.from_datasheet(ds, \"M3.stribeck\").fit(log)    # starts from the datasheet; the rest is scanned\nprint(m2)\nprint(m3)\nm1.score(log), m2.score(log), m3.score(log)  # R², sklearn's score",
+     "output": "M2.coulomb_viscous: fitted on 500 samples, rms 0.0689 N·m\n  fitted   coulomb_friction 0.5601 N·m\n  fitted   viscous_friction -0.03347 N·m·s/rad\n  stated   output_inertia 4.2e-05 kg·m², gear_ratio 10, peak_torque 3.5 N·m, rated_torque 1.05 N·m, max_output_speed 24.09 rad/s\nM3.stribeck: fitted on 500 samples, rms 0.00406 N·m\n  fitted   coulomb_friction 0.4199 N·m\n  fitted   viscous_friction 0.03508 N·m·s/rad\n  fitted   breakaway_torque 0.6502 N·m\n  fitted   stribeck_velocity 0.2493 rad/s\n  stated   output_inertia 4.2e-05 kg·m², gear_ratio 10, peak_torque 3.5 N·m, rated_torque 1.05 N·m, max_output_speed 24.09 rad/s\n(0.8136124659397225, 0.983570080208875, 0.9999430205637946)",
+     "caption": "One generic fit, with no per-rung code, estimates only what each rung needs from M2 up. Values the datasheet states are kept and labelled as stated. M2's negative viscous term is the honest sign that M2 is the wrong shape for this log."
+    },
+    {
+     "label": "Climb and choose",
+     "code": "report = servo.climb(ds, log)                 # M1 from the datasheet, then fit every rung above, keep the best\nprint(report)\nreport.chosen",
+     "output": "climb integrated_servo on 500 samples: BIC = n·ln(RSS/n) + k·ln(n), climb while ΔBIC < −2\n  rung                   k  rms N·m    BIC   ΔBIC  verdict\n  M1.datasheet           0   0.2322  -1460      ·  start: the datasheet, nothing fitted\n  M2.coulomb_viscous     2   0.0689  -2662  -1202  pays → climb\n  M3.stribeck            4   0.0041  -5482  -2820  pays → climb\n  M3.load                ·        ·      ·      ·  skipped: the log has no tau_load\n  M4.ripple              ·        ·      ·      ·  skipped: declared, above the M0–M3 stop line\n  M3.lugre               ·        ·      ·      ·  skipped: the log has no dt\n  M3.weakening_capture   ·        ·      ·      ·  skipped: declared, no physics shipped\nchosen M3.stribeck: nothing above it fits this log\n<Model M3.stribeck: 9 values, 4 fitted on 500 samples>",
+     "caption": "The ladder is the search order. Each child of the current rung is fitted (warm-started from the rung below) or listed with the reason it was skipped, and the climb moves up only when ΔBIC < −2."
+    },
+    {
+     "label": "Climb stops on BIC",
+     "code": "fast = {column: values[abs(log[\"v\"]) >= 0.8] for column, values in log.items()}  # only plateaus ≥ 0.8 rad/s\nprint(servo.climb(ds, fast))                  # no slow plateaus: the Stribeck drop is invisible, so M3 is not worth it",
+     "output": "climb integrated_servo on 200 samples: BIC = n·ln(RSS/n) + k·ln(n), climb while ΔBIC < −2\n  rung                   k  rms N·m    BIC   ΔBIC  verdict\n  M1.datasheet           0   0.1471   -767      ·  start: the datasheet, nothing fitted\n  M2.coulomb_viscous     2   0.0039  -2206  -1439  pays → climb\n  M3.stribeck            4   0.0039  -2196    +10  does not pay\n  M3.load                ·        ·      ·      ·  skipped: the log has no tau_load\n  M4.ripple              ·        ·      ·      ·  skipped: declared, above the M0–M3 stop line\nchosen M2.coulomb_viscous: M3.stribeck does not pay",
+     "caption": "On a log with no slow plateaus, M3 matches M2's rms but costs +10 BIC, so the same call stops at M2. The information criterion makes the decision here, not taste."
+    }
+   ],
+   "decisions": [
+    {
+     "label": "get_params() returns the physical values",
+     "value": "It returns every held value, stated and fitted, as {canonical name: SI}, unlike sklearn's split between hyperparameters and coef_. These values are what MuJoCo and sim2real get handed, and fitted_ (trailing underscore) says which ones the log set."
+    },
+    {
+     "label": "k counts fitted values only",
+     "value": "A value the datasheet states costs the log nothing, so M1 is charged 0 and each rung pays ln(n) per term it adds above M1. Optional terms such as stribeck_exponent keep their default and are neither fitted nor charged."
+    },
+    {
+     "label": "One generic fit, no per-rung fitting code",
+     "value": "Levenberg–Marquardt runs over model.py with a numpy forward-difference Jacobian. A value already held starts there (the datasheet's, or the rung below's in a climb). A missing torque starts at the log's torque scale, and a missing speed is scanned over the log's speeds. A term whose sign the log cannot see is reported positive: without this, the warm-started climb returned stribeck_velocity = −0.249."
+    },
+    {
+     "label": "The climb is greedy over children, with a BIC margin of 2",
+     "value": "At each step every rung extending the current one competes, and the best moves up only if ΔBIC < −2 (Kass & Raftery 1995). A rung the log cannot feed (a missing input column, or declared physics) is listed as skipped with its reason, not dropped silently."
+    }
+   ],
+   "best_when": "The question is \"which rung does this unit's rig log justify, and with which numbers\". You get a defensible pick backed by a BIC table, plus SI values ready for a simulator, in three calls (from_datasheet, fit, climb). It suits batch identification of many units of one type and CI that re-identifies whenever a new log lands.",
+   "loses_when": "It loses in four cases:\n- The job is browsing or authoring the type: parameters are a dict, so type checkers see no fields, and the metadata is reached through the model and family.\n- Sibling rungs need different experiments: LuGre needs a dt time series and the load rung needs tau_load, so one plateau log mostly prints \"skipped\".\n- Residuals are correlated, as they are on one real plateau: i.i.d. BIC then over-rewards added terms unless plateau means are fitted.\n- A higher rung pays only as part of a pair: the greedy climb can miss it.\n\nFitting is also slow, about 1–3 s per M3 fit, because predict loops over the scalar stdlib model.py.",
+   "keep_parts": [
+    "Family.climb(datasheet, log) and its report table (k, rms, BIC, ΔBIC, and a verdict or skip reason per rung). It needs only fit/predict on a Model, so it can sit on top of any variant.",
+    "Model.from_datasheet(ds, key), which finds the family from the datasheet's class, plus set_params resolving aliases to canonical names and converting alias units to SI.",
+    "The generic fit: Levenberg–Marquardt over the unchanged model.py, with term names resolved through aliases (LuGre's sigma2), unit-aware starting scans and sign-invisible terms reported positive. No rung writes fitting code."
+   ],
+   "migration": "This is an additive layer that changes no bytes. It reads robot_models.ladder.ladders() (Ladder, Rung, Parameter, Alias) and actuators/rungs/<word>/model.py and model.json, and would ship as robot_models/estimators.py beside ladder.py.\n- v1 ruler (tests/test_ladders_acceptance.py): untouched, because the ladder data, keys, aliases and rung-folder bytes it pins do not change. A new test file would hold the new grade: on a simulated log, M3 recovers a hidden Stribeck truth, and the climb picks M3 on the full log and M2 on fast plateaus only.\n- robotparts vendoring of actuators/rungs/*: untouched. model.py and model.json are only read (inputs, terms), never rewritten, so the implementation_sha256 values in model.json and the ruler's byte check stay valid. Term names such as sigma2 are resolved through the ladder's aliases, not edited.\n- sim2real tests/test_robot_models_parity.py: untouched, since it checks card names against ladder.resolve() and holds(), which are unchanged. As a later opt-in, sim2real could take model.get_params() (canonical names, SI) instead of mapping fitted values itself.",
+   "new_rung_cost": "The same as v1 today, and nothing more:\n1. One Rung(level=3, name=..., base=..., adds=(...), code=\"actuators/rungs/<word>\", equation=..., references=...) entry in actuators/servo/ladder.py.\n2. The folder actuators/rungs/<word>/ with model.py (torque(terms, inputs, state, dt)) and model.json (inputs, terms).\n\nIt then appears in the tree automatically, from_datasheet fills it, and fit() estimates its required terms above M1. The climb tries it as a child of its base and keeps it only if it pays on BIC. The one exception is a rung that least squares cannot fit, such as one needing a special experiment or bounded terms: it would need a per-rung fit override, and that hook is not built.",
+   "simulated": "- Runnable physics stops at M0–M3: M4–M7 raise NotRunnable with the reason, and M3.weakening_capture has no physics shipped.\n- M3.lugre can predict, carrying its state through a time series, but its fit is never exercised because the log has no dt. M3.load is skipped because the log has no tau_load.\n- predict loops in Python over the scalar stdlib model.py: arrays go in and come out, but it is not truly vectorized.\n- The rig log is the fixture's simulated plateaus with i.i.d. noise, and the variant never reads the hidden values.\n- BIC assumes independent Gaussian residuals.\n- Starting points chosen by unit are a heuristic.\n- Not built:\n  - parameter covariance or uncertainty, and cross-validation;\n  - composition across types (M4.drivetrain composes foc_controller);\n  - a per-rung fit override hook;\n  - full sklearn compliance (clone, check_estimator): fit takes a dict of columns, not (X, y).\n- Core module: 295 non-blank lines, docstrings and WHY comments included, above the aim of 250 or fewer.\n- Files: /home/bam/robot_models/docs/proposals/api-2026-11-17/v4_estimators/{estimators.py, scenario.py, scenario.out.txt, README.md}.",
+   "id": "v4",
+   "slug": "v4_estimators",
+   "name": "Estimators that climb"
+  },
+  {
+   "check_output": "PASS  v5_kit",
+   "passed": true,
+   "core_lines": 330,
+   "thesis": "The Type is the entry point and hands you a kit with everything it has: its Models (the ladder), its Datasheet class, the Experiments (rig motions from robotparts' measured_by) that identify each Model's parameters, and its fidelity metric. So \"datasheet + rig log, what now?\" is one call, servo.identify(log, datasheet=ds): it returns every model those two cover, with values, and names the motion still to run for each one it cannot.",
+   "shape": "types (Types: kits by name; types.of(datasheet) resolves the type from the datasheet's class)\n└─ Kit = types.integrated_servo   a layer over today's v1 Ladder (kit.ladder, kept whole)\n   ├─ models: Models {key: Model}, ladder order; print() draws the tree, each model with its motions\n   ├─ datasheet: IntegratedServo      ├─ fidelity: FidelityMetric tau_r_rms, rig floor, twinned at 1.5x\n   ├─ experiments: Experiments {id: Experiment(id, motion, identifies)}; .covered_by(log)\n   ├─ canonical(name)  stated(ds)  from_datasheet(ds) -> Model\n   ├─ identify(log, datasheet) -> Identified {key: Model with values} + .missing {key: \"run <motion>\"}\n   └─ compare(found, log) -> Comparison(rows, chosen)\nModel (base object; the same class for the declaration and the identified model)\n   rung, needs, reads, identified_by {parameter: Experiment}, base, physics (the rung's model.py), values\n   .fallback  .experiments  .with_values(**si) -> Model  .predict(v) numpy-in/out  print() -> its card",
+   "steps": [
+    {
+     "label": "Open the type kit",
+     "code": "import numpy as np\nfrom type_kit import types\nfrom fixture import datasheet, rig_log\nservo = types.of(datasheet())       # Hugging Face AutoModel's move: the datasheet's class names its type\nservo                               # types.integrated_servo is the same kit",
+     "output": "<integrated_servo kit> A joint in one housing: a motor, its drive, a reducer or none, and an encoder.\n  models       14 on the ladder: 6 runs, 1 structure only, 7 declared\n  datasheet    IntegratedServo, 35 typed fields\n  experiments  chirps, reading_datasheet, velocity_plateaus, slow_plateaus, pendulum_sweeps, small_reversals, rotor_angle_sweep, measure_only_board_calibration\n  fidelity     tau_r_rms over the rig floor",
+     "caption": "One name or one datasheet gets you the whole kit: models, datasheet class, the eight experiments derived from model.json's measured_by, and a fidelity metric."
+    },
+    {
+     "label": "Browse the ladder",
+     "code": "print(servo.models)",
+     "output": "M0.ideal                              runs            chirps, reading_datasheet\n└─ M1.datasheet                       runs            reading_datasheet\n   └─ M2.coulomb_viscous              runs            velocity_plateaus\n      ├─ M3.stribeck                  runs            slow_plateaus\n      │  ├─ M3.lugre                  runs            small_reversals\n      │  │  └─ M5.dcmotor             declared        measure_only_board_calibration\n      │  └─ M3.weakening_capture      structure only  -\n      │     └─ M4.drivetrain          declared        -\n      │        └─ M5.envelope         declared        -\n      │           └─ M5.wear          declared        -\n      │              └─ M6.residual   declared        -\n      ├─ M3.load                      runs            pendulum_sweeps\n      └─ M4.ripple                    declared        rotor_angle_sweep\nM7.learned                            declared        -",
+     "caption": "The models print as the ladder's tree (14 lines, all 14 keys), and each says whether it runs and which rig motion identifies what it adds."
+    },
+    {
+     "label": "Pick M3.stribeck",
+     "code": "stribeck = servo.models[\"M3.stribeck\"]\nprint(stribeck)\n[model.key for model in stribeck.fallback]\nservo.canonical(\"frictionloss_nm\")  # one vocabulary per type: the rack twin's name resolves to the type's own",
+     "output": "M3.stribeck  Stribeck friction: breakaway falling to Coulomb with speed\n  identified by\n    chirps              output_inertia [kg·m²]\n    reading_datasheet   gear_ratio []\n    velocity_plateaus   coulomb_friction [N·m], viscous_friction [N·m·s/rad]\n    slow_plateaus       breakaway_torque [N·m], stribeck_velocity [rad/s], stribeck_exponent [] (optional, 2 when absent)\n  equation    tau_r = (coulomb_friction + (breakaway_torque − coulomb_friction)·exp(−(|v|/stribeck_velocity)^stribeck_exponent))·sign(v) + viscous_friction·v\n  references  Armstrong-Hélouvry, Dupont, Canudas de Wit (1994); Olsson, Åström, Canudas de Wit, Gäfvert, Lischinsky (1998)\n  fallback    M3.stribeck -> M2.coulomb_viscous -> M1.datasheet -> M0.ideal\n  physics     actuators/rungs/stribeck/model.py (runs)\n['M3.stribeck', 'M2.coulomb_viscous', 'M1.datasheet', 'M0.ideal']\n'coulomb_friction'",
+     "caption": "The model's card groups its parameters by the experiment that identifies them, with units, the optional term's default, the equation, references, fallback and physics."
+    },
+    {
+     "label": "Datasheet model M1",
+     "code": "m1 = servo.from_datasheet(datasheet())\n{name: m1.values[name] for name in (\"coulomb_friction\", \"viscous_friction\", \"max_output_speed\")}\nm1.predict(1.0)",
+     "output": "{'coulomb_friction': 0.3, 'viscous_friction': 0.02, 'max_output_speed': 24.085543677521745}\n0.32",
+     "caption": "from_datasheet converts the catalogue units (rpm, mN·m·s/rad) to SI through Stated.si, and predict runs M1's own model.py."
+    },
+    {
+     "label": "Identify from the rig",
+     "code": "log = rig_log()\nservo.experiments.covered_by(log)\nfound = servo.identify(log, datasheet=datasheet())\nprint(found)",
+     "output": "('velocity_plateaus', 'slow_plateaus')\n  M0.ideal            the datasheet's 2 stated values\n  M1.datasheet        the datasheet's 7 stated values\n  M2.coulomb_viscous  coulomb_friction=0.5601, viscous_friction=-0.03347\n  M3.stribeck         coulomb_friction=0.4199, viscous_friction=0.03508, breakaway_torque=0.6502, stribeck_velocity=0.2493\n  not yet: M3.load: run pendulum_sweeps\n  not yet: M3.lugre: run small_reversals\n  not yet: M3.weakening_capture: structure only: no published physics (the type holds its terms)\n  not yet: M4.ripple, M4.drivetrain, M5.dcmotor, M5.envelope, M5.wear, M6.residual, M7.learned: declared: this round runs M0-M3 only",
+     "caption": "The kit recognises which experiments the log is, fits every model those experiments and the datasheet cover, and names the motion each other model still needs."
+    },
+    {
+     "label": "Compare, then what now",
+     "code": "comparison = servo.compare(found, log)\nprint(comparison)\nchosen = comparison.chosen\ndict(chosen.values)\nchosen.predict(np.array([-1.0, -0.1, 0.1, 1.0]))\nfound.missing[\"M3.lugre\"]\nprint(servo.experiments[\"small_reversals\"])",
+     "output": "  model                 rms N·m    floor  x floor  twinned (<= 1.5x)\n  M0.ideal               0.5378   0.0041   131.61  no\n  M1.datasheet           0.2322   0.0041    56.82  no\n  M2.coulomb_viscous     0.0689   0.0041    16.87  no\n  M3.stribeck            0.0041   0.0041     0.99  yes\n  chosen: M3.stribeck, the lowest rung the rig cannot tell from the part\n{'output_inertia': 4.2e-05, 'gear_ratio': 10.0, 'coulomb_friction': 0.41991641949494457, 'viscous_friction': 0.03507686421451761, 'breakaway_torque': 0.6502393104593884, 'stribeck_velocity': 0.24928215331007678}\narray([-0.455 , -0.6195,  0.6195,  0.455 ])\n'run small_reversals'\nsmall_reversals: \"small reversals, recorded fast\"\n  identifies sigma0, sigma1\n  on M3.lugre",
+     "caption": "The type's fidelity metric (RMS over the rig's within-plateau scatter) stops the climb at M3.stribeck; the chosen model hands on SI values and predicts on numpy arrays, and the kit names the rig motion that unlocks M3.lugre next."
+    }
+   ],
+   "decisions": [
+    {
+     "label": "Experiments are per model and per parameter, read from model.json",
+     "value": "Each parameter's identifying experiment comes from robotparts' measured_by on that rung, falling back down the chain. The same coulomb_friction is 'reading the datasheet' on M1 and 'velocity plateaus' on M2. identify() asks whether the log is that motion (Experiment.covers), then whether the datasheet states the parameter; otherwise the model goes to .missing with 'run <motion>'. The only new data is COVERAGE: what counts as each motion (for example, 6 or more plateaus held both ways). Motions it cannot read say so."
+    },
+    {
+     "label": "Fitting lives in the kit and calls the rung's own physics",
+     "value": "Separable least squares. Levels (N·m) and slopes enter linearly and are solved by lstsq, with columns evaluated through model.py. The one speed scale (rad/s) is scanned over the speeds the log held, then refined by golden section. Superposition is checked at the answer, so a rung outside this form fails loudly. Optional terms (stribeck_exponent) are read or defaulted, never fitted. numpy only."
+    },
+    {
+     "label": "The fidelity metric chooses, not an information criterion",
+     "value": "The kit picks the lowest rung within 1.5x the rig's within-plateau scatter (sim2real's TWINNED_LIMIT): the climb stops where the rig cannot tell model from part. On the fixture: M0 131x, M1 57x, M2 17x (M2's fitted viscous_friction comes out negative while it imitates the Stribeck drop), M3 0.99x."
+    },
+    {
+     "label": "Rung code is exec'd from source, never imported",
+     "value": "An import would leave __pycache__/ in a vendored rung folder whose file set robotparts hashes byte for byte (PEP 0004 §8.1). The kit reads model.json and model.py read-only. Alias terms (LuGre's sigma2) are mapped through Ladder.resolve."
+    }
+   ],
+   "best_when": "The question is \"what do I run next?\". A part arrives with a datasheet, and the kit says which models the datasheet already gives, which rig motion unlocks which rung, what the log identified, and when to stop climbing. One object per type also matches how sim2real assigns types to a robot (CameraKit / kits_for), so camera, depth and HSI kits can share the shape.",
+   "loses_when": "You want the Model on its own, or typed parameters. A Model still has its physics and card, but its identified_by points at the kit's Experiment objects, so building one outside a kit is awkward. Values are a Mapping, so type checkers see nothing (weak on fr6 against a dataclass-per-rung design). The kit is also only as rich as model.json: types with no rung folders (camera, conveyor, ...) get models and a tree, but no experiments and no fidelity metric. The core runs to 330 non-blank lines, over the 250 aim; about 75 of them print the tree, the card and the tables.",
+   "keep_parts": [
+    "Experiment derived per (model, parameter) from model.json measured_by, plus identify() returning .missing {key: 'run <motion>'}: the concrete 'what now' answer (type_kit.py Experiment, COVERAGE, Kit.identify)",
+    "fit_plateaus: a separable least-squares fitter that builds its lstsq columns from the rung's own model.py and checks superposition at the answer, so no equation is retyped. It drops into any variant's fit.",
+    "Choose by the fidelity floor: the lowest rung within 1.5x the rig's within-plateau scatter (sim2real TWINNED_LIMIT). Also _physics(): exec model.py from source so the vendored rung folders never get a __pycache__."
+   ],
+   "migration": "Additive; nothing in v1 moves. The v1 ruler tests/test_ladders_acceptance.py is unchanged, because Kit wraps Ladder whole (kit.ladder), so keys, bases, parameters(), aliases and packed names are still v1's. Landing it means adding src/robot_models/types.py (type_kit.py renamed; inside the package the name `types` does not shadow the stdlib) plus one new test: every measured_by motion in actuators/rungs/*/model.json either has a COVERAGE entry or is declared unreadable. robotparts' vendoring of actuators/rungs/* is unchanged. The kit only reads model.json and model.py, and it execs model.py from source, so no __pycache__ lands in the folders and robotparts' byte-for-byte sha256 sync and published definition_sha256 hold. sim2real's tests/test_robot_models_parity.py is unchanged; it reads ladders(), which stays. Optional later: sim2real's CameraKit converges on this Kit shape, its identify routines become Experiments, and kits_for keeps its members walk.",
+   "new_rung_cost": "Two things, both exactly as today. (1) A Rung(level=3, name=..., base='M2.coulomb_viscous' or another rung, adds=(...), optional=(...), code='actuators/rungs/<word>', equation=..., references=(...)) in actuators/servo/ladder.py, plus any new Parameter in its vocabulary. (2) A folder actuators/rungs/<word>/ with model.py (torque(terms, inputs, state, dt) -> (tau_r, state)) and model.json (robotparts' format; each term has measured_by and required, plus default if optional), vendored to robotparts as today. The kit finds both with no registration: the Model, its card, its place on the tree, its experiments (a new measured_by text becomes a new Experiment automatically), predict(), and identify() once a log covers its motions. One extra line, a COVERAGE entry, only when the rung names a new motion that identify should read from a log. A new fitter only when the rung is not 'linear in levels and slopes plus one speed scale', which fit_plateaus detects and refuses loudly.",
+   "simulated": "The rig log is the fixture's simulation. Plateaus are found by the commanded speed repeating exactly (rounded to 1e-6); a real log needs a plateau index. Only velocity-plateau logs are read (velocity_plateaus, slow_plateaus). Chirps, small reversals, pendulum sweeps, rotor-angle sweeps and board calibration are named from model.json, but their logs are not read. Fidelity is in-sample (evaluated on the fitted log), where sim2real uses held-out data; a held-out log fits the same compare(found, log) slot. Physics runs for M0-M3 only: M0, M1, M2, M3.stribeck, M3.load (needs a tau_load input) and M3.lugre (steady state only when no dt is given). M3.weakening_capture has no published physics. M4-M7 are declared, and predict raises 'declared: this round runs M0-M3 only'. The stribeck_exponent is not fitted (it stays at its model.json default of 2). types builds every kit at import (about 0.4 s). Kits for types without rung folders have no experiments or fidelity metric. Files: /home/bam/robot_models/docs/proposals/api-2026-11-17/v5_kit/type_kit.py, scenario.py, scenario.out.txt, README.md.",
+   "id": "v5",
+   "slug": "v5_kit",
+   "name": "Type kit"
+  }
+ ],
+ "judges": [
+  {
+   "lens": "user",
+   "variants": [
+    {
+     "id": "v1_subclass",
+     "scores": {
+      "fr1": {
+       "score": 5,
+       "evidence": "You hold one typed object: `print(Stribeck.describe())` prints needs, units, definitions, equation, cites and `runs actuators/rungs/stribeck/model.py` (scenario.out.txt step 2), and the same class fits, predicts and exports (`Stribeck.fit(fit, start=m2)`, `chosen.mujoco()`), with no family argument anywhere (scenario.py:45-64).",
+       "confidence": "high"
+      },
+      "fr2": {
+       "score": 5,
+       "evidence": "The whole workflow is one call per step: `Datasheet.from_datasheet(datasheet())`, `CoulombViscous.fit(fit, start=m1)`, `Stribeck.fit(fit, start=m2)`, `ServoModel.compare([m1, m2, m3], test, fitted_on=fit)`, then `.chosen` (scenario.py:45-63), and it reads as the climb itself.",
+       "confidence": "high"
+      },
+      "fr3": {
+       "score": 5,
+       "evidence": "`print(ServoModel.tree())` draws the tree (scenario.out.txt step 1), and `Stribeck.fallback()`, `ServoModel.canonical(\"frictionloss_nm\")` and `Stribeck.alternatives()` are one call each; my probe got ('M3.load', 'M3.lugre', 'M3.weakening_capture').",
+       "confidence": "high"
+      },
+      "fr4": {
+       "score": 4,
+       "evidence": "Additive today: README:151-160 says the classes sit beside v1's records and are checked against them at import. But the thesis's end state (README:161-170, `Ladder.from_classes`, a ruler edit 'lands first, alone') re-expresses part of the ruler.",
+       "confidence": "medium"
+      },
+      "fr5": {
+       "score": 2,
+       "evidence": "A new rung means a class in servo.py, plus the matching `Rung` record and `Parameter` in ladder.py (the import guard refuses a class with no record), plus the rung folder, plus maybe a `seeds()` override (README:174-181): several files.",
+       "confidence": "high"
+      },
+      "fr6": {
+       "score": 5,
+       "evidence": "`inspect.signature(Stribeck)` shows typed keyword-only fields, and passing an alias keyword raises TypeError (my probe). Arrays go in and out (`m1.torque(np.array([-1.0, 0.0, 0.5]))`) and `chosen.mujoco()` returns armature, frictionloss and damping. I could not re-run pyright (not installed), and the per-sample loop is internal.",
+       "confidence": "medium"
+      }
+     },
+     "gates": {
+      "g1": {
+       "pass": true,
+       "evidence": "The core only imports robot_models.ladder and IntegratedServo. All values come from fixture.datasheet() and rig_log(), and a grep finds no maker."
+      },
+      "g2": {
+       "pass": true,
+       "evidence": "Imports are numpy, stdlib (dataclasses, importlib, inspect, json, typing) and robot_models only. LM is hand-written in numpy (model.py `_least_squares`)."
+      },
+      "g3": {
+       "pass": true,
+       "evidence": "`check_scenario.py` → `PASS  v1_subclass`. Case A M3 1.00× floor, chosen M3.stribeck. Case B M2 1.03× vs M3 1.57×, chosen M2.coulomb_viscous. The check's grep finds no _truth read."
+      },
+      "g4": {
+       "pass": true,
+       "evidence": "`ServoModel.canonical(\"frictionloss_nm\")` → 'coulomb_friction'. `_declare_rung` refuses an alias as a field name (model.py `KeyError ... not a canonical parameter`)."
+      }
+     }
+    },
+    {
+     "id": "v2_records",
+     "scores": {
+      "fr1": {
+       "score": 3,
+       "evidence": "`print(stribeck)` is a full card, but to compute you need a second object (`servo[\"M1.datasheet\"].bind(values)` → BoundModel). Values come from the Family (`servo.values(...)`), and README:111-112 concedes that fallback, siblings and choosing a rung need the Family.",
+       "confidence": "high"
+      },
+      "fr2": {
+       "score": 3,
+       "evidence": "Predict is direct (`m1(v=1.0)`), but each fit and compare call hand-splits the log: `fit(fit_log[\"tau\"], v=fit_log[\"v\"], values=values)` and `compare(m1, m2, m3, observed=test_log[\"tau\"], repeats=test_log[\"plateau\"], v=test_log[\"v\"])` (scenario.py:45,50). Datasheet → model also takes two calls (values, then bind).",
+       "confidence": "medium"
+      },
+      "fr3": {
+       "score": 5,
+       "evidence": "`print(servo.tree())` marks runnable rungs with `*`, and `servo.children(...)`, `servo.siblings(...)`, `servo.fallback(...)` and `servo.canonical(...)` are one call each. My probe got siblings ('M3.load', 'M4.ripple').",
+       "confidence": "high"
+      },
+      "fr4": {
+       "score": 5,
+       "evidence": "`Family` literally subclasses v1's `Ladder` (family_records.py:221), so `ladders()` could hand out Families with no consumer edit. Rung bytes are exec'd, never imported, so no `__pycache__` lands (README:120-133).",
+       "confidence": "high"
+      },
+      "fr5": {
+       "score": 3,
+       "evidence": "Exactly today's cost (README:137-143): one `Rung(...)` in ladder.py plus the rung folder. Fitting, compare and the MuJoCo export come free through the generic separable fit, so it is one folder plus one registration.",
+       "confidence": "high"
+      },
+      "fr6": {
+       "score": 4,
+       "evidence": "BoundModel takes numpy in and out (`best(v=np.array([0.05, 0.5, 2.0]))`), has `best.mujoco()` → {'armature','frictionloss','damping'}, and `values` is a plain dict for scipy or JSON. Type checkers see no parameters (README:112-113).",
+       "confidence": "high"
+      }
+     },
+     "gates": {
+      "g1": {
+       "pass": true,
+       "evidence": "Values come only from `servo.values(datasheet())` and the fixture logs. `Values` is built per call and nothing measured is stored in the module."
+      },
+      "g2": {
+       "pass": true,
+       "evidence": "Imports are numpy, stdlib (itertools, json, math, re, types, dataclasses) and robot_models.ladder. lstsq and grid search are numpy only."
+      },
+      "g3": {
+       "pass": true,
+       "evidence": "`PASS  v2_records`. Case A M3 1.00×, chosen M3. Case B M2 1.03× vs M3 1.04×, chosen M2. The case-B M3 fit is non-physical (breakaway −4.73 N·m, scenario.out.txt step 6), but the gate still passes."
+      },
+      "g4": {
+       "pass": true,
+       "evidence": "`servo.canonical(\"frictionloss_nm\")` → 'coulomb_friction'. `Values` canonicalizes names when it is built (family_records.py:285)."
+      }
+     }
+    },
+    {
+     "id": "v3_terms",
+     "scores": {
+      "fr1": {
+       "score": 3,
+       "evidence": "`m3.describe()` explains itself, but a Model can't exist without its `Slots` (`Model(terms, family)`, composed_terms.py:110), and its `.key` is a lookup on the family. Computing needs values passed in (`m3.torque(values, v=...)`) or a separate `Bound`.",
+       "confidence": "medium"
+      },
+      "fr2": {
+       "score": 4,
+       "evidence": "`compare(m2_fit, m3_fit, on=test_log)` and `from_datasheet` are clean one-liners, and compare refuses the fit log. But the climb is spelled `m2_fit.model.redeclare(friction=\"stribeck\").fit(fit_log, start=m2_fit)` (scenario.py:54), which reads as slot surgery, not 'fit M3'.",
+       "confidence": "medium"
+      },
+      "fr3": {
+       "score": 3,
+       "evidence": "`print(servo)` gives a preset × slot grid, not a tree (scenario.out.txt step 1). `m3.fallback()` and `m3.canonical(...)` are one call each, but my probe found no siblings, alternatives or children call on Model or Slots.",
+       "confidence": "high"
+      },
+      "fr4": {
+       "score": 4,
+       "evidence": "Additive over `ladders()` (README:116-127), but every type needs a new `SLOT_OF` table authored. The later step puts a `slot=` field on `Rung` (README:128-130), and the drivetrain/ripple `harmonics` overlap (README:89-91) shows the decomposition strains v1's tree.",
+       "confidence": "medium"
+      },
+      "fr5": {
+       "score": 2,
+       "evidence": "A new M3 rung takes the rung folder, a `Rung(...)` record in ladder.py and a `SLOT_OF` line in servo_slots.py (README:134-139): one folder plus two registrations.",
+       "confidence": "high"
+      },
+      "fr6": {
+       "score": 3,
+       "evidence": "`predict` takes numpy arrays and `m3_fit.params` is a dict of only the fitted values. There is no `mujoco()` export, `+` / `redeclare` are borrowed but custom idioms, and type checkers see no fields.",
+       "confidence": "medium"
+      }
+     },
+     "gates": {
+      "g1": {
+       "pass": true,
+       "evidence": "servo_slots.py holds only the slot assignment per rung word. Values come from fixture.datasheet() and rig_log()."
+      },
+      "g2": {
+       "pass": true,
+       "evidence": "Imports are numpy, stdlib (functools, importlib, itertools, json, math) and robot_models.ladder only."
+      },
+      "g3": {
+       "pass": true,
+       "evidence": "`PASS  v3_terms`. Case A M3 1.00×, case B M2 1.03× vs M3 1.57×, choices correct. CONTROL hard-codes \"B\", but `run(case)` executes only STEPS, and the check's case-branch grep passed."
+      },
+      "g4": {
+       "pass": true,
+       "evidence": "`m3.canonical(\"frictionloss_nm\")` → 'coulomb_friction'. `Slots(...)` raises unless every preset matches v1's parameters, optional and fallback."
+      }
+     }
+    },
+    {
+     "id": "v4_estimators",
+     "scores": {
+      "fr1": {
+       "score": 4,
+       "evidence": "One estimator does everything: `m3 = Model.from_datasheet(ds, \"M3.stribeck\").fit(fit)` describes, predicts, scores and fits, and `describe()` lists fallback, siblings, needs, fits, equation and refs. Internally it carries `self.family` for all metadata (estimators.py:52-63), and `fit` mutates in place.",
+       "confidence": "medium"
+      },
+      "fr2": {
+       "score": 4,
+       "evidence": "`servo.climb(ds, fit, test)` is one call to a held-out choice, but it refits every child itself. The m2/m3 the user fitted in scenario.py:43-44 are never compared, and Family has no `compare` for your own selection (my probe: only `climb`).",
+       "confidence": "medium"
+      },
+      "fr3": {
+       "score": 5,
+       "evidence": "`print(servo)` draws the tree with ° for declared rungs, and `servo.children`, `servo.siblings` (→ ('M3.load', 'M4.ripple')), `stribeck.fallback` and `servo.canonical` are one call each. The climb table also lists the skipped siblings with reasons.",
+       "confidence": "high"
+      },
+      "fr4": {
+       "score": 5,
+       "evidence": "README:138-149: a pure reader of `ladders()` and the rung folders, shipped as estimators.py beside ladder.py. The ruler, robotparts vendoring and sim2real parity are untouched.",
+       "confidence": "high"
+      },
+      "fr5": {
+       "score": 3,
+       "evidence": "README:153-163: a `Rung(...)` record plus the rung folder, the same as today. The generic LM starts by unit, so no per-rung fit code is needed: one folder plus one registration.",
+       "confidence": "high"
+      },
+      "fr6": {
+       "score": 3,
+       "evidence": "sklearn verbs (`fit` returns self, `predict`, `score` as R², `get_params`) are a familiar idiom and `get_params()` is an SI dict. There is no `mujoco()` export, no typed fields, and the scenario takes 4.0 s against under 0.6 s for the others (my timing).",
+       "confidence": "medium"
+      }
+     },
+     "gates": {
+      "g1": {
+       "pass": true,
+       "evidence": "The Model holds only values set via `from_datasheet`, `set_params` or `fit` from caller data. The module has no instance constants."
+      },
+      "g2": {
+       "pass": true,
+       "evidence": "Imports are numpy, stdlib (functools, importlib, itertools, json) and robot_models (ladder, datasheet.units) only, with LM in numpy."
+      },
+      "g3": {
+       "pass": true,
+       "evidence": "`PASS  v4_estimators`. Case A M3 1.00×, case B M2 1.03× vs M3 1.57×. `run()` hands the check the climb's own fits, and the case reaches the steps as a literal."
+      },
+      "g4": {
+       "pass": true,
+       "evidence": "`servo.canonical(\"frictionloss_nm\")` → 'coulomb_friction', and `servo.model(\"M3.stribeck\", frictionloss_nm=0.3).get_params()` → {'coulomb_friction': 0.3}."
+      }
+     }
+    },
+    {
+     "id": "v5_kit",
+     "scores": {
+      "fr1": {
+       "score": 3,
+       "evidence": "`print(stribeck)` is a rich card (each parameter grouped under the experiment that identifies it, equation, refs, fallback, physics), and `with_values` returns a Model that predicts. But fitting lives in the kit (`servo.identify`), README:3 makes the Type the entry point, and README:92-93 calls a hand-built Model awkward.",
+       "confidence": "medium"
+      },
+      "fr2": {
+       "score": 5,
+       "evidence": "The 'what now' is `servo.from_datasheet(ds)`, `found = servo.identify(fit, datasheet=ds)`, `servo.compare(found, held_out)`. Compare refuses the fit log, and `found.missing[\"M3.lugre\"]` → 'run small_reversals' answers what to do next (scenario.py:39-63).",
+       "confidence": "high"
+      },
+      "fr3": {
+       "score": 4,
+       "evidence": "`print(servo.models)` draws the tree with each model's identifying motion, and `stribeck.fallback` and `servo.canonical` are one call each. My probe found no siblings, alternatives or children call on Kit or Model; siblings are only visible in the printed tree.",
+       "confidence": "high"
+      },
+      "fr4": {
+       "score": 5,
+       "evidence": "README:101-115: `Kit` wraps `Ladder` whole (`kit.ladder`) and adds types.py plus one new test. Rung bytes are exec'd, never imported, so the ruler, vendoring and sim2real parity are unchanged.",
+       "confidence": "medium"
+      },
+      "fr5": {
+       "score": 3,
+       "evidence": "README:119-128: a `Rung(...)` record plus the rung folder with `measured_by` per term, plus a `COVERAGE` line when the rung names a new motion. The fitter only covers 'linear in levels and slopes plus one speed scale'.",
+       "confidence": "medium"
+      },
+      "fr6": {
+       "score": 3,
+       "evidence": "`chosen.predict(np.array([-1.0, -0.1, 0.1, 1.0]))` returns an array and `dict(chosen.values)` is SI by canonical name. There is no MuJoCo mapping, `types.of` / `identify` / `Identified` are custom idioms, and type checkers see no parameters (README:93-94).",
+       "confidence": "medium"
+      }
+     },
+     "gates": {
+      "g1": {
+       "pass": true,
+       "evidence": "Constants are thresholds (`SLOW_BELOW = 0.5` rad/s, read from robotparts' measured_by text, `TWINNED_LIMIT`), not instance values. Values come from the caller's datasheet and log."
+      },
+      "g2": {
+       "pass": true,
+       "evidence": "Imports are numpy, stdlib (json, re, dataclasses) and robot_models.ladder only. Separable lstsq plus golden section in numpy."
+      },
+      "g3": {
+       "pass": true,
+       "evidence": "`PASS  v5_kit`. Case A M3 1.00×, case B M2 1.03× vs M3 1.57×. `run()` asserts the only raised error is the expected compare-on-fit-log ValueError."
+      },
+      "g4": {
+       "pass": true,
+       "evidence": "`servo.canonical(\"frictionloss_nm\")` → 'coulomb_friction'. `build_kit` resolves model.json terms through `ladder.resolve` (LuGre's sigma2 → viscous_friction)."
+      }
+     }
+    }
+   ],
+   "hinge": "My ranking under the frozen weights: v1 ≈ 91, v4 ≈ 82, v5 ≈ 79, v2 ≈ 74, v3 ≈ 66 (out of 100). All five pass all four gates, and every transcript re-ran byte-identical. v1 leads because of fr1 and fr6: each rung is a typed frozen dataclass you hold, fit and export. That lead rests on one contested assumption, that rungs really are subclass refinements. If v1's two-sources-until-migration cost is scored as the end state its thesis needs, fr4 drops to 3 and fr5 stays 2, and the gap to v4 shrinks to about 6 points: the classes become the source and the ruler is re-expressed, and meanwhile every rung is written as both a class and a v1 record, guarded at import. The other live flip is fr2. If Zach's 'what now' means 'tell me what to run next' rather than 'fit the models I picked', v5's identify-plus-missing-motions flow is the best user story, and lifting v5's fr1 to 4 (its Model already describes itself and computes) puts it level with v4. Neither flip overtakes v1 unless fr4 or fr5 are reweighted upward."
+  },
+  {
+   "lens": "maintainer",
+   "variants": [
+    {
+     "id": "v1_subclass",
+     "scores": {
+      "fr1": {
+       "score": 5,
+       "evidence": "A rung is one typed frozen dataclass that declares its fields (servo.py:41-53), describes itself, cites its sources and computes (model.py:177 describe, :228 torque). I ran pyright 1.1.411 on a probe file: it reports 'Type of \"m3.stribeck_velocity\" is \"float\"' and flags 'Argument missing for parameter \"stribeck_velocity\"'.",
+       "confidence": "high"
+      },
+      "fr2": {
+       "score": 5,
+       "evidence": "Each step is one call in scenario.py:45-61: Datasheet.from_datasheet(datasheet()), CoulombViscous.fit(fit, start=m1), Stribeck.fit(fit, start=m2), then ServoModel.compare([m1, m2, m3], test, fitted_on=fit), which prints '<- chosen'. M1 is included in the comparison.",
+       "confidence": "high"
+      },
+      "fr3": {
+       "score": 5,
+       "evidence": "ServoModel.tree() prints the subclass tree. Stribeck.fallback(), Stribeck.alternatives() ('M3.load', 'M3.lugre', 'M3.weakening_capture') and ServoModel.canonical('frictionloss_nm') are one call each. Caveat from its own README: a rung that combines two siblings would get a C3-linearized fallback.",
+       "confidence": "medium"
+      },
+      "fr4": {
+       "score": 3,
+       "evidence": "Its end state per the README is 'Then (the classes become the source)... That is a ruler edit'. Until then the 15 classes duplicate the 14 Rung records, and the import-time guard (model.py:92-96) only checks class against record. My probe added M3.tanh to a scratch ladder.py and got 'tanh in ladder without edits: False' with no error, so the tree drifts silently. Only 1 of 12 types is expressed as classes.",
+       "confidence": "medium"
+      },
+      "fr5": {
+       "score": 2,
+       "evidence": "Probe M3.tanh: it is missing until a class is written in servo.py. Then 'FAIL Tanh.fit(fit, start=m2) with no seeds() override: ValueError: M3.tanh.fit has no start for tanh_velocity'. So a new rung costs a class, a Rung record, the rung folder and per-rung fitting code.",
+       "confidence": "high"
+      },
+      "fr6": {
+       "score": 4,
+       "evidence": "pyright sees typed fields and flags 'No parameter named \"frictionloss_nm\"'. chosen.mujoco() returns {'armature', 'frictionloss', 'damping'}. But torque() loops over the scalar stdlib model.py: 54 ms per 100k samples vs 1.4 ms for pure numpy.",
+       "confidence": "high"
+      }
+     },
+     "gates": {
+      "g1": {
+       "pass": true,
+       "evidence": "The ruler's scan() (test_ladders_acceptance.py:1011) finds no maker or path in model.py or servo.py. The only numbers are solver and seed constants (LM damping, 1.5×coulomb seed). Values come from datasheet() and the log."
+      },
+      "g2": {
+       "pass": true,
+       "evidence": "The AST import roots are numpy and robot_models only. A fresh-interpreter import loads no scipy, pandas, mujoco or sim2real (100 ms)."
+      },
+      "g3": {
+       "pass": true,
+       "evidence": "'PASS  v1_subclass': case A chose M3.stribeck (M2 20.28, M3 1.00), case B chose M2.coulomb_viscous (M2 1.03, M3 1.57). The check's _truth regex found nothing."
+      },
+      "g4": {
+       "pass": true,
+       "evidence": "ServoModel.canonical('frictionloss_nm') -> 'coulomb_friction'. A field named by an alias is refused at class creation (model.py:84-85), and pyright flags frictionloss_nm=."
+      }
+     }
+    },
+    {
+     "id": "v2_records",
+     "scores": {
+      "fr1": {
+       "score": 4,
+       "evidence": "Model is a standalone frozen record carrying its parameters with units, equation, references and attached Physics (family_records.py:77-93), and print(model) gives its full card. It computes only through bind(values), which returns a separate BoundModel (:103). Fallback and siblings are Family calls.",
+       "confidence": "medium"
+      },
+      "fr2": {
+       "score": 4,
+       "evidence": "One call per step, but every call unpacks log columns by hand: stribeck.fit(fit_log[\"tau\"], v=fit_log[\"v\"], values=values) and servo.compare(m1, m2, m3, observed=test_log[\"tau\"], repeats=test_log[\"plateau\"], v=test_log[\"v\"]) (scenario.py:45-50). Datasheet to M1 takes two calls (values(), then bind()).",
+       "confidence": "high"
+      },
+      "fr3": {
+       "score": 5,
+       "evidence": "tree() marks runnable rungs with '*'. children() and siblings() are its own calls, and fallback, canonical, holds, resolve and unpack are inherited unchanged because Family subclasses Ladder (:221). It browses all 12 types: families() returned 12, all isinstance Ladder.",
+       "confidence": "high"
+      },
+      "fr4": {
+       "score": 5,
+       "evidence": "Family(Ladder) is a drop-in. I patched ladders() to return v2 Families and sim2real's tests/test_robot_models_parity.py still gave '56 passed'. Rung code is compile+exec'd, never imported (:59), so no __pycache__ lands in the vendored folders. The robotparts sync --check printed '8 actuator rung folders identical'.",
+       "confidence": "high"
+      },
+      "fr5": {
+       "score": 3,
+       "evidence": "Probe M3.tanh, adding only a Rung, a Parameter and the rung folder: 'tanh in keys: True', fit worked, siblings ('M3.stribeck', 'M3.load', 'M4.ripple'), compare included it. That is one folder plus one registration, with no per-rung fitting code. A nonlinear term whose unit is not an input's needs grid= from the caller (:150).",
+       "confidence": "high"
+      },
+      "fr6": {
+       "score": 3,
+       "evidence": "BoundModel.mujoco() maps values through model.json, and values is a plain dict. Arrays go in and come out, but by looping (50 ms per 100k samples). Type checkers see no parameters.",
+       "confidence": "high"
+      }
+     },
+     "gates": {
+      "g1": {
+       "pass": true,
+       "evidence": "scan() finds no maker or path in family_records.py. Its numbers are grid and limit constants (61/21 points, the 3.0 span margin, 1.5)."
+      },
+      "g2": {
+       "pass": true,
+       "evidence": "Imports are numpy, robot_models and stdlib. A fresh import loads none of the heavy modules (84 ms)."
+      },
+      "g3": {
+       "pass": true,
+       "evidence": "'PASS  v2_records': case A M3 1.00 -> M3.stribeck; case B M2 1.03, M3 1.04 -> M2.coulomb_viscous. No _truth reads."
+      },
+      "g4": {
+       "pass": true,
+       "evidence": "servo.canonical('frictionloss_nm') -> 'coulomb_friction' (inherited). values() canonicalizes names and refuses a bare number for an alias that carries a unit (:283-284)."
+      }
+     }
+    },
+    {
+     "id": "v3_terms",
+     "scores": {
+      "fr1": {
+       "score": 3,
+       "evidence": "Model(terms, family) needs the Slots object for its own identity: key comes from family.key_of (composed_terms.py:121-124) and fallback from down() over presets. canonical only resolves names its terms hold. Values live in a separate Bound.",
+       "confidence": "medium"
+      },
+      "fr2": {
+       "score": 4,
+       "evidence": "from_datasheet, fit and compare are one call each. But Comparison refuses any model without a fit rms: 'compare fits of one log' (:340-341). So the datasheet M1 cannot be compared against the fits, and the scenario compares only m2_fit and m3_fit.",
+       "confidence": "high"
+      },
+      "fr3": {
+       "score": 3,
+       "evidence": "print(servo) is a preset-by-slot grid, not a tree. m3.fallback() is one call, but there is no siblings call, and Slots has no canonical; it is Model-scoped and raises for names the model does not hold (:188-196). It exists only for integrated_servo.",
+       "confidence": "high"
+      },
+      "fr4": {
+       "score": 4,
+       "evidence": "Additive, and Slots raises loudly on any drift from v1 (:389-393). But each of the 11 other types needs its own SLOT_OF table, and the README plans a slot= field on Rung later. importlib exec_module (:40-46) writes __pycache__ into vendored rung folders, which the ruler's WHY at test_ladders_acceptance.py:1237 says to avoid.",
+       "confidence": "medium"
+      },
+      "fr5": {
+       "score": 2,
+       "evidence": "Probe M3.tanh: 'FAIL import servo_slots (SLOT_OF unedited): ValueError: integrated_servo: slot_of names a slot for each rung'. A new rung costs a Rung, the rung folder and a line in a registry. Once added it fitted, but to rms 0.097, worse than M2's 0.065: its grid spans only the logged speeds, with no margin (:281-286).",
+       "confidence": "high"
+      },
+      "fr6": {
+       "score": 2,
+       "evidence": "The idioms are custom (slots, redeclare, + across slots). Bound.params is a dict, and there is no MuJoCo export even though model.json carries backends.mujoco.maps. torque(values, v=) loops: 73 ms per 100k samples. No typed fields.",
+       "confidence": "medium"
+      }
+     },
+     "gates": {
+      "g1": {
+       "pass": true,
+       "evidence": "scan() finds nothing in composed_terms.py or servo_slots.py. servo_slots holds slot names only."
+      },
+      "g2": {
+       "pass": true,
+       "evidence": "Imports are numpy, robot_models, stdlib and the local composed_terms. A fresh import loads no heavy modules (75 ms)."
+      },
+      "g3": {
+       "pass": true,
+       "evidence": "'PASS  v3_terms': case A M2 20.28, M3 1.00 -> M3.stribeck; case B M2 1.03, M3 1.57 -> M2.coulomb_viscous."
+      },
+      "g4": {
+       "pass": true,
+       "evidence": "m3.canonical('frictionloss_nm') -> 'coulomb_friction'. LuGre's sigma2 maps to its canonical name through spellings (:69-77). The full v1 Ladder stays reachable as servo.ladder."
+      }
+     }
+    },
+    {
+     "id": "v4_estimators",
+     "scores": {
+      "fr1": {
+       "score": 4,
+       "evidence": "The user holds one estimator that describes itself, reads its fallback, fits, predicts and scores. Internally, Model(family, key) delegates needs, holds and fallback to self.family.ladder (estimators.py:52-64). fit() mutates and returns self (:142-164).",
+       "confidence": "medium"
+      },
+      "fr2": {
+       "score": 5,
+       "evidence": "servo.climb(ds, fit, test) runs the whole flow in one call: datasheet to M1, fit every child, judge held out, stop at the floor (scenario.py:49). It prints 'chosen M3.stribeck: the lowest rung within 1.5× the noise floor'. Model.from_datasheet(ds, key).fit(fit) is one line per rung.",
+       "confidence": "high"
+      },
+      "fr3": {
+       "score": 5,
+       "evidence": "print(servo) draws the tree with '°' on declared rungs. .children(), .siblings() and .canonical() are one call each on Family (:272-278), and fallback is a Model property. It browses all 12 types.",
+       "confidence": "high"
+      },
+      "fr4": {
+       "score": 4,
+       "evidence": "An additive layer over ladders() covering all 12 types, with ruler and consumers untouched. But _physics uses importlib exec_module (:39-46), which leaves __pycache__ in vendored rung folders. The 'generic' core hard-codes TARGET='tau', log['v'] and FIRST_FITTED_LEVEL=2 (:27-28, :198), so it is servo-shaped.",
+       "confidence": "medium"
+      },
+      "fr5": {
+       "score": 3,
+       "evidence": "Probe M3.tanh, adding only a Rung, a Parameter and the rung folder: 'tanh in keys: True', the LM fit converged, and the climb listed it ('M3.tanh 3 0.06469 0.08458 20.28 M3.stribeck is lower held-out'). One folder plus one registration, with the most general fitter of the five.",
+       "confidence": "high"
+      },
+      "fr6": {
+       "score": 3,
+       "evidence": "Standard sklearn verbs: fit/predict/score/get_params/set_params and the trailing-underscore convention. No MuJoCo export, and get_params() is a dict. predict is the slowest of the five: 504 ms per 100k samples, about 10x the others, because it loops with state threading.",
+       "confidence": "high"
+      }
+     },
+     "gates": {
+      "g1": {
+       "pass": true,
+       "evidence": "scan() finds no maker or path in estimators.py. Its numbers are LM and limit constants."
+      },
+      "g2": {
+       "pass": true,
+       "evidence": "Imports are numpy, robot_models (including datasheet.units) and stdlib. A fresh import loads no heavy modules (62 ms)."
+      },
+      "g3": {
+       "pass": true,
+       "evidence": "'PASS  v4_estimators': case A -> M3.stribeck (1.00), case B -> M2.coulomb_viscous (1.03 vs 1.57). run() hands the check the climb's own fits."
+      },
+      "g4": {
+       "pass": true,
+       "evidence": "servo.canonical('frictionloss_nm') -> 'coulomb_friction'. servo.model('M3.stribeck', frictionloss_nm=0.3).get_params() -> {'coulomb_friction': 0.3}, converted by the alias's unit (:124-131)."
+      }
+     }
+    },
+    {
+     "id": "v5_kit",
+     "scores": {
+      "fr1": {
+       "score": 3,
+       "evidence": "Model is a standalone frozen record that predicts with values (type_kit.py:88-140), but the thesis makes the Kit the entry point. Fitting exists only as Kit.identify(), which fits every model at once (:313); no single Model can be fitted. Its README: 'building one by hand outside a kit is awkward'.",
+       "confidence": "medium"
+      },
+      "fr2": {
+       "score": 5,
+       "evidence": "servo.from_datasheet(ds), servo.identify(fit, datasheet=ds) and servo.compare(found, held_out) are one call each, and compare includes M0 and M1. It refuses the fit log: 'ValueError: the fit saw 10 of these plateaus'.",
+       "confidence": "high"
+      },
+      "fr3": {
+       "score": 4,
+       "evidence": "print(servo.models) draws the tree with each rung's run status and the motions that identify it. stribeck.fallback and servo.canonical are one call each, but there is no siblings or children call (:160-180, :301). All 12 types are browsable.",
+       "confidence": "high"
+      },
+      "fr4": {
+       "score": 4,
+       "evidence": "Additive: exec, not import (:280-286), the Ladder kept whole, sync --check identical. But experiment ids are parsed by regex from model.json's measured_by prose (:52-55). That makes text in sha-pinned, vendored rung files into API identifiers. Landing also needs a new ruler test for COVERAGE.",
+       "confidence": "medium"
+      },
+      "fr5": {
+       "score": 3,
+       "evidence": "Probe M3.tanh: identify found and fitted it automatically ('M3.tanh coulomb_friction=0.5805, ..., tanh_velocity=0.01'), but only because I reused an existing measured_by text. A new motion needs a COVERAGE entry in the core (:44-49), and the fitter raises for more than one speed scale (:253-254).",
+       "confidence": "medium"
+      },
+      "fr6": {
+       "score": 2,
+       "evidence": "The idioms are custom (Kit, identify, Experiments, COVERAGE). values is a Mapping, and there is no MuJoCo export. predict loops over samples (43 ms per 100k). No typed fields; its README concedes 'type checkers see nothing (fr6)'.",
+       "confidence": "medium"
+      }
+     },
+     "gates": {
+      "g1": {
+       "pass": true,
+       "evidence": "scan() finds no maker or path. SLOW_BELOW=0.5 and the 5-plateau threshold define the experiment from robotparts' measured_by, not a measured value."
+      },
+      "g2": {
+       "pass": true,
+       "evidence": "Imports are numpy, robot_models and stdlib. A fresh import loads no heavy modules, even though it builds all 12 kits at import (78 ms)."
+      },
+      "g3": {
+       "pass": true,
+       "evidence": "'PASS  v5_kit': case A -> M3.stribeck (1.00), case B -> M2.coulomb_viscous (1.03 vs 1.57). No _truth reads."
+      },
+      "g4": {
+       "pass": true,
+       "evidence": "servo.canonical('frictionloss_nm') -> 'coulomb_friction'. Rung term names resolve through Ladder.resolve, so sigma2 and packed names land on canonical ones (:373-378)."
+      }
+     }
+    }
+   ],
+   "hinge": "Weighted by the frozen criteria, the top three are within 4 points: v1 86, v4 84, v2 82, then v5 74 and v3 64. The weight most likely to flip the pick is fr1 against fr4/fr5. v1 leads only on fr1=5 and fr6=4 (typed fields, checked with pyright). It is also the one variant a maintainer pays for on every rung of all 12 types: a hand-kept class tree beside ladder.py, a seeds() override per nonlinear rung, and silent drift (a new Rung without a class drops out of v1's ladder with no error). Its end state re-expresses the ruler. Move about 10 points from fr1 to fr4 and v2 ties v4 for the top: v2's Family is a Ladder subclass, and sim2real's parity test gave 56 passed with Families substituted for Ladders. The contested assumption is whether v1 is judged as built (duplicate class tree, interim) or on its promised end state, where the classes are the source."
+  }
+ ]
+}
