@@ -1,0 +1,102 @@
+{
+  "format": "robotparts-model-definition/1",
+  "category": "actuator",
+  "word": "coulomb_viscous",
+  "rung": 2,
+  "name": "M2.coulomb_viscous",
+  "family": "fitted constant friction",
+  "title": "Coulomb and viscous friction",
+  "description": "Coulomb + viscous",
+  "summary": "Constant (Coulomb) plus viscous friction at the output, fitted from measurements: MuJoCo's frictionloss and damping, so its simulator is optional.",
+  "equation": "tau_r = coulomb_friction*sign(v) + viscous_friction*v",
+  "since": "robotparts/2.3",
+  "v2_3_kind": "coulomb_viscous",
+  "inputs": {
+    "v": {
+      "definition": "The output's angular speed.",
+      "unit": "rad/s"
+    }
+  },
+  "state": {},
+  "output": {
+    "name": "tau_r",
+    "definition": "The resisting torque at the output: what the motor must add to move the output as the inputs say.",
+    "unit": "N·m",
+    "sign": "The joint feels -tau_r (a resisting torque opposes motion; ripple pushes and pulls with angle)."
+  },
+  "terms": {
+    "coulomb_friction": {
+      "required": true,
+      "key": true,
+      "measured_by": "velocity plateaus, both directions, 6-8 speeds, each at least one rotor turn"
+    },
+    "viscous_friction": {
+      "required": true,
+      "key": true,
+      "measured_by": "velocity plateaus, both directions, 6-8 speeds, each at least one rotor turn"
+    },
+    "output_inertia": {
+      "required": false,
+      "key": true,
+      "measured_by": "chirps (or the datasheet)"
+    }
+  },
+  "together": [],
+  "exclusive": [],
+  "constraints": [],
+  "variants": {},
+  "backends": {
+    "python": {
+      "how": "reference",
+      "implementation": "model.py",
+      "implementation_sha256": "e20d6f415822572bb89f305344dce3efc659a9db2822a34300141afa5665b095",
+      "engine": null,
+      "note": "The contract's own ruler: stdlib Python, torque(terms, inputs, state, dt) -> (tau_r, state), terms in SI."
+    },
+    "js": {
+      "how": "reference",
+      "implementation": "model.js",
+      "implementation_sha256": "5b8131ce0acd3f0d844985fb888d0ef91d553342ea2980896901b010db0c1e00",
+      "engine": null,
+      "note": "The same equation as model.py as an ES module (torque(terms, inputs, state, dt) -> {tau, state}); tests/acceptance_v2/test_amendment_2_5.py holds the two to 1e-12."
+    },
+    "mujoco": {
+      "how": "native",
+      "engine": "mujoco",
+      "maps": {
+        "armature": "output_inertia",
+        "frictionloss": "coulomb_friction",
+        "damping": "viscous_friction"
+      },
+      "settings": {
+        "friction_solref": {
+          "definition": "The joint's solreffriction (timeconst, dampratio): how hard frictionloss sticks; MuJoCo's soft default creeps below about 0.4 rad/s on a light hinge.",
+          "value": "number-list",
+          "length": 2
+        },
+        "friction_solimp": {
+          "definition": "The joint's solimpfriction (dmin, dmax, width, midpoint, power), every entry > 0.",
+          "value": "number-list",
+          "length": 5,
+          "bounds": {
+            "min": 0,
+            "min_exclusive": true
+          }
+        }
+      },
+      "note": "frictionloss sticks at rest as a constraint (set friction_solref hard, or it creeps); damping is the viscous term."
+    }
+  },
+  "validity": {
+    "dims": {
+      "output_speed": {
+        "definition": "|v|, the output speed the terms were fitted or checked across.",
+        "unit": "rad/s"
+      }
+    },
+    "assumptions": [
+      "Friction does not depend on speed beyond the viscous slope, on load, on temperature or on how long the part rested."
+    ]
+  },
+  "readme": "README.md"
+}

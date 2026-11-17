@@ -2,7 +2,7 @@
 
 - **Status:** accepted, 2026-11-12
 - **Decision report:** `/home/bam/bam_ws/reports/homing-subassembly-proposals-2026-11-12.html` (builder `bam_ws/docs/homing/build_proposals.py`). It recommends B, "two verbs, one stop core": `home()` on every boot with a stored backlash table, `identify_backlash()` at calibration, both on one pure stop core, built on C's homing bench, with A's one-routine procedure as a rival leaderboard row.
-- **Layering:** the Robot Models Layering decision (vault, `Projects/robot_msgs/Robot Models Layering — Decision (2026-11-12).md`): `robot_msgs <- robot_models <- robot_description <- robotparts`, with sim2real as the outer API.
+- **Layering:** the Robot Models Layering decision (vault, `Projects/robot_msgs/Robot Models Layering — Decision (2026-11-12).md`), in the order PEP 0004 corrected it to (2026-11-16): `robot_msgs ← robot_models ← robot_parts ← robot_descriptions`, with sim2real on top.
 
 ## Decision
 

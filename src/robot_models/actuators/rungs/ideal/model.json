@@ -1,0 +1,90 @@
+{
+  "format": "robotparts-model-definition/1",
+  "category": "actuator",
+  "word": "ideal",
+  "rung": 0,
+  "name": "M0.ideal",
+  "family": "ideal",
+  "title": "The ideal actuator",
+  "description": "no losses",
+  "summary": "The ablation baseline every rung is measured from: the stated inertia and ratio, no friction, no ripple.",
+  "equation": "tau_r = 0; armature = output_inertia",
+  "since": "robotparts/2.5",
+  "v2_3_kind": null,
+  "inputs": {
+    "v": {
+      "definition": "The output's angular speed.",
+      "unit": "rad/s"
+    }
+  },
+  "state": {},
+  "output": {
+    "name": "tau_r",
+    "definition": "The resisting torque at the output: what the motor must add to move the output as the inputs say.",
+    "unit": "N·m",
+    "sign": "The joint feels -tau_r (a resisting torque opposes motion; ripple pushes and pulls with angle)."
+  },
+  "terms": {
+    "output_inertia": {
+      "required": true,
+      "key": true,
+      "measured_by": "chirps (or the datasheet)"
+    },
+    "gear_ratio": {
+      "required": false,
+      "key": true,
+      "measured_by": "reading the datasheet"
+    }
+  },
+  "together": [],
+  "exclusive": [],
+  "constraints": [],
+  "variants": {},
+  "backends": {
+    "python": {
+      "how": "reference",
+      "implementation": "model.py",
+      "implementation_sha256": "ba6b33a4cbd28aea7cb1874e6e646e9f5dd34c67a33290cb489296aeda0d4b76",
+      "engine": null,
+      "note": "The contract's own ruler: stdlib Python, torque(terms, inputs, state, dt) -> (tau_r, state), terms in SI."
+    },
+    "js": {
+      "how": "reference",
+      "implementation": "model.js",
+      "implementation_sha256": "533668d33e34e67d5e6d1dcc04fdf3f3f9d1b5d7d409f7f67c264d808a28e805",
+      "engine": null,
+      "note": "The same equation as model.py as an ES module (torque(terms, inputs, state, dt) -> {tau, state}); tests/acceptance_v2/test_amendment_2_5.py holds the two to 1e-12."
+    },
+    "mujoco": {
+      "how": "native",
+      "engine": "mujoco",
+      "maps": {
+        "armature": "output_inertia"
+      },
+      "settings": {
+        "friction_solref": {
+          "definition": "The joint's solreffriction (timeconst, dampratio): how hard frictionloss sticks; MuJoCo's soft default creeps below about 0.4 rad/s on a light hinge.",
+          "value": "number-list",
+          "length": 2
+        },
+        "friction_solimp": {
+          "definition": "The joint's solimpfriction (dmin, dmax, width, midpoint, power), every entry > 0.",
+          "value": "number-list",
+          "length": 5,
+          "bounds": {
+            "min": 0,
+            "min_exclusive": true
+          }
+        }
+      },
+      "note": "MuJoCo expresses it as the joint's armature; nothing runs per step."
+    }
+  },
+  "validity": {
+    "dims": {},
+    "assumptions": [
+      "No losses of any kind: the model is a baseline, never a prediction of a real part."
+    ]
+  },
+  "readme": "README.md"
+}

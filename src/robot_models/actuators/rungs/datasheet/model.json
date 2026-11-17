@@ -1,0 +1,138 @@
+{
+  "format": "robotparts-model-definition/1",
+  "category": "actuator",
+  "word": "datasheet",
+  "rung": 1,
+  "name": "M1.datasheet",
+  "family": "datasheet",
+  "title": "The datasheet",
+  "description": "the stated values",
+  "summary": "The datasheet's own model: the part's stated values and nothing fitted. Every term is a registry key and equals the part's spec in SI (relative tolerance 1e-6), and fitted_from is []. MJCF joint attributes express it (armature, frictionloss, damping), so its simulator is optional.",
+  "equation": "tau_r = coulomb_friction*sign(v) + viscous_friction*v; armature = output_inertia, or gear_ratio^2*(rotor_inertia + gearbox_input_inertia)",
+  "since": "robotparts/2.3",
+  "v2_3_kind": "datasheet",
+  "inputs": {
+    "v": {
+      "definition": "The output's angular speed.",
+      "unit": "rad/s"
+    }
+  },
+  "state": {},
+  "output": {
+    "name": "tau_r",
+    "definition": "The resisting torque at the output: what the motor must add to move the output as the inputs say.",
+    "unit": "N·m",
+    "sign": "The joint feels -tau_r (a resisting torque opposes motion; ripple pushes and pulls with angle)."
+  },
+  "terms": {
+    "output_inertia": {
+      "required": false,
+      "key": true,
+      "measured_by": "reading the datasheet"
+    },
+    "rotor_inertia": {
+      "required": false,
+      "key": true,
+      "measured_by": "reading the datasheet"
+    },
+    "gearbox_input_inertia": {
+      "required": false,
+      "key": true,
+      "measured_by": "reading the datasheet"
+    },
+    "gear_ratio": {
+      "required": false,
+      "key": true,
+      "measured_by": "reading the datasheet"
+    },
+    "kt": {
+      "required": false,
+      "key": true,
+      "measured_by": "reading the datasheet"
+    },
+    "coulomb_friction": {
+      "required": false,
+      "key": true,
+      "measured_by": "reading the datasheet"
+    },
+    "viscous_friction": {
+      "required": false,
+      "key": true,
+      "measured_by": "reading the datasheet"
+    }
+  },
+  "together": [],
+  "exclusive": [],
+  "constraints": [],
+  "variants": {},
+  "backends": {
+    "python": {
+      "how": "reference",
+      "implementation": "model.py",
+      "implementation_sha256": "3ed5e7d8d90d98efec0af84957f271ca20f365c62f660739be25b8ccad1ec2dc",
+      "engine": null,
+      "note": "The contract's own ruler: stdlib Python, torque(terms, inputs, state, dt) -> (tau_r, state), terms in SI."
+    },
+    "js": {
+      "how": "reference",
+      "implementation": "model.js",
+      "implementation_sha256": "bb054894e901a1d6464545efbbe0e81975c5be4cd8463eac105c01985e64c41e",
+      "engine": null,
+      "note": "The same equation as model.py as an ES module (torque(terms, inputs, state, dt) -> {tau, state}); tests/acceptance_v2/test_amendment_2_5.py holds the two to 1e-12."
+    },
+    "mujoco": {
+      "how": "native",
+      "engine": "mujoco",
+      "maps": {
+        "armature": "output_inertia",
+        "frictionloss": "coulomb_friction",
+        "damping": "viscous_friction"
+      },
+      "derived": {
+        "armature": {
+          "if_absent": "output_inertia",
+          "ratio_squared": "gear_ratio",
+          "sum": [
+            "rotor_inertia",
+            "gearbox_input_inertia"
+          ],
+          "requires": [
+            "gear_ratio",
+            "rotor_inertia",
+            "gearbox_input_inertia"
+          ],
+          "zero_when_drivetrain": {
+            "gearbox_input_inertia": [
+              "direct_drive",
+              "motor"
+            ]
+          }
+        }
+      },
+      "settings": {
+        "friction_solref": {
+          "definition": "The joint's solreffriction (timeconst, dampratio): how hard frictionloss sticks; MuJoCo's soft default creeps below about 0.4 rad/s on a light hinge.",
+          "value": "number-list",
+          "length": 2
+        },
+        "friction_solimp": {
+          "definition": "The joint's solimpfriction (dmin, dmax, width, midpoint, power), every entry > 0.",
+          "value": "number-list",
+          "length": 5,
+          "bounds": {
+            "min": 0,
+            "min_exclusive": true
+          }
+        }
+      },
+      "note": "The joint's armature, frictionloss and damping; a model stating rotor and gearbox inertia instead gives armature = gear_ratio^2 (rotor_inertia + gearbox_input_inertia)."
+    }
+  },
+  "validity": {
+    "dims": {},
+    "assumptions": [
+      "Every value is the maker's, as stated: the model is only as good as the datasheet."
+    ]
+  },
+  "readme": "README.md"
+}

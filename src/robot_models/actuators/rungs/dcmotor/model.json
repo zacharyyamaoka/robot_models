@@ -1,0 +1,163 @@
+{
+  "format": "robotparts-model-definition/1",
+  "category": "actuator",
+  "word": "dcmotor",
+  "rung": 5,
+  "name": "M5.dcmotor",
+  "family": "motor electrics",
+  "title": "MuJoCo's DC motor",
+  "description": "DC motor electrics + heat + cogging + LuGre",
+  "summary": "MuJoCo's DC motor actuator (the dcmotor shortcut, mjs_setToDCMotor, MuJoCo 3.16): electrical dynamics, gain and bias (back-EMF, cogging, LuGre friction), with its parameters named and shaped as MuJoCo takes them. The simulator pins the MuJoCo release and the code that sets them.",
+  "equation": "MuJoCo's own: mjDYN_DCMOTOR (electrical dynamics), mjGAIN_DCMOTOR (K or K/R), mjBIAS_DCMOTOR (back-EMF, cogging, LuGre friction)",
+  "since": "robotparts/2.3",
+  "v2_3_kind": "mujoco_dcmotor",
+  "inputs": {},
+  "state": {},
+  "output": {
+    "name": "tau_r",
+    "definition": "The resisting torque at the output: what the motor must add to move the output as the inputs say.",
+    "unit": "N·m",
+    "sign": "The joint feels -tau_r (a resisting torque opposes motion; ripple pushes and pulls with angle)."
+  },
+  "terms": {
+    "motorconst": {
+      "required": true,
+      "definition": "MuJoCo dcmotor's motorconst (2 numbers), as mjs_setToDCMotor takes it; unit mujoco means MuJoCo's own (SI) units for each entry.",
+      "value": "number-list",
+      "length": 2,
+      "si_unit": null,
+      "units": {
+        "mujoco": null
+      },
+      "measured_by": "measure-only board calibration, then the envelope ladder"
+    },
+    "resistance": {
+      "required": true,
+      "definition": "MuJoCo dcmotor's resistance, the winding resistance the electrical model uses, as mjs_setToDCMotor takes it.",
+      "value": "number",
+      "si_unit": "Ω",
+      "units": {
+        "Ω": 1,
+        "mΩ": 0.001
+      },
+      "positive": true,
+      "measured_by": "measure-only board calibration, then the envelope ladder"
+    },
+    "nominal": {
+      "required": false,
+      "definition": "MuJoCo dcmotor's nominal (3 numbers), as mjs_setToDCMotor takes it; unit mujoco means MuJoCo's own (SI) units for each entry.",
+      "value": "number-list",
+      "length": 3,
+      "si_unit": null,
+      "units": {
+        "mujoco": null
+      },
+      "measured_by": "measure-only board calibration, then the envelope ladder"
+    },
+    "saturation": {
+      "required": false,
+      "definition": "MuJoCo dcmotor's saturation (3 numbers), as mjs_setToDCMotor takes it; unit mujoco means MuJoCo's own (SI) units for each entry.",
+      "value": "number-list",
+      "length": 3,
+      "si_unit": null,
+      "units": {
+        "mujoco": null
+      },
+      "measured_by": "measure-only board calibration, then the envelope ladder"
+    },
+    "inductance": {
+      "required": false,
+      "definition": "MuJoCo dcmotor's inductance (2 numbers), as mjs_setToDCMotor takes it; unit mujoco means MuJoCo's own (SI) units for each entry.",
+      "value": "number-list",
+      "length": 2,
+      "si_unit": null,
+      "units": {
+        "mujoco": null
+      },
+      "measured_by": "measure-only board calibration, then the envelope ladder"
+    },
+    "cogging": {
+      "required": false,
+      "definition": "MuJoCo dcmotor's cogging (3 numbers), as mjs_setToDCMotor takes it; unit mujoco means MuJoCo's own (SI) units for each entry.",
+      "value": "number-list",
+      "length": 3,
+      "si_unit": null,
+      "units": {
+        "mujoco": null
+      },
+      "measured_by": "measure-only board calibration, then the envelope ladder"
+    },
+    "controller": {
+      "required": false,
+      "definition": "MuJoCo dcmotor's controller (6 numbers), as mjs_setToDCMotor takes it; unit mujoco means MuJoCo's own (SI) units for each entry.",
+      "value": "number-list",
+      "length": 6,
+      "si_unit": null,
+      "units": {
+        "mujoco": null
+      },
+      "measured_by": "measure-only board calibration, then the envelope ladder"
+    },
+    "thermal": {
+      "required": false,
+      "definition": "MuJoCo dcmotor's thermal (6 numbers), as mjs_setToDCMotor takes it; unit mujoco means MuJoCo's own (SI) units for each entry.",
+      "value": "number-list",
+      "length": 6,
+      "si_unit": null,
+      "units": {
+        "mujoco": null
+      },
+      "measured_by": "measure-only board calibration, then the envelope ladder"
+    },
+    "lugre": {
+      "required": false,
+      "definition": "MuJoCo dcmotor's lugre (5 numbers), as mjs_setToDCMotor takes it; unit mujoco means MuJoCo's own (SI) units for each entry.",
+      "value": "number-list",
+      "length": 5,
+      "si_unit": null,
+      "units": {
+        "mujoco": null
+      },
+      "measured_by": "measure-only board calibration, then the envelope ladder"
+    }
+  },
+  "together": [],
+  "exclusive": [],
+  "constraints": [],
+  "variants": {},
+  "backends": {
+    "mujoco": {
+      "how": "native",
+      "engine": "mujoco",
+      "engine_min": "3.16.0",
+      "maps": {
+        "motorconst": "motorconst",
+        "resistance": "resistance",
+        "nominal": "nominal",
+        "saturation": "saturation",
+        "inductance": "inductance",
+        "cogging": "cogging",
+        "controller": "controller",
+        "thermal": "thermal",
+        "lugre": "lugre"
+      },
+      "note": "MuJoCo 3.16's dcmotor actuator (mjs_setToDCMotor) takes the terms as they are; no other backend implements it."
+    }
+  },
+  "validity": {
+    "dims": {
+      "output_speed": {
+        "definition": "|v|, the output speed the terms were fitted or checked across.",
+        "unit": "rad/s"
+      },
+      "current": {
+        "definition": "|i|, the winding current the electrics were fitted across.",
+        "unit": "A"
+      }
+    },
+    "assumptions": [
+      "MuJoCo's own DC motor equations, as its release documents them."
+    ]
+  },
+  "readme": "README.md"
+}

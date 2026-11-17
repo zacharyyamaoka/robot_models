@@ -1,13 +1,41 @@
 [build-system]
-requires = ["hatchling>=1.25"]
+# WHY >=1.27: the first hatchling that writes PEP 639 metadata (an SPDX `license` string plus `license-files`).
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
 name = "robot-models"
-version = "0.1.0"
-description = "Physical models and parameters of robot parts, the twin of robot_msgs: types, models, parameters and pure fits."
+version = "0.2.0"
+description = "Generic physical models of robot part types (no maker, no SKU): each type a ladder of models from ideal to learned, every rung with its parameters, equation and references."
 readme = "README.md"
 authors = [{ name = "Zach Yamaoka" }]
+# WHY no "License ::" classifier: PEP 639 forbids one beside an SPDX `license` expression.
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = [
+    "robotics",
+    "physical-models",
+    "system-identification",
+    "friction",
+    "actuators",
+    "sensors",
+    "digital-twin",
+    "sim2real",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Physics",
+]
 requires-python = ">=3.11"
 # WHY robot_msgs + numpy only (Robot Models Layering decision, 2026-11-12; "dependency-free runtime
 # cores"): the models and the pure fits must import with nothing heavier. Mesh contact is an extra.
@@ -21,6 +49,11 @@ dependencies = ["robot-msgs>=0.2.0", "numpy>=1.26"]
 # whole lock; 3.0.3 is the same API on numpy 2.5, and sim2real's bench re-checks the ruler's angles on it.
 contact = ["coal>=3.0.2,<3.1", "trimesh>=4.0"]
 test = ["pytest>=8", "coal==3.0.2", "trimesh>=4.0"]
+
+[project.urls]
+Homepage = "https://github.com/zacharyyamaoka/robot_models"
+Repository = "https://github.com/zacharyyamaoka/robot_models"
+Issues = "https://github.com/zacharyyamaoka/robot_models/issues"
 
 [tool.uv.sources]
 # WHY absolute (2026-11-12): a consumer's lock (sim2real) took this source over and wrote it relative to wherever it was locked

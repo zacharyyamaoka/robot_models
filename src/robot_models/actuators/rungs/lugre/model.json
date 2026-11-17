@@ -1,0 +1,164 @@
+{
+  "format": "robotparts-model-definition/1",
+  "category": "actuator",
+  "word": "lugre",
+  "rung": 3,
+  "name": "M3.lugre",
+  "family": "dynamic friction",
+  "title": "LuGre friction",
+  "description": "Coulomb + viscous + Stribeck + bristle state",
+  "summary": "The LuGre dynamic friction model (Canudas de Wit, Olsson, Astrom and Lischinsky, IEEE TAC 1995): bristles of deflection z give pre-sliding displacement, the Stribeck curve and frictional lag.",
+  "equation": "dz/dt = v - sigma0*|v|*z/g(v), g(v) = coulomb_friction + (breakaway_torque - coulomb_friction)*exp(-(|v|/stribeck_velocity)^stribeck_exponent); tau_r = sigma0*z + sigma1*dz/dt + sigma2*v; stribeck_exponent is 2 when absent",
+  "since": "robotparts/2.3",
+  "v2_3_kind": "lugre",
+  "inputs": {
+    "v": {
+      "definition": "The output's angular speed.",
+      "unit": "rad/s"
+    },
+    "dt": {
+      "definition": "The step the simulator advances by (a stateful model integrates its state over it).",
+      "unit": "s"
+    }
+  },
+  "state": {
+    "z": {
+      "definition": "The bristles' mean deflection.",
+      "unit": "rad",
+      "initial": 0.0
+    }
+  },
+  "output": {
+    "name": "tau_r",
+    "definition": "The resisting torque at the output: what the motor must add to move the output as the inputs say.",
+    "unit": "N·m",
+    "sign": "The joint feels -tau_r (a resisting torque opposes motion; ripple pushes and pulls with angle)."
+  },
+  "terms": {
+    "coulomb_friction": {
+      "required": true,
+      "key": true,
+      "measured_by": "velocity plateaus, both directions, 6-8 speeds, each at least one rotor turn"
+    },
+    "breakaway_torque": {
+      "required": true,
+      "key": true,
+      "measured_by": "slow plateaus below 0.5 rad/s"
+    },
+    "stribeck_velocity": {
+      "required": true,
+      "key": true,
+      "measured_by": "slow plateaus below 0.5 rad/s"
+    },
+    "sigma0": {
+      "required": true,
+      "definition": "LuGre bristle stiffness sigma0: output torque per radian of bristle deflection z.",
+      "value": "number",
+      "si_unit": "N·m/rad",
+      "units": {
+        "N·m/rad": 1
+      },
+      "positive": true,
+      "measured_by": "small reversals, recorded fast"
+    },
+    "sigma1": {
+      "required": true,
+      "definition": "LuGre bristle (micro-)damping sigma1: output torque per rad/s of bristle deflection rate.",
+      "value": "number",
+      "si_unit": "N·m·s/rad",
+      "units": {
+        "N·m·s/rad": 1,
+        "mN·m·s/rad": 0.001
+      },
+      "nonnegative": true,
+      "measured_by": "small reversals, recorded fast"
+    },
+    "sigma2": {
+      "required": true,
+      "definition": "LuGre viscous coefficient sigma2: output torque per rad/s of output speed (the other kinds' viscous_friction).",
+      "value": "number",
+      "si_unit": "N·m·s/rad",
+      "units": {
+        "N·m·s/rad": 1,
+        "mN·m·s/rad": 0.001
+      },
+      "nonnegative": true,
+      "measured_by": "velocity plateaus, both directions, 6-8 speeds, each at least one rotor turn"
+    },
+    "stribeck_exponent": {
+      "required": false,
+      "definition": "Shape exponent d of the Stribeck curve in g(v); 2 when absent.",
+      "value": "number",
+      "si_unit": "",
+      "units": {
+        "": 1
+      },
+      "positive": true,
+      "measured_by": "slow plateaus below 0.5 rad/s",
+      "default": 2
+    },
+    "output_inertia": {
+      "required": false,
+      "key": true,
+      "measured_by": "chirps (or the datasheet)"
+    }
+  },
+  "together": [],
+  "exclusive": [],
+  "constraints": [],
+  "variants": {},
+  "backends": {
+    "python": {
+      "how": "reference",
+      "implementation": "model.py",
+      "implementation_sha256": "63cb93d20325eb8bfe76e7fa2899928c725eb5de354b45619830c7ef4d59cde0",
+      "engine": null,
+      "note": "The contract's own ruler: stdlib Python, torque(terms, inputs, state, dt) -> (tau_r, state), terms in SI."
+    },
+    "js": {
+      "how": "reference",
+      "implementation": "model.js",
+      "implementation_sha256": "e8e42ee33d8acfef3fa7be6542c68ee06c165ff1dc2f3dd67787424a0009cb0a",
+      "engine": null,
+      "note": "The same equation as model.py as an ES module (torque(terms, inputs, state, dt) -> {tau, state}); tests/acceptance_v2/test_amendment_2_5.py holds the two to 1e-12."
+    },
+    "mujoco": {
+      "how": "plugin",
+      "implementation": "robotparts.mujoco",
+      "engine": "mujoco",
+      "maps": {
+        "armature": "output_inertia"
+      },
+      "settings": {
+        "friction_solref": {
+          "definition": "The joint's solreffriction (timeconst, dampratio): how hard frictionloss sticks; MuJoCo's soft default creeps below about 0.4 rad/s on a light hinge.",
+          "value": "number-list",
+          "length": 2
+        },
+        "friction_solimp": {
+          "definition": "The joint's solimpfriction (dmin, dmax, width, midpoint, power), every entry > 0.",
+          "value": "number-list",
+          "length": 5,
+          "bounds": {
+            "min": 0,
+            "min_exclusive": true
+          }
+        }
+      },
+      "note": "No native part: the plugin integrates z each step with the simulator's dt (semi-implicit, stable for any dt) and applies the whole torque."
+    }
+  },
+  "validity": {
+    "dims": {
+      "output_speed": {
+        "definition": "|v|, the output speed the terms were fitted or checked across.",
+        "unit": "rad/s"
+      }
+    },
+    "assumptions": [
+      "One bristle state for the whole drivetrain.",
+      "Pre-sliding is fitted from small reversals; larger stiction effects outside their amplitude are extrapolated."
+    ]
+  },
+  "readme": "README.md"
+}

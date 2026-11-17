@@ -1,0 +1,119 @@
+{
+  "format": "robotparts-model-definition/1",
+  "category": "actuator",
+  "word": "ripple",
+  "rung": 4,
+  "name": "M4.ripple",
+  "family": "grey box",
+  "title": "Rotor ripple map",
+  "description": "Coulomb + viscous + rotor-keyed ripple",
+  "summary": "Cogging and commutation ripple as rotor-periodic torque harmonics at the output (the torque_ripple records in one map), optionally with Coulomb and viscous friction.",
+  "equation": "tau_r = sum_k amplitude_k*sin(rotor_harmonic_k*theta_rotor + phase_k), theta_rotor = gear_ratio*theta_output in rad from the rotor zero the simulator uses (tau_r adds coulomb_friction*sign(v) + viscous_friction*v when stated)",
+  "since": "robotparts/2.3",
+  "v2_3_kind": "ripple_map",
+  "inputs": {
+    "v": {
+      "definition": "The output's angular speed.",
+      "unit": "rad/s"
+    },
+    "theta_rotor": {
+      "definition": "The rotor's angle, gear_ratio times the output angle from the rotor zero the simulator uses.",
+      "unit": "rad"
+    }
+  },
+  "state": {},
+  "output": {
+    "name": "tau_r",
+    "definition": "The resisting torque at the output: what the motor must add to move the output as the inputs say.",
+    "unit": "N·m",
+    "sign": "The joint feels -tau_r (a resisting torque opposes motion; ripple pushes and pulls with angle)."
+  },
+  "terms": {
+    "harmonics": {
+      "required": true,
+      "definition": "The ripple harmonics: a list of {rotor_harmonic, amplitude, phase}, rotor_harmonic in cycles per rotor turn (an integer >= 1, each once), amplitude in the term's unit (>= 0, the torque at the output), phase in rad.",
+      "value": "harmonic-list",
+      "si_unit": "N·m",
+      "units": {
+        "N·m": 1,
+        "mN·m": 0.001
+      },
+      "measured_by": "a rotor-angle sweep (the plateaus, if they cover more than one rotor turn)"
+    },
+    "coulomb_friction": {
+      "required": false,
+      "key": true,
+      "measured_by": "velocity plateaus, both directions, 6-8 speeds, each at least one rotor turn"
+    },
+    "viscous_friction": {
+      "required": false,
+      "key": true,
+      "measured_by": "velocity plateaus, both directions, 6-8 speeds, each at least one rotor turn"
+    },
+    "output_inertia": {
+      "required": false,
+      "key": true,
+      "measured_by": "chirps (or the datasheet)"
+    }
+  },
+  "together": [],
+  "exclusive": [],
+  "constraints": [],
+  "variants": {},
+  "backends": {
+    "python": {
+      "how": "reference",
+      "implementation": "model.py",
+      "implementation_sha256": "e30eb5e3ed7c4ae09b06fc448e31e52c81e5a4cad9bd3e9d0e61b504c6d0395c",
+      "engine": null,
+      "note": "The contract's own ruler: stdlib Python, torque(terms, inputs, state, dt) -> (tau_r, state), terms in SI."
+    },
+    "js": {
+      "how": "reference",
+      "implementation": "model.js",
+      "implementation_sha256": "31f08577ba8ccdf3c12dd8bbe672a67ac870e94b1ccb6fc348fc64cb0640ddba",
+      "engine": null,
+      "note": "The same equation as model.py as an ES module (torque(terms, inputs, state, dt) -> {tau, state}); tests/acceptance_v2/test_amendment_2_5.py holds the two to 1e-12."
+    },
+    "mujoco": {
+      "how": "plugin",
+      "implementation": "robotparts.mujoco",
+      "engine": "mujoco",
+      "maps": {
+        "armature": "output_inertia",
+        "frictionloss": "coulomb_friction",
+        "damping": "viscous_friction"
+      },
+      "settings": {
+        "friction_solref": {
+          "definition": "The joint's solreffriction (timeconst, dampratio): how hard frictionloss sticks; MuJoCo's soft default creeps below about 0.4 rad/s on a light hinge.",
+          "value": "number-list",
+          "length": 2
+        },
+        "friction_solimp": {
+          "definition": "The joint's solimpfriction (dmin, dmax, width, midpoint, power), every entry > 0.",
+          "value": "number-list",
+          "length": 5,
+          "bounds": {
+            "min": 0,
+            "min_exclusive": true
+          }
+        }
+      },
+      "note": "Friction natively; the plugin applies the ripple from the rotor angle each step."
+    }
+  },
+  "validity": {
+    "dims": {
+      "output_speed": {
+        "definition": "|v|, the output speed the terms were fitted or checked across.",
+        "unit": "rad/s"
+      }
+    },
+    "assumptions": [
+      "The ripple is periodic in the rotor angle and the same in both directions (cogging); direction-dependent ripple is not modelled.",
+      "The harmonics hold wherever the joint goes, because the magnets turn with the rotor."
+    ]
+  },
+  "readme": "README.md"
+}

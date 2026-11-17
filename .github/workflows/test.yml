@@ -1,0 +1,44 @@
+name: test
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # WHY no bytecode: it keeps __pycache__/ out of the rung folders robotparts vendors byte for byte (PEP 0004 §8.1).
+      PYTHONDONTWRITEBYTECODE: "1"
+      MPLBACKEND: Agg
+    strategy:
+      fail-fast: false
+      matrix:
+        # WHY 3.14 too: coal 3.0.2 (the test extra's pin) ships manylinux x86_64 wheels for cp311-cp314.
+        python: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      # WHY --no-sources + robot-msgs from GitHub main: [tool.uv.sources] names a local robot_msgs checkout on purpose
+      # (a consumer's lock, see pyproject.toml), which a runner does not have; PyPI's robot-msgs 0.2.0 lacks
+      # robot_msgs.control, which robot_models.homing.protocols imports.
+      # WHY the two homing ruler files are left out: every test in them reads a CAD bundle from the local cad2robot
+      # build cache (~/.cache/cad2robot-build/bundles, ROBOT_MODELS_CAD_BUNDLES), which is not published. Everything
+      # else runs: the ladder contract and ruler, datasheets, types, import direction and the homing metrics ruler.
+      - name: pytest
+        run: >-
+          uv run --isolated --no-sources --python ${{ matrix.python }}
+          --with "robot-msgs @ git+https://github.com/zacharyyamaoka/robot_msgs@main"
+          --extra test
+          python -m pytest -q -p no:cacheprovider
+          --ignore=tests/test_fit_ruler.py --ignore=tests/test_stop_ruler.py
+      # WHY: robot_models.__version__ is a literal (no importlib.metadata cost on import); this keeps it equal to
+      # pyproject.toml's version, read back from the freshly built metadata.
+      - name: __version__ matches pyproject
+        run: >-
+          uv run --isolated --no-sources --python ${{ matrix.python }}
+          --with "robot-msgs @ git+https://github.com/zacharyyamaoka/robot_msgs@main"
+          python -c "import importlib.metadata, robot_models;
+          installed = importlib.metadata.version('robot-models');
+          assert robot_models.__version__ == installed, (robot_models.__version__, installed)"

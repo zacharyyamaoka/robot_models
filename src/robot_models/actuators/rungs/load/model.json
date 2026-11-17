@@ -1,0 +1,117 @@
+{
+  "format": "robotparts-model-definition/1",
+  "category": "actuator",
+  "word": "load",
+  "rung": 3,
+  "name": "M3.load",
+  "family": "static friction",
+  "title": "Load-dependent friction",
+  "description": "Coulomb + viscous + load",
+  "summary": "Coulomb friction that grows with the load torque the part transmits (gear mesh friction), plus viscous friction.",
+  "equation": "tau_r = (coulomb_friction + friction_load_coefficient*|tau_load|)*sign(v) + viscous_friction*v, tau_load the output load torque",
+  "since": "robotparts/2.3",
+  "v2_3_kind": "load_dependent",
+  "inputs": {
+    "v": {
+      "definition": "The output's angular speed.",
+      "unit": "rad/s"
+    },
+    "tau_load": {
+      "definition": "The load torque the part transmits at the output (what it carries besides its own friction).",
+      "unit": "N·m"
+    }
+  },
+  "state": {},
+  "output": {
+    "name": "tau_r",
+    "definition": "The resisting torque at the output: what the motor must add to move the output as the inputs say.",
+    "unit": "N·m",
+    "sign": "The joint feels -tau_r (a resisting torque opposes motion; ripple pushes and pulls with angle)."
+  },
+  "terms": {
+    "coulomb_friction": {
+      "required": true,
+      "key": true,
+      "measured_by": "velocity plateaus, both directions, 6-8 speeds, each at least one rotor turn"
+    },
+    "viscous_friction": {
+      "required": true,
+      "key": true,
+      "measured_by": "velocity plateaus, both directions, 6-8 speeds, each at least one rotor turn"
+    },
+    "friction_load_coefficient": {
+      "required": true,
+      "key": true,
+      "measured_by": "pendulum sweeps with 2-3 masses"
+    },
+    "output_inertia": {
+      "required": false,
+      "key": true,
+      "measured_by": "chirps (or the datasheet)"
+    }
+  },
+  "together": [],
+  "exclusive": [],
+  "constraints": [],
+  "variants": {},
+  "backends": {
+    "python": {
+      "how": "reference",
+      "implementation": "model.py",
+      "implementation_sha256": "03b5cb124ad4a66bffa3298b4fccf831f17c33c147d15c43d99ef44920587033",
+      "engine": null,
+      "note": "The contract's own ruler: stdlib Python, torque(terms, inputs, state, dt) -> (tau_r, state), terms in SI."
+    },
+    "js": {
+      "how": "reference",
+      "implementation": "model.js",
+      "implementation_sha256": "d50eb2222039019497aa11972aca5479a7517a429ef2b99c28cd8655c9b3a0d0",
+      "engine": null,
+      "note": "The same equation as model.py as an ES module (torque(terms, inputs, state, dt) -> {tau, state}); tests/acceptance_v2/test_amendment_2_5.py holds the two to 1e-12."
+    },
+    "mujoco": {
+      "how": "plugin",
+      "implementation": "robotparts.mujoco",
+      "engine": "mujoco",
+      "maps": {
+        "armature": "output_inertia",
+        "frictionloss": "coulomb_friction",
+        "damping": "viscous_friction"
+      },
+      "settings": {
+        "friction_solref": {
+          "definition": "The joint's solreffriction (timeconst, dampratio): how hard frictionloss sticks; MuJoCo's soft default creeps below about 0.4 rad/s on a light hinge.",
+          "value": "number-list",
+          "length": 2
+        },
+        "friction_solimp": {
+          "definition": "The joint's solimpfriction (dmin, dmax, width, midpoint, power), every entry > 0.",
+          "value": "number-list",
+          "length": 5,
+          "bounds": {
+            "min": 0,
+            "min_exclusive": true
+          }
+        }
+      },
+      "note": "The unloaded level sticks natively; the plugin raises the joint's frictionloss each step by friction_load_coefficient * |tau_load|."
+    }
+  },
+  "validity": {
+    "dims": {
+      "output_speed": {
+        "definition": "|v|, the output speed the terms were fitted or checked across.",
+        "unit": "rad/s"
+      },
+      "load_torque": {
+        "definition": "|tau_load|, the load the friction-load coefficient was fitted across.",
+        "unit": "N·m"
+      }
+    },
+    "assumptions": [
+      "Friction grows linearly with the load the gear mesh carries, the same in both directions.",
+      "Valid across the loads it was fitted on."
+    ]
+  },
+  "readme": "README.md"
+}
