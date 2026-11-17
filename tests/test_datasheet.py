@@ -305,3 +305,20 @@ def test_load_source_binds_each_value_to_its_source(tmp_path):
     assert maker["A"].peak_torque.source.label == "maker·A"
     assert maker["A"].peak_torque.anchor == "text=Stall%20Torque"
     assert isinstance(sources.maker, Source) and issubclass(IntegratedServo, Datasheet)
+
+
+def test_a_private_source_keeps_its_hash_out_of_the_py(tmp_path):
+    import hashlib
+    import pytest
+    from robot_models.datasheet import Source
+    with pytest.raises(ValueError, match="private"):
+        Source("seller chat", kind="manufacturer", file="chat.webp", sha256="ab" * 32, private=True)
+    raw = tmp_path / "sources" / "chat.webp"
+    raw.parent.mkdir()
+    raw.write_bytes(b"private bytes")
+    source = Source("seller chat", kind="manufacturer", file="chat.webp", private=True, folder=tmp_path)
+    assert source.pinned_sha256 is None  # no sidecar yet
+    (tmp_path / "sources" / "chat.webp.sha256").write_text(hashlib.sha256(b"private bytes").hexdigest() + "\n")
+    assert source.pinned_sha256 == source.file_sha256()
+    public = Source("page", kind="manufacturer", file="page.html", sha256="cd" * 32)
+    assert public.pinned_sha256 == "cd" * 32

@@ -68,6 +68,8 @@ class Source:
     - `columns`: the source's variant columns (driver boards, windings, units on a rack), when it has several.
     - `applies_to`: the model the document is for, when not this part (a sibling's drawing). Such a source is shown,
       never preferred: a value is taken from it only by an explicit pick.
+    - `private`: a document only Zach holds (a seller's chat). Its sha256 stays out of the .py, pinned instead in a
+      git-ignored `<raw file>.sha256` sidecar (`pinned_sha256`), so no tracked file identifies it.
 
     `name` (the file's stem), `column`, `folder`, `values`, `extra` and `type` are set by the loader.
     """
@@ -84,6 +86,7 @@ class Source:
     applies_to: str | None = None
     where: str | None = None
     note: str | None = None
+    private: bool = False
     name: str | None = None
     column: str | None = None
     folder: pathlib.Path | None = field(default=None, compare=False, repr=False)
@@ -97,6 +100,11 @@ class Source:
         for role in self.roles:
             if role not in ROLES:
                 raise ValueError(f"Source({self.title!r}): role {role!r} is not one of {', '.join(ROLES)}")
+        if self.private and self.sha256:
+            # WHY (2026-11-16, robotparts PEP 0005): a private document's hash identifies it, so it never enters a
+            # tracked file; it is pinned in a git-ignored sidecar beside the raw file instead (pinned_sha256)
+            raise ValueError(f"Source({self.title!r}) is private: keep its sha256 out of the .py, in "
+                             f"sources/<file>.sha256 beside the raw file")
         if self.column is not None and self.column not in self.columns:
             raise KeyError(f"{self.title}: no column {self.column!r}; it has {', '.join(self.columns) or 'none'}")
 
@@ -126,6 +134,20 @@ class Source:
     def states_anything(self) -> bool:
         """False for a header with no values yet: a raw file catalogued, not transcribed."""
         return bool(self.values or self.extra)
+
+    @property
+    def sidecar(self) -> pathlib.Path | None:
+        """Where a private source pins its hash: `<raw file>.sha256` beside the raw file (git-ignored with it)."""
+        path = self.path
+        return path.with_name(path.name + ".sha256") if path is not None else None
+
+    @property
+    def pinned_sha256(self) -> str | None:
+        """The hash this source was parsed from: in the .py, or for a private source in its sidecar file."""
+        if not self.private:
+            return self.sha256
+        sidecar = self.sidecar
+        return sidecar.read_text().split()[0] if sidecar is not None and sidecar.is_file() else None
 
     def file_sha256(self) -> str | None:
         """The sha256 of the first raw file as it is on disk now, or None when it is not here."""
