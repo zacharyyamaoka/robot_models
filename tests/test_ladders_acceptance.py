@@ -228,9 +228,9 @@ TYPES: dict[str, T] = {
             R("M4.drivetrain", "The drivetrain: ripple, backlash and compliance on the full friction model",
               "M3.weakening_capture", ("harmonics", "backlash", "torsional_stiffness"),
               composes=(("foc_controller", "M1.delay_loop"),),
-              equation=("J q̈ = tau_drive − tau_r; tau_r = level(v)·sign(v) + viscous_friction·v + the harmonics; the "
-                        "output across a backlash gap and torsional_stiffness; tau_drive from foc_controller "
-                        "M1.delay_loop"),
+              equation=("output_inertia·q̈ = tau_drive − tau_r; tau_r = level(v)·sign(v) + viscous_friction·v + "
+                        "the harmonics; the output across a backlash gap and torsional_stiffness; tau_drive from "
+                        "foc_controller M1.delay_loop"),
               refs=("JAHNS_1996", "NORDIN_2002", "TUTTLE_1996", "KRISHNAN_2010"),
               note="sim2real's servo M4, the rack twin (today's model), less its heat: that is M5.envelope's."),
             R("M5.dcmotor", "MuJoCo's DC motor: electrics, heat, cogging and LuGre friction", "M3.lugre",
@@ -246,7 +246,9 @@ TYPES: dict[str, T] = {
               composes=(("foc_controller", "M2.ceiling_heat"),),
               equation=("kt_out = kt·gear_ratio, R = resistance_line_to_line/2 per phase: motoring torque ≤ "
                         "kt_out·(voltage_available − |v|·kt_out/1.5)/R; any torque ≤ kt_out·I_max (the deployment's "
-                        "current cap); winding rise T: thermal_time_constant·dT/dt = thermal_resistance·i²R − T"),
+                        "current cap); winding rise ΔT over ambient: "
+                        "thermal_time_constant·dΔT/dt = thermal_resistance·1.5·i²R − ΔT "
+                        "(the three phases' copper loss, i the phase-current amplitude)"),
               refs=("KRAUSE_2013", "KRISHNAN_2010", "MUJOCO_DCMOTOR"),
               note=("sim2real's servo M5 (the envelope ladder): the rack twin plus the drive's ceiling and the motor's "
                     "electrics; the heat the twin carries at its M4 sits here, robotparts' layer 5.")),
@@ -348,25 +350,42 @@ TYPES: dict[str, T] = {
               equation="τ_r = coulomb_friction·sign(ω) + viscous_friction·ω", refs=("ARMSTRONG_1994", "OLSSON_1998"),
               note=("the actuator's M2 on a bare motor: robotparts' actuator rungs cover its category, and its "
                     "coverage ruler asks a BLDC motor's M2 for both.")),
-            R("M4.ripple", "Cogging: rotor-periodic ripple", "M2.coulomb_viscous", ("harmonics",),
+            # WHY (PEP 0004 amendment 1): robotparts' coverage ruler asks a BLDC motor's M3 for breakaway_torque
+            # and stribeck_velocity; sim2real's motor card has no M3 to say otherwise.
+            R("M3.stribeck", "Stribeck friction: breakaway falling to Coulomb with shaft speed", "M2.coulomb_viscous",
+              ("breakaway_torque", "stribeck_velocity"), ("stribeck_exponent",),
+              equation=("τ_r = (coulomb_friction + (breakaway_torque − coulomb_friction)·exp(−(|ω|/stribeck_velocity)"
+                        "^stribeck_exponent))·sign(ω) + viscous_friction·ω"),
+              refs=("ARMSTRONG_1994", "OLSSON_1998"),
+              note=("the actuator's M3.stribeck on a bare motor, whose output is the shaft: robotparts' coverage "
+                    "ruler asks a BLDC motor's M3 for both.")),
+            R("M4.ripple", "Cogging: rotor-periodic ripple", "M3.stribeck", ("harmonics",),
               equation="τ = kt·i − Σ_k amplitude_k·sin(k·θ + phase_k)", refs=("JAHNS_1996",),
               note="sim2real's motor M4; a datasheet's torque_ripple states one amplitude of it."),
             R("M5.dcmotor", "DC motor electrics and heat", "M4.ripple",
               ("resistance_line_to_line", "inductance_line_to_line", "thermal_resistance", "thermal_time_constant"),
-              equation=("τ = kt·i; V = R·i + L·di/dt + back_emf_constant·ω, R and L per phase (half the line-to-line "
-                        "values on a wye winding); thermal_time_constant·dT/dt = thermal_resistance·i²R − T"),
+              equation=("τ = kt·i, i the phase-current amplitude; per phase on a wye winding: "
+                        "V = (resistance_line_to_line/2)·i + (inductance_line_to_line/2)·di/dt "
+                        "+ (back_emf_constant/√3)·ω; "
+                        "thermal_time_constant·dΔT/dt = thermal_resistance·(3/4)·resistance_line_to_line·i² − ΔT, "
+                        "ΔT the winding's rise over ambient (the three phases' copper loss)"),
               refs=("KRAUSE_2013", "KRISHNAN_2010", "MUJOCO_DCMOTOR"),
               note="sim2real's motor M5 (today's model): the actuator's M5 on a bare motor, without LuGre friction."),
             R("M5.wear", "Bearing friction that grows with hours", "M5.dcmotor", ("friction_growth",),
-              wears=(("coulomb_friction", *HOURS, "linear", "friction_growth"),),
-              equation="coulomb_friction(h) = coulomb_friction + friction_growth·h",
+              wears=(("breakaway_torque", *HOURS, "linear", "friction_growth"),
+                     ("coulomb_friction", *HOURS, "linear", "friction_growth")),
+              equation=("breakaway_torque and coulomb_friction both grow by friction_growth·h "
+                        "(the Stribeck drop stays)"),
               refs=("LU_MEEKER_1993", "ARMSTRONG_1994")),
             residual("M5.wear", "M5.wear + an MLP residual shaft torque from 3 samples of q-axis current, rotor speed "
                                 "and winding temperature", ("NGUYEN_TUONG_2010", "ZENG_2020")),
             learned("an MLP over 3 samples of q-axis current command and rotor speed → shaft torque",
                     ("HWANGBO_2019", "HWANGBO_2019_ARXIV")),
         ),
-        parameters={"harmonics": DRIVETRAIN["harmonics"], **HEAT, "friction_growth": FRICTION_GROWTH},
+        parameters={
+            **{name: FRICTION[name] for name in ("breakaway_torque", "stribeck_velocity", "stribeck_exponent")},
+            "harmonics": DRIVETRAIN["harmonics"], **HEAT, "friction_growth": FRICTION_GROWTH,
+        },
         aliases={
             **MOTOR_DATASHEET_ALIASES,
             # sim2real's motor card
@@ -405,8 +424,8 @@ TYPES: dict[str, T] = {
               equation=("τ_out = efficiency·gear_ratio·τ_in; output_friction_fraction of the friction acts on the "
                         "output side"),
               refs=("KIRCANSKI_1997", "OLSSON_1998"),
-              note=("sim2real's gearbox M3. A fit sets efficiency (η) or friction_load_coefficient (μ), never both: "
-                    "driving forward μ = (1 − η)/η.")),
+              note=("sim2real's gearbox M3. efficiency (η) is needed; friction_load_coefficient (μ) is read only "
+                    "when a source states μ, and then the two agree: driving forward μ = (1 − η)/η.")),
             R("M4.drivetrain", "Backlash and torsional stiffness", "M3.load", ("backlash", "torsional_stiffness"),
               equation="q_out = q_in/gear_ratio + lash(τ, backlash) + τ/torsional_stiffness",
               refs=("KIRCANSKI_1997", "NORDIN_2002", "TUTTLE_1996")),
@@ -515,7 +534,8 @@ TYPES: dict[str, T] = {
               refs=("ZHAO_2024",)),
             R("M2.wear", "A mount that loosens over vibration hours", "M2.eccentricity", ("eccentricity_growth",),
               wears=(("eccentricity_harmonics", *VIBRATION, "sqrt", "eccentricity_growth"),),
-              equation="e(h) = e + eccentricity_growth·√h", refs=("JUNKER_1969", "WHITMORE_1995")),
+              equation=("amplitude_k(h) = amplitude_k + eccentricity_growth·√h for each eccentricity harmonic "
+                        "(its harmonic and phase stay)"), refs=("JUNKER_1969", "WHITMORE_1995")),
         ),
         parameters={
             "counts_per_rev": ("1/rev", "integer", ("Distinct readings per revolution of the shaft it reads: its "
@@ -583,10 +603,12 @@ TYPES: dict[str, T] = {
         title="A stereo depth camera: depth on top of a colour stream.",
         cards=("camera_rgbd",), category="camera", datasheet=None,
         rungs=(
-            R("M0.stereo", "Ideal stereo", None, ("baseline", "depth_scale", "depth_to_color"),
-              equation="z = f·baseline/d, scaled by depth_scale", refs=("KHOSHELHAM_2012",)),
+            R("M0.stereo", "Ideal stereo", None,
+              ("stereo_focal_length", "baseline", "depth_scale", "depth_to_color"),
+              equation="z = stereo_focal_length·baseline/d, d the disparity, scaled by depth_scale",
+              refs=("KHOSHELHAM_2012",)),
             R("M1.disparity_noise", "Disparity noise", "M0.stereo", ("subpixel_sigma",),
-              equation="σ_z = z²·subpixel_sigma/(f·baseline)", refs=("KHOSHELHAM_2012",)),
+              equation="σ_z = z²·subpixel_sigma/(stereo_focal_length·baseline)", refs=("KHOSHELHAM_2012",)),
             R("M2.depth_bias", "Depth bias", "M1.disparity_noise", ("depth_bias_coeffs",),
               equation="z_true = z + b(u, v, z), b from depth_bias_coeffs", refs=("HERRERA_2012",)),
             R("M2.wear", "A depth-to-colour mount that loosens over vibration hours", "M2.depth_bias",
@@ -597,6 +619,8 @@ TYPES: dict[str, T] = {
                      ("SCHOPS_2020", "HERRERA_2012")),
         ),
         parameters={
+            "stereo_focal_length": ("px", "scalar", ("The stereo imagers' rectified focal length (on a typical unit "
+                                                     "the IR pair): the f of triangulation, not the colour camera's.")),
             "baseline": ("m", "scalar", "Distance between the stereo pair's optical centres."),
             "depth_scale": ("m", "scalar", "Metres per unit of the depth image."),
             "depth_to_color": ("m, rad", "pose", "The depth frame's pose in the colour camera's frame."),
@@ -639,8 +663,9 @@ TYPES: dict[str, T] = {
             "smile_keystone_map": ("px", "map", ("The spectral (smile) and spatial (keystone) distortion map the cube "
                                                  "is resampled with.")),
             "line_geometry": ("m, rad", "pair", "The scan line's pose, and the belt distance per line."),
-            "reference_drift": ("DN/h", "scalar", ("How fast the dark and white references drift per deployment hour "
-                                                   "(lamp ageing, dark current).")),
+            "reference_drift": ("DN/h", "scalar", ("How fast the white reference's DN drifts per deployment hour "
+                                                   "(lamp ageing). The dark reference drifts the other way "
+                                                   "(dark current) and is not modelled by this rate.")),
         },
         aliases={"reference_drift_per_h": a("reference_drift")},
     ),
@@ -654,12 +679,13 @@ TYPES: dict[str, T] = {
             R("M1.zero_offsets", "Joint zero offsets", "M0.nominal", ("joint_zero_offsets",),
               equation="tool = FK(q + joint_zero_offsets; link_geometry)", refs=("HOLLERBACH_WAMPLER_1996",)),
             R("M2.geometric", "Geometric (DH) errors", "M1.zero_offsets", ("dh_errors",),
-              equation="tool = FK(q + joint_zero_offsets; DH + dh_errors)",
+              equation="tool = FK(q + joint_zero_offsets; link_geometry + dh_errors)",
               refs=("HAYATI_1983", "OKAMURA_1996", "HOLLERBACH_2016"),
               note="sim2real's arm M2: the kinematic branch of an open chain."),
             R("M2.inertial", "Link inertials and loop closure", "M1.zero_offsets",
               ("link_inertials", "closure_tolerance"),
-              equation=("tip = FK(q + joint_zero_offsets); dynamics from link_inertials with each joint's own type; "
+              equation=("tool = FK(q + joint_zero_offsets; link_geometry); dynamics from link_inertials with each "
+                        "joint's own type; "
                         "a closed loop may stay open by closure_tolerance"),
               refs=("ATKESON_1986", "GAUTIER_1990", "SWEVERS_1997"),
               note="sim2real's arm sub-assembly M2: the dynamic branch, which needs no DH errors."),
@@ -669,7 +695,8 @@ TYPES: dict[str, T] = {
               refs=("JUNKER_1969", "WHITMORE_1995")),
             R("M3.compliance", "Joint compliance and link inertials", "M2.geometric",
               ("joint_compliance", "link_inertials"),
-              equation="tool = FK(q + joint_zero_offsets + joint_compliance·τ; DH + dh_errors); joints are their types",
+              equation=("tool = FK(q + joint_zero_offsets + joint_compliance·τ; link_geometry + dh_errors); τ from "
+                        "link_inertials, each joint its own type"),
               refs=("SPONG_1987", "ATKESON_1986", "GAUTIER_1990", "SWEVERS_1997")),
             R("M3.wear", "Joint compliance that grows with use (Archard)", "M3.compliance", ("compliance_wear",),
               wears=(("joint_compliance", "torque-weighted joint revolutions", "N·m·rev", "archard",
@@ -677,7 +704,8 @@ TYPES: dict[str, T] = {
               equation="joint_compliance(u) = joint_compliance + compliance_wear·Σ|τ|·Δrev",
               refs=("ARCHARD_1953", "FLODIN_1997")),
             residual("M3.wear", "M3.wear + an MLP residual of joint torques from 3 samples of each joint's error, "
-                                "speed and torque", ("NGUYEN_TUONG_2010", "ZENG_2020")),
+                                "speed and torque, added to M3.compliance's τ, so it moves the tool through the "
+                                "compliance", ("NGUYEN_TUONG_2010", "ZENG_2020")),
             R("M6.inertial_residual", "Grey-box residual on M2.wear", "M2.wear",
               equation="M2.wear + an MLP residual of joint torques from 3 samples of each joint's error, speed and "
                        "torque", refs=("NGUYEN_TUONG_2010", "ZENG_2020"),
@@ -720,8 +748,9 @@ TYPES: dict[str, T] = {
             R("M1.width_map", "Finger width map", "M0.tcp", ("finger_width_map",),
               equation="width = finger_width_map(command)", refs=("PRATTICHIZZO_2016",)),
             R("M2.contact", "Grip force and contact friction", "M1.width_map", ("grip_force_map", "contact_friction"),
-              equation="force = grip_force_map(command, width); the object holds while |tangential| ≤ "
-                       "contact_friction·force", refs=("PRATTICHIZZO_2016", "MUJOCO_CONTACT")),
+              equation=("force = grip_force_map(command, width); the object holds while, at each contact, "
+                        "|tangential| ≤ contact_friction·force (two pads hold about twice one pad's)"),
+              refs=("PRATTICHIZZO_2016", "MUJOCO_CONTACT")),
             R("M2.wear", "Finger pads that glaze with grasps", "M2.contact", ("contact_friction_change",),
               wears=(("contact_friction", "grasp cycles", "cycle", "linear", "contact_friction_change"),),
               equation="contact_friction(n) = contact_friction + contact_friction_change·n",
@@ -760,13 +789,17 @@ TYPES: dict[str, T] = {
                         "·sign(ẋ) + viscous_friction·ẋ"),
               refs=("ARMSTRONG_1994",), note="the actuator's M3.stribeck as forces on the belt."),
             R("M4.stretch", "Belt stretch: drum and load as two masses", "M3.stribeck",
-              ("stretch_stiffness", "stretch_damping"),
-              equation=("load: (moving_mass + load)·ẍ_l = stretch_stiffness·(x_d − x_l) + stretch_damping·(ẋ_d − ẋ_l) "
-                        "− F_f; drum: m_d·ẍ_d = gear_ratio·τ/drum_radius − the same stretch force"),
-              refs=("SPONG_1987", "HE_2017")),
+              ("stretch_stiffness", "stretch_damping", "drum_mass"),
+              equation=("drum: drum_mass·ẍ_d = gear_ratio·τ/drum_radius − stretch_stiffness·(x_d − x_l) "
+                        "− stretch_damping·(ẋ_d − ẋ_l); load: (moving_mass − drum_mass + load)·ẍ_l = the same "
+                        "stretch force − F_f"),
+              refs=("SPONG_1987", "HE_2017"),
+              note="M4 splits moving_mass: drum_mass on the drive side of the stretch, the rest moves with the load."),
             R("M4.wear", "Friction that grows with belt distance", "M4.stretch", ("friction_growth",),
-              wears=(("coulomb_friction", "belt distance", "km", "linear", "friction_growth"),),
-              equation="coulomb_friction(s) = coulomb_friction + friction_growth·s",
+              wears=(("breakaway_force", "belt distance", "km", "linear", "friction_growth"),
+                     ("coulomb_friction", "belt distance", "km", "linear", "friction_growth")),
+              equation=("breakaway_force and coulomb_friction both grow by friction_growth·s "
+                        "(the Stribeck drop stays)"),
               refs=("LU_MEEKER_1993", "ZHANG_XIA_2011")),
             residual("M4.wear", "M4.wear + an MLP residual drive force from 3 samples of belt speed error, belt speed "
                                 "and motor current", ("NGUYEN_TUONG_2010", "ZENG_2020")),
@@ -786,8 +819,11 @@ TYPES: dict[str, T] = {
                                                     "coulomb_friction.")),
             "stretch_stiffness": ("N/m", "scalar", "The belt's stiffness along its length, between drum and load."),
             "stretch_damping": ("N·s/m", "scalar", "Damping of the belt's stretch between drum and load."),
-            "friction_growth": ("N/km", "scalar", ("How fast coulomb_friction grows per kilometre of belt travel "
-                                                   "(idlers and slider bed wearing).")),
+            "drum_mass": ("kg", "scalar", ("The drive side's mass referred to the belt, read from M4: the drum and "
+                                           "the reflected rotor; moving_mass less drum_mass moves with the load.")),
+            "friction_growth": ("N/km", "scalar", ("How fast the friction level grows per kilometre of belt travel "
+                                                   "(idlers and slider bed wearing); breakaway_force and "
+                                                   "coulomb_friction grow together.")),
         },
         aliases={
             "drum_radius_m": a("drum_radius"),
@@ -992,7 +1028,7 @@ def ladder_of(type_name: str) -> Ladder:
 def test_the_spec_is_itself_a_valid_ladder():
     built = {name: build(name) for name in TYPES}
     assert len(built) == 12
-    assert sum(len(ladder.rungs) for ladder in built.values()) == 83
+    assert sum(len(ladder.rungs) for ladder in built.values()) == 84  # 83 + bldc_motor's M3.stribeck (amendment 1)
     for ladder in built.values():
         for rung in ladder.rungs:
             for other, key in rung.composes:
