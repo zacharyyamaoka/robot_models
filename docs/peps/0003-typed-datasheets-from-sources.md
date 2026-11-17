@@ -1,6 +1,8 @@
 # PEP 0003: Typed datasheets, resolved from one Python file per raw source
 
-- **Status:** accepted and built, 2026-11-16 (tracer on two parts; the other 13 user parts are listed under §9)
+- **Status:** accepted and built, 2026-11-16 (tracer on two parts; the other 13 user parts are listed under §9).
+  **Amended 2026-11-17** (amendment 1, at the end): a source file calls the type with keywords; a raw file sits in
+  `sources/` named like its `.py`; the header says what the file is (`role=`).
 - **Ask:** Zach, daily note 2026-11-16, "Ok what snext?" → "Do you think I should be taking a different architecture"
   (vault `Sources/Daily Notes/Daily Note - Nov 16 2026.md`). In short: give each RobotPart a type with known typed
   fields plus a dict for custom ones; robot_models holds the types in the same folder tree, each with a ladder of
@@ -219,3 +221,32 @@ step 7 of the layering plan.
 
 `git revert` the robot_models commit and the robotparts commit (the handoff names both). The old part files come
 back, and the raw files are untouched (git-ignored).
+
+## Amendment 1 (2026-11-17): the typed call, the raw file beside its .py, and `role`
+
+**Ask:** Zach, daily note 2026-11-16: "To get type completion you should be filling in these values from the models
+though ... Please make 5 proposals for what the source file here can look like", and "move the raw sources files into
+the folder as well ... the file names should be the exact same for the sources so its just like the .pdf or .py".
+The five proposals, side by side with a VS Code completion screenshot each: robotparts
+`reports/source-file-proposals-2026-11-16.html`. Proposal 1 is applied.
+
+- **A source file calls the part type with one keyword per value** (`values = IntegratedServo(peak_torque=Stated(...),
+  ..., extra={...})`). The editor completes the field names from the dataclass's own signature and marks an unknown
+  one; the type stays a frozen dataclass; nothing is generated. Replaces §4's one top-level line per value, which no
+  editor can complete (the names were free module globals). The loader refuses the old form with the new spelling.
+- **A per-column value is checked column by column** (`check_value`), so the type accepts a source's
+  `{"GDZ34": 3.82, "GDS34": 3.47}`; a resolved datasheet still holds one value per field (`from_sources` reads through
+  one column).
+- **The source's type must be one the part type extends** (`check_source`): a `BldcMotor(...)` statement can feed an
+  `IntegratedServo` part, a `Gearbox(...)` one cannot.
+- **`Source.role`** (`ROLES`: datasheet, 2d_drawing, cad, product_page, manual, seller_chat, photo; one or a tuple) says
+  what the raw document is. It moved out of the file name because the name now pairs the raw file with its `.py`
+  (`sources/steadywin_page.html` + `sources/steadywin_page.py`). `kind` stays who says it.
+- **`file` is relative to `sources/`**, and **a header with no `values` is allowed**: a raw file catalogued (its role,
+  origin and bytes) but not transcribed yet. `Datasheet.stating()` / `columns()` leave such sources out of the table.
+- **`literal.read(path)`** reads a source file without running it (header, type name, values, extra), refusing any file
+  `literal.problems` flags; `values` must call a name imported from robot_models. robotparts' coverage table reads
+  headers this way, so it stays true over a `git archive`.
+
+Undo: `git revert` this amendment's robot_models commit together with robotparts' (the two move together: robotparts'
+source files use the new form).

@@ -1,6 +1,7 @@
 """robot_models.datasheet: typed part fields, and a part's values resolved from its raw sources (PEP 0003).
 
-    from robot_models.datasheet import Source, Stated          # what a sources/<name>.py writes
+    from robot_models.datasheet import Source, Stated          # what a sources/<name>.py writes, with its type:
+    values = IntegratedServo(peak_torque=Stated(3.47, "N·m", "堵转扭矩(Stall Torque)"), ...)
     from robot_models.datasheet import Sources                 # what a part file loads
     from robot_models.actuators.servo import IntegratedServo   # a type: its typed fields
 
@@ -24,7 +25,7 @@ from .datasheet import (
     check_value,
     reflected,
 )
-from .source import KINDS, ColumnError, Source, Sources, load_source
+from .source import KINDS, ROLES, ColumnError, Role, Source, Sources, load_source
 from .stated import Stated
 
 __all__ = [
@@ -34,12 +35,14 @@ __all__ = [
     "INTERFACES",
     "KEY_SPECS",
     "KINDS",
+    "ROLES",
     "MECHANICAL",
     "PERFORMANCE",
     "ColumnError",
     "Datasheet",
     "Disagreement",
     "Field",
+    "Role",
     "FieldSpec",
     "Source",
     "Sources",

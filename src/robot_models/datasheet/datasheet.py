@@ -70,7 +70,9 @@ def Field(units: Mapping[str, float], definition: str, *, group: str, kind: str 
     if group not in GROUPS or group in (KEY_SPECS, EXTRA):
         raise ValueError(f"group {group!r}: one of {', '.join(GROUPS[1:-1])} (key specs are the type's KEY_SPECS)")
     spec = FieldSpec(dict(units), definition, group, kind, positive, side, reflect)
-    return field(default=None, metadata={"datasheet": spec})
+    # WHY kw_only: a source file names every value (`peak_torque=Stated(...)`), so the editor's signature and
+    # completion list the fields by name, and a bare positional Stated can never land in the wrong field
+    return field(default=None, kw_only=True, metadata={"datasheet": spec})
 
 
 @dataclass(frozen=True)
@@ -93,10 +95,12 @@ class Datasheet:
 
     KEY_SPECS: ClassVar[tuple[str, ...]] = ()
 
-    extra: Mapping[str, Stated] = field(default_factory=dict)
-    sources: tuple[Source, ...] = field(default=(), compare=False, repr=False)
-    prefer: tuple[Source, ...] = field(default=(), compare=False, repr=False)
-    picks: Mapping[str, Source] = field(default_factory=dict, compare=False, repr=False)
+    extra: Mapping[str, Stated] = field(default_factory=dict, kw_only=True)
+    # WHY init=False: set only by from_sources, never written in a source file, so they stay out of the signature the
+    # editor shows while he types a source's values
+    sources: tuple[Source, ...] = field(default=(), init=False, compare=False, repr=False)
+    prefer: tuple[Source, ...] = field(default=(), init=False, compare=False, repr=False)
+    picks: Mapping[str, Source] = field(default_factory=dict, init=False, compare=False, repr=False)
 
     # --- the type ---------------------------------------------------------------------------------------------
 
@@ -182,7 +186,10 @@ class Datasheet:
             stated = values[name]
             if stated is not None and stated.at is not None and spec.side is not None and stated.at != spec.side:
                 values[name] = reflected(name, spec, stated, gear_ratio)
-        return cls(**values, extra=extra, sources=everything, prefer=prefer, picks=pick)
+        sheet = cls(**values, extra=extra)
+        for name, value in (("sources", everything), ("prefer", prefer), ("picks", pick)):
+            object.__setattr__(sheet, name, value)  # the frozen instance's bookkeeping, filled once, right here
+        return sheet
 
     # --- reading every statement ------------------------------------------------------------------------------
 
@@ -201,10 +208,15 @@ class Datasheet:
                 found.append(stated)
         return found
 
+    def stating(self) -> list[Source]:
+        """The sources that state at least one value: a header with no values (a photo, a CAD file, a manual not read
+        yet) catalogues a raw file and is not a column."""
+        return [source for source in self.sources if source.states_anything]
+
     def columns(self) -> list[Source]:
         """One entry per source and column, in table order: the preferred sources in their order, then the rest by
-        name; a source's columns in the source's own order."""
-        by_name = {source.name: source for source in self.sources}
+        name; a source's columns in the source's own order. Only sources that state something."""
+        by_name = {source.name: source for source in self.stating()}
         names = dict.fromkeys([source.name for source in self.prefer] + sorted(by_name))
         return [view for name in names if name in by_name for view in by_name[name].statements()]
 
@@ -278,7 +290,11 @@ def check_value(type_name: str, name: str, spec: FieldSpec, stated: Any) -> None
     if not isinstance(stated, Stated):
         raise TypeError(f"{where} must be a Stated(...), not {stated!r}")
     if stated.by_column:
-        raise ValueError(f"{where} has one value per column ({stated.text()}): a datasheet holds one; pick a column")
+        # a source's statement may give one value per column (a driver board, a winding): each is checked alone. A
+        # resolved datasheet never holds one: from_sources reads each source through one column.
+        for column in stated.value:
+            check_value(type_name, name, spec, stated.for_column(column))
+        return
     unit = stated.unit or ""
     if unit not in spec.units:
         accepted = ", ".join(repr(u) for u in spec.units) or "none"
@@ -295,8 +311,12 @@ def check_value(type_name: str, name: str, spec: FieldSpec, stated: Any) -> None
 
 
 def check_source(cls: type[Datasheet], source: Source) -> None:
-    """Every value a source states is a typed field of `cls` in an accepted unit; every extra key is not."""
+    """Every value a source states is a typed field of `cls` in an accepted unit; every extra key is not. A source
+    written as another type must be one `cls` extends (a BldcMotor statement can feed an IntegratedServo)."""
     fields = cls.typed_fields()
+    if source.type is not None and not issubclass(cls, source.type):
+        raise TypeError(f"sources/{source.name}.py is written as {source.type.__name__}(...), but this part is "
+                        f"{cls.__name__}, which does not extend it")
     for name, stated in source.values.items():
         if name not in fields:
             near = difflib.get_close_matches(name, list(fields), n=1)
