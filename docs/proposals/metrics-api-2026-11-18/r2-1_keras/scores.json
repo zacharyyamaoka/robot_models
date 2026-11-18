@@ -1,0 +1,41 @@
+{
+ "scores": {
+  "lg": {
+   "score": 5,
+   "evidence": "Every name on the glance is imported on it, the data's origin is in its first comment (round 1's fixture.py, the one-joint rack's 252 real recordings); the verbs are update / compute / reset and plain function calls; each output is a dict of numbers keyed 'name (unit)', two small tables (CAN 11 by rung; pass / FAIL per station and rung) or True. 22 lines of code, the contract's 8 steps in order."
+  },
+  "fr1": {
+   "score": 5,
+   "evidence": "Each part type is one function returning configured metric objects (name, description, references, unit on every card); PART_TYPES pairs each with its models (IntegratedServo's 14). Caveat: the pairing is a dict in a proposal module, not yet an attribute on the ModelFamily."
+  },
+  "fr2": {
+   "score": 3,
+   "evidence": "One update per recording; one rung_table call for runs -> rung; pooled vs per-run stated per metric (across_runs on every card). Station and deployment are thresholds read over the table (judge, highest_rung), not one roll-up call."
+  },
+  "fr3": {
+   "score": 3,
+   "evidence": "live == offline exactly (running sums in row order, round 1's per-sample stop tracker), stops safe across chunk boundaries, alignment stated and enforced (unaligned or backwards rows refused). Memory grows with the stop count, and with every row for Lag: not bounded."
+  },
+  "fr4": {
+   "score": 5,
+   "evidence": "Threshold(at_most, unit, owner) never enters a metric; owners Zach / agent / proposed on every line of the three gates; the verdict shows the median and the worst stop per rung cell (36 of 36, 33 of 36)."
+  },
+  "fr5": {
+   "score": 5,
+   "evidence": "A new metric is one constructor call (TrackingError('velocity error RMS', field='velocities', ...) in the session); a new part type is one function returning a MetricDict."
+  },
+  "fr6": {
+   "score": 3,
+   "evidence": "Says where each copy goes (robot_msgs.compare the home, sim2real.metrics and robotdx stock call it), but keeps a streaming RMS beside robot_msgs.compare.error_stats, which cannot be fed chunks."
+  },
+  "fr7": {
+   "score": 5,
+   "evidence": "StopMetric.view() carries the data-ui hint ('distribution'); one view goes to matplotlib (a PNG), a W&B payload and Rerun calls written to an .rrd."
+  }
+ },
+ "lg_unexplained": [
+  "RMS: root mean square, not spelled out on the page (standard in scikit-learn and Keras)",
+  "'repeat' in the run's echo, Run(real can11 rung 0.9 repeat · 318 rows): the play repeats an earlier input; not needed to read the glance"
+ ],
+ "total": 87.4
+}
