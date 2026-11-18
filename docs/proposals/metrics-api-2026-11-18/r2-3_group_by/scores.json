@@ -1,0 +1,43 @@
+{
+ "scores": {
+  "lg": {
+   "score": 5,
+   "evidence": "25 code lines in the contract's 8 steps; every name imported and the data's origin in the first comment; verbs are group_by / agg / filter / pivot / with_columns / update / result; every output is a table with units, a number, True, the threshold with its owner, or a sentence ('33 of 36 cells')"
+  },
+  "fr1": {
+   "score": 5,
+   "evidence": "each part type is a module: models (robot_models) and beside it metrics, a list of expressions, each a configured stock measure with name, description, references and unit (pendulum_arm.card)"
+  },
+  "fr2": {
+   "score": 5,
+   "evidence": "one call per recording (Runs([run]).agg(*metrics)), one group_by per level (id, station x rung, station, the deployment's agg); pooled vs per run in every metric's name and card"
+  },
+  "fr3": {
+   "score": 3,
+   "evidence": "live = offline exactly from one code path, stops safe across chunk boundaries, alignment stated; but a median keeps every stop (memory grows with the stops, shown by Live.memory()) and lag is offline only"
+  },
+  "fr4": {
+   "score": 5,
+   "evidence": "Thresholds with owners (Zach / agent / proposed) outside every metric; the median and the worst stop side by side in one table, each with its own pass column"
+  },
+  "fr5": {
+   "score": 5,
+   "evidence": "a metric is one constructor call and one list line (the session adds velocity error); a part type is one module, no registry"
+  },
+  "fr6": {
+   "score": 5,
+   "evidence": "every per-recording number is robot_msgs.compare's (error, goal, estimate_time_offset) or the shared stop kernel's; the README says what happens to each of the three copies"
+  },
+  "fr7": {
+   "score": 5,
+   "evidence": "one _viz.View of every CAN 11 stop to matplotlib, a W&B payload and a Rerun .rrd; the measure carries its data-ui hint (tip_stop_error.hint)"
+  }
+ },
+ "lg_unexplained": [
+  "agg: a pandas / Polars verb; the comments say 'summarised' but never define agg itself",
+  "pivot(on=, index=, values=): a pandas / spreadsheet verb; the comment above it says what the table shows",
+  "with_columns: Polars' name for adding columns to a table",
+  "Runs([run]): one recording wrapped in a list to make a one-row table; the page does not say why a list"
+ ],
+ "total": 95.8
+}

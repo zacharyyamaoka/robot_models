@@ -1,0 +1,6 @@
+round r2-3 scratch spec (one stmt div per recorded statement) · 2 displayed blocks · uv run --offline --project /home/bam/robot_models --with matplotlib --with rerun-sdk==0.40.0 python -I · source gallery-spec.json
+PASS  r2-3   API at a glance
+      · 24 statements ran, every output as shown
+PASS  r2-3   The session that ran
+      · 90 statements ran, every output as shown
+standalone: 2 of 2 blocks PASS

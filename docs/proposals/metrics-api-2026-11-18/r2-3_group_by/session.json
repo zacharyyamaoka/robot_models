@@ -1,0 +1,652 @@
+[
+ {
+  "label": "API at a glance",
+  "caption": "A metric is an expression: what is measured (tip_stop_error, in mm), then how it is summarised (.median(), .max(), .rms()). The same expressions summarise one recording, a live feed of it, and runs grouped by station and rung; a gate is a comparison on the finished table.",
+  "kind": "glance",
+  "code": "# load the real runs: 252 recordings from round 8 on the 1-DOF test rack\nfrom fixture import pendulum_runs\n# the API: a table of runs to group and summarise, as in pandas or Polars\nfrom runs_table import Live, Runs, Threshold, chunks\nfrom pendulum_arm import tip_stop_error, tracking_error  # the pendulum arm's metrics\n\n# the pendulum arm's metrics: what is measured, each with its unit\ntip_stop_error\ntracking_error\n# and how each is summarised: the median stop, the worst stop, the RMS tracking error\nsummaries = [tip_stop_error.median(), tip_stop_error.max(), tracking_error.rms()]\n\n# one recording, offline: CAN 11, rung 0.9, a repeat\nrun = pendulum_runs(\"real\")[32]\noffline = Runs([run]).agg(*summaries)\noffline\n\n# the same recording, live: fed 7 rows at a time, as they would arrive\nlive = Live(*summaries)\nfor chunk in chunks(run, rows=7):\n    live.update(chunk)\nlive.result()\n\n# equal: live and offline give the same numbers\nlive.result().equals(offline, within=1e-9)\n\n# many runs into a table by station and rung: each cell pools the stops of its 7 runs\nruns = Runs(pendulum_runs(\"real\"))\ntable = runs.group_by(\"station\", \"rung\").agg(*summaries)\n# the worst stop of each cell, one column per station\ntable.pivot(on=\"station\", index=\"rung\", values=\"worst tip stop (mm)\")\n\n# Zach's 1 mm tip-stop gate: a threshold with its owner, kept outside the metrics\nlimit = Threshold(1.0, \"mm\", owner=\"Zach, 2026-11-11\")\nlimit\n\n# its verdict per rung cell: the median stop and the worst stop, each against the gate\nmedian_ok = table[\"median tip stop (mm)\"] <= limit\nworst_ok = table[\"worst tip stop (mm)\"] <= limit\ntable = table.with_columns(median_ok=median_ok, worst_ok=worst_ok)\ntable.filter(station=\"can11\")\nprint(\"median stop within 1 mm:\", median_ok.sum(), \"of\", len(table), \"cells\")\nprint(\"worst stop within 1 mm:\", worst_ok.sum(), \"of\", len(table), \"cells\")",
+  "output": "tip stop error (mm): how far the tip ended from its target at each stop, averaged over the stop's last 50 ms\ntracking error (deg): the angle between measured and target on each row where the target moves\nmedian tip stop (mm)  worst tip stop (mm)  tracking RMS (deg)\n               0.231                0.330               0.146\nmedian tip stop (mm)  worst tip stop (mm)  tracking RMS (deg)\n               0.231                0.330               0.146\nTrue\nrung   can1  can11  can12  can13  can14  can15\n 0.2  0.061  0.610  0.052  0.035  0.046  0.125\n 0.4  0.047  1.293  0.029  0.030  0.035  0.087\n 0.6  0.050  0.576  0.087  0.049  0.066  0.087\n 0.8  0.073  0.713  0.127  0.080  0.073  0.078\n 0.9  0.066  1.143  0.143  0.095  0.061  0.063\n 1.0  0.065  1.317  0.161  0.117  0.074  0.173\n1.0 mm (owner: Zach, 2026-11-11)\nstation  rung  median tip stop (mm)  worst tip stop (mm)  tracking RMS (deg)  median_ok  worst_ok\ncan11     0.2                 0.291                0.610               0.099       True      True\ncan11     0.4                 0.163                1.293               0.082       True     False\ncan11     0.6                 0.220                0.576               0.065       True      True\ncan11     0.8                 0.250                0.713               0.103       True      True\ncan11     0.9                 0.374                1.143               0.140       True     False\ncan11     1.0                 0.558                1.317               0.190       True     False\nmedian stop within 1 mm: 36 of 36 cells\nworst stop within 1 mm: 33 of 36 cells",
+  "seconds": "0.88",
+  "statements": [
+   {
+    "code": "# load the real runs: 252 recordings from round 8 on the 1-DOF test rack\nfrom fixture import pendulum_runs",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "# the API: a table of runs to group and summarise, as in pandas or Polars\nfrom runs_table import Live, Runs, Threshold, chunks",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "from pendulum_arm import tip_stop_error, tracking_error  # the pendulum arm's metrics",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "# the pendulum arm's metrics: what is measured, each with its unit\ntip_stop_error",
+    "output": "tip stop error (mm): how far the tip ended from its target at each stop, averaged over the stop's last 50 ms",
+    "gap": true
+   },
+   {
+    "code": "tracking_error",
+    "output": "tracking error (deg): the angle between measured and target on each row where the target moves",
+    "gap": false
+   },
+   {
+    "code": "# and how each is summarised: the median stop, the worst stop, the RMS tracking error\nsummaries = [tip_stop_error.median(), tip_stop_error.max(), tracking_error.rms()]",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "# one recording, offline: CAN 11, rung 0.9, a repeat\nrun = pendulum_runs(\"real\")[32]",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "offline = Runs([run]).agg(*summaries)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "offline",
+    "output": "median tip stop (mm)  worst tip stop (mm)  tracking RMS (deg)\n               0.231                0.330               0.146",
+    "gap": false
+   },
+   {
+    "code": "# the same recording, live: fed 7 rows at a time, as they would arrive\nlive = Live(*summaries)",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "for chunk in chunks(run, rows=7):\n    live.update(chunk)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "live.result()",
+    "output": "median tip stop (mm)  worst tip stop (mm)  tracking RMS (deg)\n               0.231                0.330               0.146",
+    "gap": false
+   },
+   {
+    "code": "# equal: live and offline give the same numbers\nlive.result().equals(offline, within=1e-9)",
+    "output": "True",
+    "gap": true
+   },
+   {
+    "code": "# many runs into a table by station and rung: each cell pools the stops of its 7 runs\nruns = Runs(pendulum_runs(\"real\"))",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "table = runs.group_by(\"station\", \"rung\").agg(*summaries)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "# the worst stop of each cell, one column per station\ntable.pivot(on=\"station\", index=\"rung\", values=\"worst tip stop (mm)\")",
+    "output": "rung   can1  can11  can12  can13  can14  can15\n 0.2  0.061  0.610  0.052  0.035  0.046  0.125\n 0.4  0.047  1.293  0.029  0.030  0.035  0.087\n 0.6  0.050  0.576  0.087  0.049  0.066  0.087\n 0.8  0.073  0.713  0.127  0.080  0.073  0.078\n 0.9  0.066  1.143  0.143  0.095  0.061  0.063\n 1.0  0.065  1.317  0.161  0.117  0.074  0.173",
+    "gap": false
+   },
+   {
+    "code": "# Zach's 1 mm tip-stop gate: a threshold with its owner, kept outside the metrics\nlimit = Threshold(1.0, \"mm\", owner=\"Zach, 2026-11-11\")",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "limit",
+    "output": "1.0 mm (owner: Zach, 2026-11-11)",
+    "gap": false
+   },
+   {
+    "code": "# its verdict per rung cell: the median stop and the worst stop, each against the gate\nmedian_ok = table[\"median tip stop (mm)\"] <= limit",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "worst_ok = table[\"worst tip stop (mm)\"] <= limit",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "table = table.with_columns(median_ok=median_ok, worst_ok=worst_ok)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "table.filter(station=\"can11\")",
+    "output": "station  rung  median tip stop (mm)  worst tip stop (mm)  tracking RMS (deg)  median_ok  worst_ok\ncan11     0.2                 0.291                0.610               0.099       True      True\ncan11     0.4                 0.163                1.293               0.082       True     False\ncan11     0.6                 0.220                0.576               0.065       True      True\ncan11     0.8                 0.250                0.713               0.103       True      True\ncan11     0.9                 0.374                1.143               0.140       True     False\ncan11     1.0                 0.558                1.317               0.190       True     False",
+    "gap": false
+   },
+   {
+    "code": "print(\"median stop within 1 mm:\", median_ok.sum(), \"of\", len(table), \"cells\")",
+    "output": "median stop within 1 mm: 36 of 36 cells",
+    "gap": false
+   },
+   {
+    "code": "print(\"worst stop within 1 mm:\", worst_ok.sum(), \"of\", len(table), \"cells\")",
+    "output": "worst stop within 1 mm: 33 of 36 cells",
+    "gap": false
+   }
+  ]
+ },
+ {
+  "label": "setup",
+  "caption": "Imports, then the real data: round 8's 252 real plays, the twin's answer to each, the five-bar's speed ladder and the sealed friction ladder's held-out runs. A Runs table has one row per recording; its columns are the recording's labels.",
+  "kind": "session",
+  "code": "# the data: round 8's real plays, the twin's answers, the five-bar ladder, a calibration\nfrom fixture import chain_runs, pendulum_runs\nimport calibration\n# the group-by face: tables of runs, expressions, and the parts that list their metrics\nfrom runs_table import Live, Runs, Threshold, chunks, metrics_table\nfrom measures import MEASURE_KINDS, PerformanceGain, RowError\nimport integrated_servo\nimport pendulum_arm\nimport rigid_chain\nfrom pendulum_arm import tip_stop_error, tracking_error\n# the gates and one helper, both outside every metric\nimport rack_gates\nfrom rung_ladder import highest_rung\n\nreal = Runs(pendulum_runs(\"real\"))\nreal\n\nsim = Runs(pendulum_runs(\"sim\"))\nlen(sim)",
+  "output": "252 runs, one row per recording:\nstation  rung  kind    source  rows\ncan11     0.2  repeat  real     624\ncan11     0.2  repeat  real     624\ncan11     0.2  repeat  real     624\n... 249 more\n252",
+  "seconds": "0.18",
+  "statements": [
+   {
+    "code": "# the data: round 8's real plays, the twin's answers, the five-bar ladder, a calibration\nfrom fixture import chain_runs, pendulum_runs",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "import calibration",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "# the group-by face: tables of runs, expressions, and the parts that list their metrics\nfrom runs_table import Live, Runs, Threshold, chunks, metrics_table",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "from measures import MEASURE_KINDS, PerformanceGain, RowError",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "import integrated_servo",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "import pendulum_arm",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "import rigid_chain",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "from pendulum_arm import tip_stop_error, tracking_error",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "# the gates and one helper, both outside every metric\nimport rack_gates",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "from rung_ladder import highest_rung",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "real = Runs(pendulum_runs(\"real\"))",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "real",
+    "output": "252 runs, one row per recording:\nstation  rung  kind    source  rows\ncan11     0.2  repeat  real     624\ncan11     0.2  repeat  real     624\ncan11     0.2  repeat  real     624\n... 249 more",
+    "gap": false
+   },
+   {
+    "code": "sim = Runs(pendulum_runs(\"sim\"))",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "len(sim)",
+    "output": "252",
+    "gap": false
+   }
+  ]
+ },
+ {
+  "label": "a part's metrics",
+  "caption": "Each part type is a module: its models, and beside them its metrics, a list of expressions. A measure says what is read from a recording and its unit; the summary says how its values are pooled. Adding a metric is one line in the list.",
+  "kind": "session",
+  "code": "# the integrated servo: its models, and its metrics beside them\nintegrated_servo.models\nmetrics_table(integrated_servo.metrics)\n\n# the pendulum arm: the servo's rows, plus the tip in mm (each run carries its lever)\nmetrics_table(pendulum_arm.metrics)\n\n# a metric is a measure (what is read, with its unit) and a summary (how it is pooled)\ntip_stop_error\npendulum_arm.card(\"worst tip stop (mm)\")\npendulum_arm.card(\"every stop settled\")[\"value_type\"]\n\n# the five-bar's metrics, from the same building blocks\nmetrics_table(rigid_chain.metrics)",
+  "output": "<ModelFamily IntegratedServo · integrated_servo · 14 models: M0.ideal, M1.datasheet, M2.coulomb_viscous, M3.stribeck, M3.load, M3.lugre, M3.weakening_capture, M4.ripple, M4.drivetrain, M5.dcmotor, M5.envelope, M5.wear, M6.residual, M7.learned>\nmetric                                expression                                live\ntracking RMS, median over runs (deg)  tracking_error.rms().per_run().median()   True\nworst joint error (deg)               joint_error.max()                         True\np90 stop error (deg)                  stop_error.percentile(90)                 True\nworst overshoot (deg)                 overshoot.max(if_none=0.0)                True\nmedian lag (ms)                       lag.median()                             False\nlimited row share (%)                 limited_row.share()                       True\nmetric                                expression                                live\ntracking RMS, median over runs (deg)  tracking_error.rms().per_run().median()   True\nworst joint error (deg)               joint_error.max()                         True\nmedian tip stop (mm)                  tip_stop_error.median()                   True\nworst tip stop (mm)                   tip_stop_error.max()                      True\nmedian tip settle (s)                 tip_settle_time.median()                  True\nevery stop settled                    stop_settled.all()                        True\ntip stop count                        tip_stop_error.count()                    True\nworst overshoot (deg)                 overshoot.max(if_none=0.0)                True\nmedian lag (ms)                       lag.median()                             False\nlimited row share (%)                 limited_row.share()                       True\nany faulted run                       faulted.any()                             True\ntip stop error (mm): how far the tip ended from its target at each stop, averaged over the stop's last 50 ms\n{'name': 'worst tip stop (mm)',\n 'description': \"how far the tip ended from its target at each stop, averaged over the stop's last \"\n                \"50 ms; the largest of every value in the group's runs, pooled\",\n 'references': [\"bam_rack_twin pendulum_score.stops / RobotDx T4 stop_accuracy (round 1's \"\n                'stock.StopTracker)',\n                'ISO 9283:1998 7.2 (pose accuracy at a stop)'],\n 'function': 'tip_stop_error.max()',\n 'unit': 'mm',\n 'target': None,\n 'value_type': 'number'}\n'bool'\nmetric           expression        live\nj2 RMS (deg)     j2_error.rms()    True\nc1 RMS (deg)     c1_error.rms()    True\ntool RMS (mm)    tool_error.rms()  True\nworst tool (mm)  tool_error.max()  True",
+  "seconds": "0.00",
+  "statements": [
+   {
+    "code": "# the integrated servo: its models, and its metrics beside them\nintegrated_servo.models",
+    "output": "<ModelFamily IntegratedServo · integrated_servo · 14 models: M0.ideal, M1.datasheet, M2.coulomb_viscous, M3.stribeck, M3.load, M3.lugre, M3.weakening_capture, M4.ripple, M4.drivetrain, M5.dcmotor, M5.envelope, M5.wear, M6.residual, M7.learned>",
+    "gap": false
+   },
+   {
+    "code": "metrics_table(integrated_servo.metrics)",
+    "output": "metric                                expression                                live\ntracking RMS, median over runs (deg)  tracking_error.rms().per_run().median()   True\nworst joint error (deg)               joint_error.max()                         True\np90 stop error (deg)                  stop_error.percentile(90)                 True\nworst overshoot (deg)                 overshoot.max(if_none=0.0)                True\nmedian lag (ms)                       lag.median()                             False\nlimited row share (%)                 limited_row.share()                       True",
+    "gap": false
+   },
+   {
+    "code": "# the pendulum arm: the servo's rows, plus the tip in mm (each run carries its lever)\nmetrics_table(pendulum_arm.metrics)",
+    "output": "metric                                expression                                live\ntracking RMS, median over runs (deg)  tracking_error.rms().per_run().median()   True\nworst joint error (deg)               joint_error.max()                         True\nmedian tip stop (mm)                  tip_stop_error.median()                   True\nworst tip stop (mm)                   tip_stop_error.max()                      True\nmedian tip settle (s)                 tip_settle_time.median()                  True\nevery stop settled                    stop_settled.all()                        True\ntip stop count                        tip_stop_error.count()                    True\nworst overshoot (deg)                 overshoot.max(if_none=0.0)                True\nmedian lag (ms)                       lag.median()                             False\nlimited row share (%)                 limited_row.share()                       True\nany faulted run                       faulted.any()                             True",
+    "gap": true
+   },
+   {
+    "code": "# a metric is a measure (what is read, with its unit) and a summary (how it is pooled)\ntip_stop_error",
+    "output": "tip stop error (mm): how far the tip ended from its target at each stop, averaged over the stop's last 50 ms",
+    "gap": true
+   },
+   {
+    "code": "pendulum_arm.card(\"worst tip stop (mm)\")",
+    "output": "{'name': 'worst tip stop (mm)',\n 'description': \"how far the tip ended from its target at each stop, averaged over the stop's last \"\n                \"50 ms; the largest of every value in the group's runs, pooled\",\n 'references': [\"bam_rack_twin pendulum_score.stops / RobotDx T4 stop_accuracy (round 1's \"\n                'stock.StopTracker)',\n                'ISO 9283:1998 7.2 (pose accuracy at a stop)'],\n 'function': 'tip_stop_error.max()',\n 'unit': 'mm',\n 'target': None,\n 'value_type': 'number'}",
+    "gap": false
+   },
+   {
+    "code": "pendulum_arm.card(\"every stop settled\")[\"value_type\"]",
+    "output": "'bool'",
+    "gap": false
+   },
+   {
+    "code": "# the five-bar's metrics, from the same building blocks\nmetrics_table(rigid_chain.metrics)",
+    "output": "metric           expression        live\nj2 RMS (deg)     j2_error.rms()    True\nc1 RMS (deg)     c1_error.rms()    True\ntool RMS (mm)    tool_error.rms()  True\nworst tool (mm)  tool_error.max()  True",
+    "gap": true
+   }
+  ]
+ },
+ {
+  "label": "one recording, offline and live",
+  "caption": "Offline is the live code fed the whole recording at once. Live keeps a running total per metric between chunks; a stop still open at a chunk boundary stays open until the next chunk. Lag needs the whole recording, so it is offline only.",
+  "kind": "session",
+  "code": "run = pendulum_runs(\"real\")[32]       # CAN 11, rung 0.9, a repeat\noffline = Runs([run]).agg(*pendulum_arm.metrics)\noffline.transpose(include_header=True, header_name=\"metric\", column_names=[\"offline\"])\n\n# live: every metric that can run on chunks as they arrive\nlive_metrics = [metric for metric in pendulum_arm.metrics if metric.live]\nlive = Live(*live_metrics)\nfor chunk in chunks(run, rows=7):\n    live.update(chunk)\nlive_table = live.result()\noffline_part = offline.select(*live_table.columns)\nboth = offline_part.vstack(live_table)\nboth.transpose(include_header=True, header_name=\"metric\",\n               column_names=[\"offline\", \"live\"])\nlive_table.equals(offline_part, within=1e-9)\n\n# what each running summary holds after the last chunk (its last stop is still open)\nlive.memory()\n\n# shared computations: each runs once per recording, whichever metric asks first\nRuns([run]).explain(*pendulum_arm.metrics)",
+  "output": "metric                                offline\ntracking RMS, median over runs (deg)    0.146\nworst joint error (deg)                 0.324\nmedian tip stop (mm)                    0.231\nworst tip stop (mm)                     0.330\nmedian tip settle (s)                   0.000\nevery stop settled                       True\ntip stop count                              2\nworst overshoot (deg)                   0.000\nmedian lag (ms)                        -0.741\nlimited row share (%)                   0.000\nany faulted run                         False\nmetric                                offline   live\ntracking RMS, median over runs (deg)    0.146  0.146\nworst joint error (deg)                 0.324  0.324\nmedian tip stop (mm)                    0.231  0.231\nworst tip stop (mm)                     0.330  0.330\nmedian tip settle (s)                   0.000  0.000\nevery stop settled                       True   True\ntip stop count                              2      2\nworst overshoot (deg)                   0.000  0.000\nlimited row share (%)                   0.000  0.000\nany faulted run                         False  False\nTrue\nmetric                                holds\ntracking RMS, median over runs (deg)  2 numbers\nworst joint error (deg)               1 number\nmedian tip stop (mm)                  1 value\nworst tip stop (mm)                   1 number\nmedian tip settle (s)                 1 value\nevery stop settled                    1 flag\ntip stop count                        1 number\nworst overshoot (deg)                 1 number\nlimited row share (%)                 2 numbers\nany faulted run                       1 flag\n5 computations over each recording serve 11 metrics:\n  compare(target, measured)             -> tracking RMS, median over runs (deg),\n                                           worst joint error (deg)\n  stops(target, measured)               -> median tip stop (mm), worst tip stop (mm),\n                                           median tip settle (s), every stop settled,\n                                           tip stop count, worst overshoot (deg)\n  estimate_time_offset(plan, measured)  -> median lag (ms)\n  the fault channel                     -> limited row share (%)\n  run.faulted                           -> any faulted run",
+  "seconds": "0.03",
+  "statements": [
+   {
+    "code": "run = pendulum_runs(\"real\")[32]       # CAN 11, rung 0.9, a repeat",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "offline = Runs([run]).agg(*pendulum_arm.metrics)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "offline.transpose(include_header=True, header_name=\"metric\", column_names=[\"offline\"])",
+    "output": "metric                                offline\ntracking RMS, median over runs (deg)    0.146\nworst joint error (deg)                 0.324\nmedian tip stop (mm)                    0.231\nworst tip stop (mm)                     0.330\nmedian tip settle (s)                   0.000\nevery stop settled                       True\ntip stop count                              2\nworst overshoot (deg)                   0.000\nmedian lag (ms)                        -0.741\nlimited row share (%)                   0.000\nany faulted run                         False",
+    "gap": false
+   },
+   {
+    "code": "# live: every metric that can run on chunks as they arrive\nlive_metrics = [metric for metric in pendulum_arm.metrics if metric.live]",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "live = Live(*live_metrics)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "for chunk in chunks(run, rows=7):\n    live.update(chunk)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "live_table = live.result()",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "offline_part = offline.select(*live_table.columns)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "both = offline_part.vstack(live_table)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "both.transpose(include_header=True, header_name=\"metric\",\n               column_names=[\"offline\", \"live\"])",
+    "output": "metric                                offline   live\ntracking RMS, median over runs (deg)    0.146  0.146\nworst joint error (deg)                 0.324  0.324\nmedian tip stop (mm)                    0.231  0.231\nworst tip stop (mm)                     0.330  0.330\nmedian tip settle (s)                   0.000  0.000\nevery stop settled                       True   True\ntip stop count                              2      2\nworst overshoot (deg)                   0.000  0.000\nlimited row share (%)                   0.000  0.000\nany faulted run                         False  False",
+    "gap": false
+   },
+   {
+    "code": "live_table.equals(offline_part, within=1e-9)",
+    "output": "True",
+    "gap": false
+   },
+   {
+    "code": "# what each running summary holds after the last chunk (its last stop is still open)\nlive.memory()",
+    "output": "metric                                holds\ntracking RMS, median over runs (deg)  2 numbers\nworst joint error (deg)               1 number\nmedian tip stop (mm)                  1 value\nworst tip stop (mm)                   1 number\nmedian tip settle (s)                 1 value\nevery stop settled                    1 flag\ntip stop count                        1 number\nworst overshoot (deg)                 1 number\nlimited row share (%)                 2 numbers\nany faulted run                       1 flag",
+    "gap": true
+   },
+   {
+    "code": "# shared computations: each runs once per recording, whichever metric asks first\nRuns([run]).explain(*pendulum_arm.metrics)",
+    "output": "5 computations over each recording serve 11 metrics:\n  compare(target, measured)             -> tracking RMS, median over runs (deg),\n                                           worst joint error (deg)\n  stops(target, measured)               -> median tip stop (mm), worst tip stop (mm),\n                                           median tip settle (s), every stop settled,\n                                           tip stop count, worst overshoot (deg)\n  estimate_time_offset(plan, measured)  -> median lag (ms)\n  the fault channel                     -> limited row share (%)\n  run.faulted                           -> any faulted run",
+    "gap": true
+   }
+  ]
+ },
+ {
+  "label": "runs to a deployment, gates applied",
+  "caption": "One group_by per level: rung cells (station x rung), stations, the deployment. Stops are pooled over a cell's plays; tracking RMS is per run, then the median. The gates are Thresholds with owners, compared with the finished table.",
+  "kind": "session",
+  "code": "rungs = real.group_by(\"station\", \"rung\").agg(*pendulum_arm.metrics)\nlen(rungs), len(rungs.columns)\n\n# the gates: thresholds with owners, kept apart from the metrics\nrack_gates.tip_stop\nrack_gates.every_stop\nrack_gates.tracking_rms\njudged = rack_gates.judge(rungs)\nverdict = [\"rung\", \"median tip stop (mm)\", \"worst tip stop (mm)\",\n           \"tracks\", \"median_stop_ok\", \"every_stop_ok\"]\njudged.filter(station=\"can11\").select(*verdict)\n\ncells = len(judged)\nprint(\"tracks:\", judged[\"tracks\"].sum(), \"of\", cells, \"cells\")\nprint(\"median stop within 1 mm:\", judged[\"median_stop_ok\"].sum(), \"of\", cells, \"cells\")\nprint(\"every stop within 1 mm:\", judged[\"every_stop_ok\"].sum(), \"of\", cells, \"cells\")\nhighest_rung(judged, \"tracks\", \"median_stop_ok\")\n\n# up the roll-up: each station, then the whole deployment\nby_station = {\"tracking_deg\": tracking_error.rms().per_run().median(),\n              \"median_stop_mm\": tip_stop_error.median(),\n              \"worst_stop_mm\": tip_stop_error.max(),\n              \"stops\": tip_stop_error.count()}\nreal.group_by(\"station\").agg(**by_station)\nreal.agg(**by_station)",
+  "output": "(36, 13)\n1.0 mm (owner: Zach, 2026-11-11)\n1.0 mm (owner: proposed: Zach's 1 mm, on every stop)\n0.5 deg (owner: agent (pendulum_goal))\nrung  median tip stop (mm)  worst tip stop (mm)  tracks  median_stop_ok  every_stop_ok\n 0.2                 0.291                0.610    True            True           True\n 0.4                 0.163                1.293    True            True          False\n 0.6                 0.220                0.576    True            True           True\n 0.8                 0.250                0.713    True            True           True\n 0.9                 0.374                1.143    True            True          False\n 1.0                 0.558                1.317    True            True          False\ntracks: 31 of 36 cells\nmedian stop within 1 mm: 36 of 36 cells\nevery stop within 1 mm: 33 of 36 cells\n{'can1': 0.9, 'can11': 1.0, 'can12': 0.9, 'can13': 0.9, 'can14': 0.9, 'can15': 0.9}\nstation  tracking_deg  median_stop_mm  worst_stop_mm  stops\ncan1            0.259           0.022          0.073     84\ncan11           0.101           0.322          1.317     84\ncan12           0.207           0.062          0.161     84\ncan13           0.129           0.024          0.117     84\ncan14           0.204           0.030          0.074     84\ncan15           0.095           0.031          0.173     84\ntracking_deg  median_stop_mm  worst_stop_mm  stops\n       0.139           0.034          1.317    504",
+  "seconds": "0.70",
+  "statements": [
+   {
+    "code": "rungs = real.group_by(\"station\", \"rung\").agg(*pendulum_arm.metrics)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "len(rungs), len(rungs.columns)",
+    "output": "(36, 13)",
+    "gap": false
+   },
+   {
+    "code": "# the gates: thresholds with owners, kept apart from the metrics\nrack_gates.tip_stop",
+    "output": "1.0 mm (owner: Zach, 2026-11-11)",
+    "gap": true
+   },
+   {
+    "code": "rack_gates.every_stop",
+    "output": "1.0 mm (owner: proposed: Zach's 1 mm, on every stop)",
+    "gap": false
+   },
+   {
+    "code": "rack_gates.tracking_rms",
+    "output": "0.5 deg (owner: agent (pendulum_goal))",
+    "gap": false
+   },
+   {
+    "code": "judged = rack_gates.judge(rungs)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "verdict = [\"rung\", \"median tip stop (mm)\", \"worst tip stop (mm)\",\n           \"tracks\", \"median_stop_ok\", \"every_stop_ok\"]",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "judged.filter(station=\"can11\").select(*verdict)",
+    "output": "rung  median tip stop (mm)  worst tip stop (mm)  tracks  median_stop_ok  every_stop_ok\n 0.2                 0.291                0.610    True            True           True\n 0.4                 0.163                1.293    True            True          False\n 0.6                 0.220                0.576    True            True           True\n 0.8                 0.250                0.713    True            True           True\n 0.9                 0.374                1.143    True            True          False\n 1.0                 0.558                1.317    True            True          False",
+    "gap": false
+   },
+   {
+    "code": "cells = len(judged)",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "print(\"tracks:\", judged[\"tracks\"].sum(), \"of\", cells, \"cells\")",
+    "output": "tracks: 31 of 36 cells",
+    "gap": false
+   },
+   {
+    "code": "print(\"median stop within 1 mm:\", judged[\"median_stop_ok\"].sum(), \"of\", cells, \"cells\")",
+    "output": "median stop within 1 mm: 36 of 36 cells",
+    "gap": false
+   },
+   {
+    "code": "print(\"every stop within 1 mm:\", judged[\"every_stop_ok\"].sum(), \"of\", cells, \"cells\")",
+    "output": "every stop within 1 mm: 33 of 36 cells",
+    "gap": false
+   },
+   {
+    "code": "highest_rung(judged, \"tracks\", \"median_stop_ok\")",
+    "output": "{'can1': 0.9, 'can11': 1.0, 'can12': 0.9, 'can13': 0.9, 'can14': 0.9, 'can15': 0.9}",
+    "gap": false
+   },
+   {
+    "code": "# up the roll-up: each station, then the whole deployment\nby_station = {\"tracking_deg\": tracking_error.rms().per_run().median(),\n              \"median_stop_mm\": tip_stop_error.median(),\n              \"worst_stop_mm\": tip_stop_error.max(),\n              \"stops\": tip_stop_error.count()}",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "real.group_by(\"station\").agg(**by_station)",
+    "output": "station  tracking_deg  median_stop_mm  worst_stop_mm  stops\ncan1            0.259           0.022          0.073     84\ncan11           0.101           0.322          1.317     84\ncan12           0.207           0.062          0.161     84\ncan13           0.129           0.024          0.117     84\ncan14           0.204           0.030          0.074     84\ncan15           0.095           0.031          0.173     84",
+    "gap": false
+   },
+   {
+    "code": "real.agg(**by_station)",
+    "output": "tracking_deg  median_stop_mm  worst_stop_mm  stops\n       0.139           0.034          1.317    504",
+    "gap": false
+   }
+  ]
+ },
+ {
+  "label": "the twin's output (sim vs target)",
+  "caption": "The same expressions on the twin's answers, joined beside the real numbers. Every number is the target against one source.",
+  "kind": "session",
+  "code": "twin = {\"tracking_deg\": tracking_error.rms().per_run().median(),\n        \"median_mm\": tip_stop_error.median(), \"worst_mm\": tip_stop_error.max()}\nreal_rungs = real.group_by(\"station\", \"rung\").agg(**twin)\nsim_rungs = sim.group_by(\"station\", \"rung\").agg(**twin)\nreal_vs_sim = real_rungs.join(sim_rungs, on=[\"station\", \"rung\"], suffix=\"_sim\")\nreal_vs_sim.filter(station=\"can11\")\n\nsim_median_ok = sim_rungs[\"median_mm\"] <= rack_gates.tip_stop\nsim_median_ok.sum(), len(sim_rungs)",
+  "output": "station  rung  tracking_deg  median_mm  worst_mm  tracking_deg_sim  median_mm_sim  worst_mm_sim\ncan11     0.2         0.095      0.291     0.610             0.091          0.146         0.172\ncan11     0.4         0.079      0.163     1.293             0.114          0.225         0.399\ncan11     0.6         0.061      0.220     0.576             0.138          0.154         0.226\ncan11     0.8         0.099      0.250     0.713             0.180          0.174         0.353\ncan11     0.9         0.135      0.374     1.143             0.213          0.344         0.658\ncan11     1.0         0.163      0.558     1.317             0.257          0.538         1.062\n(36, 36)",
+  "seconds": "0.14",
+  "statements": [
+   {
+    "code": "twin = {\"tracking_deg\": tracking_error.rms().per_run().median(),\n        \"median_mm\": tip_stop_error.median(), \"worst_mm\": tip_stop_error.max()}",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "real_rungs = real.group_by(\"station\", \"rung\").agg(**twin)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "sim_rungs = sim.group_by(\"station\", \"rung\").agg(**twin)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "real_vs_sim = real_rungs.join(sim_rungs, on=[\"station\", \"rung\"], suffix=\"_sim\")",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "real_vs_sim.filter(station=\"can11\")",
+    "output": "station  rung  tracking_deg  median_mm  worst_mm  tracking_deg_sim  median_mm_sim  worst_mm_sim\ncan11     0.2         0.095      0.291     0.610             0.091          0.146         0.172\ncan11     0.4         0.079      0.163     1.293             0.114          0.225         0.399\ncan11     0.6         0.061      0.220     0.576             0.138          0.154         0.226\ncan11     0.8         0.099      0.250     0.713             0.180          0.174         0.353\ncan11     0.9         0.135      0.374     1.143             0.213          0.344         0.658\ncan11     1.0         0.163      0.558     1.317             0.257          0.538         1.062",
+    "gap": false
+   },
+   {
+    "code": "sim_median_ok = sim_rungs[\"median_mm\"] <= rack_gates.tip_stop",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "sim_median_ok.sum(), len(sim_rungs)",
+    "output": "(36, 36)",
+    "gap": false
+   }
+  ]
+ },
+ {
+  "label": "the chain, a view, a new metric",
+  "caption": "The five-bar through the same building blocks; every CAN 11 stop as one view record sent to matplotlib, a W&B payload and Rerun; a new metric is one constructor call.",
+  "kind": "session",
+  "code": "chain = Runs(chain_runs(\"real\") + chain_runs(\"sim\"))\nchain.group_by(\"source\", \"rung\").agg(*rigid_chain.metrics)\n\n# a view: every CAN 11 stop at the tip, one row per stop, then one record to three sinks;\n# the measure carries the data-ui view that shows it\ntip_stop_error.hint\ncan11_stops = real.filter(station=\"can11\").explode(tip_stop_error)\nlen(can11_stops)\nimport pathlib\nimport _viz           # round 1's shared adapter: matplotlib, a W&B payload, Rerun calls\nreports = pathlib.Path(\"/home/bam/robot_models/reports/media\")\nmedia = reports / \"robot-models-metrics-api-proposals-2026-11-18\"\nmedia.mkdir(parents=True, exist_ok=True)\nrung_labels = [f\"{rung:g}\" for rung in can11_stops[\"rung\"]]\nstop_numbers = list(range(len(can11_stops)))\nstops_mm = can11_stops[\"tip stop error (mm)\"].to_list()\nview = _viz.View(title=\"CAN 11 · every stop at the tip, by rung\", unit=\"mm\",\n                 hint=tip_stop_error.hint, x=stop_numbers, y=stops_mm, group=rung_labels,\n                 target=1.0, target_label=\"Zach's 1 mm\", x_label=\"stop\")\nfigure, axes = _viz.plot(view, path=media / \"r2-3-tip-stops.png\")\npayload = _viz.wandb_payload(view, \"can11/tip_stop_mm\")\nsorted(payload[\"summary\"])\ncalls = _viz.rerun_calls(view, \"metrics/can11/tip_stop_mm\")\nlen(calls)\nrrd = _viz.write_rrd(calls, media / \"r2-3-tip-stops.rrd\")\nrrd.name\n\n# a new metric: one constructor call, then summarised like any other\nvelocity_error = RowError(\"velocity error\", \"deg/s\", field=\"velocities\", rows=\"moving\",\n                          description=\"measured minus target speed on each moving row\")\nreal.group_by(\"station\").agg(velocity_error.rms(), velocity_error.max())",
+  "output": "source  rung                         j2 RMS (deg)  c1 RMS (deg)  tool RMS (mm)  worst tool (mm)\nreal    vertical.0.10mps.full_ff            0.652         0.597          5.035           24.793\nreal    vertical.0.10mps.gravity_ff         0.625         0.556          5.145           23.798\nreal    vertical.0.20mps.full_ff            0.762         0.555          5.290           26.208\nreal    vertical.0.20mps.gravity_ff         0.910         0.692          6.804           33.068\nreal    vertical.0.35mps.full_ff            0.977         0.582          5.967           22.907\nsim     vertical.0.10mps.full_ff            0.844         0.435          3.960            9.464\nsim     vertical.0.10mps.gravity_ff         0.908         0.514          4.829           17.896\nsim     vertical.0.20mps.full_ff            0.871         0.422          4.066           10.546\nsim     vertical.0.20mps.gravity_ff         1.083         0.651          6.469           27.011\nsim     vertical.0.35mps.full_ff            0.888         0.429          4.236            9.392\n'distribution'\n84\n['can11/tip_stop_mm/max', 'can11/tip_stop_mm/n', 'can11/tip_stop_mm/target']\n85\n'r2-3-tip-stops.rrd'\nstation  velocity error RMS (deg/s)  worst velocity error (deg/s)\ncan1                         52.662                       379.605\ncan11                         3.091                        17.085\ncan12                        18.273                       163.731\ncan13                        18.477                       129.715\ncan14                        41.668                       295.826\ncan15                        19.815                       165.162",
+  "seconds": "1.07",
+  "statements": [
+   {
+    "code": "chain = Runs(chain_runs(\"real\") + chain_runs(\"sim\"))",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "chain.group_by(\"source\", \"rung\").agg(*rigid_chain.metrics)",
+    "output": "source  rung                         j2 RMS (deg)  c1 RMS (deg)  tool RMS (mm)  worst tool (mm)\nreal    vertical.0.10mps.full_ff            0.652         0.597          5.035           24.793\nreal    vertical.0.10mps.gravity_ff         0.625         0.556          5.145           23.798\nreal    vertical.0.20mps.full_ff            0.762         0.555          5.290           26.208\nreal    vertical.0.20mps.gravity_ff         0.910         0.692          6.804           33.068\nreal    vertical.0.35mps.full_ff            0.977         0.582          5.967           22.907\nsim     vertical.0.10mps.full_ff            0.844         0.435          3.960            9.464\nsim     vertical.0.10mps.gravity_ff         0.908         0.514          4.829           17.896\nsim     vertical.0.20mps.full_ff            0.871         0.422          4.066           10.546\nsim     vertical.0.20mps.gravity_ff         1.083         0.651          6.469           27.011\nsim     vertical.0.35mps.full_ff            0.888         0.429          4.236            9.392",
+    "gap": false
+   },
+   {
+    "code": "# a view: every CAN 11 stop at the tip, one row per stop, then one record to three sinks;\n# the measure carries the data-ui view that shows it\ntip_stop_error.hint",
+    "output": "'distribution'",
+    "gap": true
+   },
+   {
+    "code": "can11_stops = real.filter(station=\"can11\").explode(tip_stop_error)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "len(can11_stops)",
+    "output": "84",
+    "gap": false
+   },
+   {
+    "code": "import pathlib",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "import _viz           # round 1's shared adapter: matplotlib, a W&B payload, Rerun calls",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "reports = pathlib.Path(\"/home/bam/robot_models/reports/media\")",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "media = reports / \"robot-models-metrics-api-proposals-2026-11-18\"",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "media.mkdir(parents=True, exist_ok=True)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "rung_labels = [f\"{rung:g}\" for rung in can11_stops[\"rung\"]]",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "stop_numbers = list(range(len(can11_stops)))",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "stops_mm = can11_stops[\"tip stop error (mm)\"].to_list()",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "view = _viz.View(title=\"CAN 11 · every stop at the tip, by rung\", unit=\"mm\",\n                 hint=tip_stop_error.hint, x=stop_numbers, y=stops_mm, group=rung_labels,\n                 target=1.0, target_label=\"Zach's 1 mm\", x_label=\"stop\")",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "figure, axes = _viz.plot(view, path=media / \"r2-3-tip-stops.png\")",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "payload = _viz.wandb_payload(view, \"can11/tip_stop_mm\")",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "sorted(payload[\"summary\"])",
+    "output": "['can11/tip_stop_mm/max', 'can11/tip_stop_mm/n', 'can11/tip_stop_mm/target']",
+    "gap": false
+   },
+   {
+    "code": "calls = _viz.rerun_calls(view, \"metrics/can11/tip_stop_mm\")",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "len(calls)",
+    "output": "85",
+    "gap": false
+   },
+   {
+    "code": "rrd = _viz.write_rrd(calls, media / \"r2-3-tip-stops.rrd\")",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "rrd.name",
+    "output": "'r2-3-tip-stops.rrd'",
+    "gap": false
+   },
+   {
+    "code": "# a new metric: one constructor call, then summarised like any other\nvelocity_error = RowError(\"velocity error\", \"deg/s\", field=\"velocities\", rows=\"moving\",\n                          description=\"measured minus target speed on each moving row\")",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "real.group_by(\"station\").agg(velocity_error.rms(), velocity_error.max())",
+    "output": "station  velocity error RMS (deg/s)  worst velocity error (deg/s)\ncan1                         52.662                       379.605\ncan11                         3.091                        17.085\ncan12                        18.273                       163.731\ncan13                        18.477                       129.715\ncan14                        41.668                       295.826\ncan15                        19.815                       165.162",
+    "gap": false
+   }
+  ]
+ },
+ {
+  "label": "other inputs: repeats and a calibration",
+  "caption": "Repeatability takes the repeats of one command; a performance gain takes held-out runs played with nominal and with fitted friction values. Both are summaries inside agg(), over runs filtered or grouped by their labels.",
+  "kind": "session",
+  "code": "repeats = real.filter(station=\"can11\", rung=0.9, kind=\"repeat\")\nlen(repeats)\nrepeats.agg(pendulum_arm.tip_stop_offset.repeatability(k=3))\n\nnominal_runs = calibration.held_out_runs(\"nominal\")\nfitted_runs = calibration.held_out_runs(\"fitted\")\nheld_out = Runs(nominal_runs + fitted_runs)\nresidual = integrated_servo.torque_residual.rms()\nheld_out.group_by(\"values\").agg(residual)\nheld_out.agg(PerformanceGain(residual))\n\n# what each kind of measure or summary takes in\n{kind.__name__: kind.input for kind in MEASURE_KINDS}",
+  "output": "5\ntip stop repeatability, k=3 (mm)\n                           0.387\nvalues   torque residual RMS (N·m)\nfitted                       0.004\nnominal                      0.222\ntorque residual RMS gain, nominal - fitted (N·m)\n                                           0.218\n{'RowError': 'Run: target and measured',\n 'StopValue': 'Run: target and measured',\n 'ChannelCode': \"Run: the measured stream's channels\",\n 'TimeOffset': 'Run: plan and measured, the whole recording',\n 'RunFlag': 'Run: its labels',\n 'Repeatability': 'same-input repeats: the runs of one command',\n 'PerformanceGain': 'held-out runs, played with nominal and with fitted values'}",
+  "seconds": "0.07",
+  "statements": [
+   {
+    "code": "repeats = real.filter(station=\"can11\", rung=0.9, kind=\"repeat\")",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "len(repeats)",
+    "output": "5",
+    "gap": false
+   },
+   {
+    "code": "repeats.agg(pendulum_arm.tip_stop_offset.repeatability(k=3))",
+    "output": "tip stop repeatability, k=3 (mm)\n                           0.387",
+    "gap": false
+   },
+   {
+    "code": "nominal_runs = calibration.held_out_runs(\"nominal\")",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "fitted_runs = calibration.held_out_runs(\"fitted\")",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "held_out = Runs(nominal_runs + fitted_runs)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "residual = integrated_servo.torque_residual.rms()",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "held_out.group_by(\"values\").agg(residual)",
+    "output": "values   torque residual RMS (N·m)\nfitted                       0.004\nnominal                      0.222",
+    "gap": false
+   },
+   {
+    "code": "held_out.agg(PerformanceGain(residual))",
+    "output": "torque residual RMS gain, nominal - fitted (N·m)\n                                           0.218",
+    "gap": false
+   },
+   {
+    "code": "# what each kind of measure or summary takes in\n{kind.__name__: kind.input for kind in MEASURE_KINDS}",
+    "output": "{'RowError': 'Run: target and measured',\n 'StopValue': 'Run: target and measured',\n 'ChannelCode': \"Run: the measured stream's channels\",\n 'TimeOffset': 'Run: plan and measured, the whole recording',\n 'RunFlag': 'Run: its labels',\n 'Repeatability': 'same-input repeats: the runs of one command',\n 'PerformanceGain': 'held-out runs, played with nominal and with fitted values'}",
+    "gap": true
+   }
+  ]
+ }
+]
