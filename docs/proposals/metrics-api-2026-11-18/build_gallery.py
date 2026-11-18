@@ -55,6 +55,7 @@ SLOTS = ("baseline", "r2-1", "r2-2", "r2-3", "r2-4")
 STAND_IN = dict(zip(SLOTS, ("v1", "v2", "v3", "v4", "v5")))
 ACCENTS = dict(zip(SLOTS, ("#57606a", "#3f7be0", "#2e9e6b", "#c9822b", "#b5487a")))
 MAX_LINE = 90            # Zach's ~90-character lines (readable-Python rule)
+DEFAULT_RIGHT = "r2-4"   # Split opens on baseline vs the dispatcher's pick (README "Result")
 MAX_PAGE_BYTES = 1_200_000   # the desktop preview's ceiling for a text page
 README_PARTS = (("Direction", r"\bdirection|\bthesis\b|\bthe face\b|\bapproach\b|\bidea\b"),
                 ("Prior art", r"\bprior[ -]?art"),
@@ -632,14 +633,21 @@ h2{font-size:19px;margin:0 0 6px}
 .stmt.gap{margin-top:14px}
 pre{margin:0;min-width:0;max-width:100%}
 pre.code{font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#1f2328;background:var(--code-bg);
-  border:1px solid var(--line);border-radius:6px;padding:4px 8px;white-space:pre-wrap;overflow-wrap:anywhere}
+  border:1px solid var(--line);border-radius:6px;padding:4px 8px;white-space:pre-wrap;overflow-wrap:normal;
+  word-break:normal;overflow-x:auto}
+/* WHY: wrap only at spaces, never inside a name. overflow-wrap:anywhere split `tip_length_m` across two lines,
+   which defeats the round's point: code read at a glance (Zach, 2026-11-18). */
 pre.code{--cap:48ch;position:relative}
 pre.code .ln{display:block;padding-left:calc(min(var(--h,0ch),var(--cap)) + 3ch);text-indent:-3ch;
   background:linear-gradient(#c9d1d9,#c9d1d9) no-repeat calc(min(var(--h,0ch),var(--cap)) + 1ch) 1.5em/2px
   calc(100% - 1.5em)}
 pre.code .ind{position:absolute;width:0;height:0;overflow:hidden}
 pre.out{font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#59636e;
-  border-left:2px solid #d0d7de;margin:2px 0 4px 10px;padding:1px 8px;white-space:pre;overflow-x:auto}
+  border-left:2px solid #d0d7de;margin:2px 0 4px 10px;padding:1px 8px;white-space:pre-wrap;overflow-wrap:normal;
+  overflow-x:auto}
+/* WHY: "All five" is a strip that scrolls sideways, each column wide enough for a ~90-character line.
+   Five columns squeezed into one screen wrapped every line and clipped every output. */
+.glances[data-mode=all]{grid-template-columns:repeat(5,minmax(640px,1fr));overflow-x:auto;padding-bottom:6px}
 .glances[data-mode=all] pre.code{font-size:11.5px;padding:3px 6px;--cap:10ch}
 .glances[data-mode=all] pre.out{font-size:11px;margin-left:6px;padding:1px 6px}
 .glances[data-mode=split]{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -691,8 +699,6 @@ table.evidence{border-collapse:collapse;font-size:12.5px;margin-top:6px}
 .evidence td.s{font:600 13px ui-monospace,monospace;text-align:center}
 footer{margin-top:40px;font-size:12.5px;color:var(--muted);max-width:1100px}
 footer code{font-size:11.5px}
-@media (max-width:1279px){.glances[data-mode=all]{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media (max-width:999px){.glances[data-mode=all]{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:639px){
   .glances,.glances[data-mode=all],.glances[data-mode=split]{display:block}
   .gcol{display:block}
@@ -725,7 +731,8 @@ SCRIPT = """
   }
   buttons.forEach(button => button.addEventListener('click', () => apply(button.dataset.mode)));
   [pickA, pickB].forEach(select => select.addEventListener('change', () => apply('split')));
-  apply(saved.mode === 'split' ? 'split' : 'all');
+  // WHY: Split at reading width is the view that reads at a glance; "All five" is the overview.
+  apply(saved.mode === 'all' ? 'all' : 'split');
 })();
 """
 
@@ -744,7 +751,7 @@ def page_html(records: list[dict], contract: dict, stand_in: bool) -> tuple[str,
     options = "".join(f'<option value="{record["id"]}">{record["id"]} · '
                       f'{esc(record["standIn"]["name"] if record["standIn"] else plain(record["name"]))}</option>'
                       for record in records)
-    options_b = options.replace(f'value="{SLOTS[1]}"', f'value="{SLOTS[1]}" selected', 1)
+    options_b = options.replace(f'value="{DEFAULT_RIGHT}"', f'value="{DEFAULT_RIGHT}" selected', 1)
     built = [record["id"] for record in records if status_of(record) in ("built", "stand-in")]
     waiting = [record["id"] for record in records if status_of(record) not in ("built", "stand-in")]
     status_line = (f"{len(built)} of {len(records)} slots filled by round 1's sessions" if stand_in
@@ -775,15 +782,15 @@ same story on the same real recording, each highlighted with one statement and t
 </div>
 <section id="glance-section">
 <div class="toolbar"><h2>The glances</h2>
-<div class="seg" role="group" aria-label="layout"><button type="button" data-mode="all" aria-pressed="true">All five
-</button><button type="button" data-mode="split" aria-pressed="false">Split</button></div>
+<div class="seg" role="group" aria-label="layout"><button type="button" data-mode="all" aria-pressed="false">All five
+</button><button type="button" data-mode="split" aria-pressed="true">Split</button></div>
 <span class="picks"><label>left <select id="pick-a" aria-label="left glance">{options}</select></label>
 <label>right <select id="pick-b" aria-label="right glance">{options_b}</select></label></span></div>
 <p class="story">The contract's story, in order: load round 8's real runs · the pendulum arm's metrics with units ·
 one recording offline (<code>pendulum_runs("real")[32]</code>: CAN 11, rung 0.9) · the same recording live, 7 rows at
 a time · live equals offline · many runs into a table by station and rung · Zach's 1 mm tip-stop gate, outside the
 metric · its verdict, median and worst stop. {alignment} Split compares any two at reading width.</p>
-<div class="glances" id="glances" data-mode="all" style="--rows:{body_rows + 2}">{columns}</div>
+<div class="glances" id="glances" data-mode="split" style="--rows:{body_rows + 2}">{columns}</div>
 </section>
 <section class="block" id="scoreboard"><h2>Scoreboard</h2>
 {scoreboard_html(records, criteria, stand_in)}</section>

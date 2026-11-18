@@ -1,0 +1,22 @@
+{
+  "baseline": {
+    "score": 1,
+    "evidence": "Agree with the self-score. A newcomer needs fold, empty/update/close of a state, strata, tails and on=\"items\"/share explained, and the first output is the repr Collection(15 aliases over 5 states). The plain comments help, but the code still speaks the jargon."
+  },
+  "r2-1": {
+    "score": 5,
+    "evidence": "Every verb is Keras/torchmetrics (update, compute, reset), and every output is a dict or table with units. The gate's pass/FAIL grid over all 36 cells, with 36 of 36 and 33 of 36, is the clearest verdict in the round. Two catches. A newcomer has to know update() piles up until reset(), which is why live starts with reset(). rung_table(runs, pendulum_arm_metrics) passes the factory, not a call; its comment explains why."
+  },
+  "r2-2": {
+    "score": 5,
+    "evidence": "The plainest face: call a function on a run and get a number, with the unit in its name. print(metric.__doc__) explains each metric in one English line, and the gate is `stop <= gate_mm`. Weaker spots: the owner is only a comment on a bare float, and the verdict shows CAN 11's six rows, not all 36 cells."
+  },
+  "r2-3": {
+    "score": 4,
+    "evidence": "Reads at a glance for a pandas/Polars user, and printing a metric gives its plain definition. The pivot of the worst stop over all 36 cells is the most informative single output in the round. A non-pandas reader needs agg, pivot(on=, index=, values=), with_columns and Runs([run]) explained, and `column <= limit` compares with a Threshold object by operator overloading. Between the 3 and 5 anchors."
+  },
+  "r2-4": {
+    "score": 5,
+    "evidence": "Every output is a table that answers 'did it pass?' in words. print(card) reads as a spec: check, how it is measured, unit, target, owner. card.check(runs, by=...) lists the failing groups by name. Catches: the tracking-RMS target (<= 0.5, AI agent) is the agent's proposal and should be labelled 'proposed'. card.check(live) accepting a live tally is a little magic, but it reads right."
+  }
+}

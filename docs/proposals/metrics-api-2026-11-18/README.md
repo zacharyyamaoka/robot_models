@@ -142,3 +142,32 @@ Both checks were proven before any variant was built:
 - `check_parity.py` on round 1's v4 folder: PASS. With no round-2 folders it exits 1.
 - `check_standalone.py` on round 1: 0 of 10. On a control round, a self-contained block passed, and a wrong output
   and an undrawn `print` both failed.
+
+## Result (2026-11-18, after all five were built and checked)
+
+**Both hard checks pass on the built page:**
+- `check_parity.py`: **5 of 5 PASS** on round 8. The worst deviation is 4.4e-16 deg on tracking and 2.8e-17 mm on stops. The gate counts and each station's highest rung match.
+- `check_standalone.py`: **10 of 10** blocks run as shown in a fresh `python -I`. Round 1 managed 0 of 10.
+
+| | variant | the face | legible (self → dispatcher) | total |
+|---|---|---|---|---|
+| r2-2 | [Plain functions, table out](r2-2_functions/README.md) | `worst_tip_stop_mm(run)` → a number; `scorecard(runs, by=[...])` → a table | 5 → 5 | **93.0** |
+| r2-4 | [Checklist with targets](r2-4_checklist/README.md) | `Check(name, measure, unit, target, owner)`; `card.check(runs, by=[...])` → pass/fail per row | 5 → 5 | **93.0** |
+| r2-3 | [Group-by expressions](r2-3_group_by/README.md) | `runs.group_by("station", "rung").agg(tip_stop_error.max(), ...)` | 5 → 4 | 89.8 |
+| r2-1 | [Keras / torchmetrics face](r2-1_keras/README.md) | `metrics.update(target, measured)`, `compute()`, `reset()` | 5 → 5 | 87.4 |
+| baseline | [robot_metrics 0.1.0](baseline/README.md) | `arm.values(arm.fold(run))`, `summarize`, `Objective` | 1 → 1 | 60.6 |
+
+The fr1–fr7 scores are the builders' self-scores. The dispatcher re-scored only legibility, from each glance alone, in [dispatcher_lg.json](dispatcher_lg.json). r2-3 drops to 4 because a reader who doesn't use pandas needs `agg`, `pivot`, `with_columns` and `Runs([run])` explained.
+
+Every variant scores 3 on fr3: an exact median keeps every stop, so memory grows with the stops. Each README says so.
+
+**AI pick: r2-4's checklist, with r2-2's plain functions as its measures.** r2-2 and r2-4 tie at 93. Zach's question breaks the tie: "I am not seeing what is going on at a glance". r2-4's outputs answer "did it pass, against whose target?" in words, and its card reads as a spec. r2-2's code is the plainest of the five. The splice takes the best of both:
+- each `Check`'s `measure` is one of r2-2's functions (`worst_tip_stop_mm(run)` → mm), which also works on its own;
+- the card is the only place targets and owners live (Zach's rule: separate the metric from its threshold);
+- r2-3's pivot is the overview table.
+
+Fix before adopting:
+- the tracking-RMS target (≤ 0.5 deg) is the agent's, so it's labelled `proposed`;
+- `card.check(live)` stays, but the README states what memory a live check keeps.
+
+Gallery: `/home/bam/robot_models/reports/robot-models-metrics-api-proposals-2026-11-18.html`. It opens on Split, baseline against the pick; "All five" is a strip that scrolls sideways. Nothing in robot_metrics changes until Zach picks.
