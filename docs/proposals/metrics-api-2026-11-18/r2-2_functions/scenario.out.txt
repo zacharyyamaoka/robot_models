@@ -1,0 +1,354 @@
+# 1 · API at a glance   (1.04 s)
+>>> # load the real runs: round 8 of the 1-DOF pendulum rack, 252 recordings from /archive
+>>> from fixture import pendulum_runs              # reads the recordings from disk
+>>> from parts import PENDULUM_ARM_METRICS         # each part's list of metric functions
+>>> from run_metrics import LiveScore, chunks, scorecard
+>>> from run_metrics import median_tip_stop_mm, worst_tip_stop_mm
+>>> runs = pendulum_runs("real")
+>>> len(runs)
+252
+
+>>> # the pendulum arm's metrics: a plain list of functions; a name ends in its unit
+>>> for metric in PENDULUM_ARM_METRICS:
+...     print(f"{metric.__name__:<19} {metric.__doc__}")
+tracking_rms_deg    root mean square of measured - target while the arm moves, in degrees
+tracking_peak_deg   the largest |measured - target| in the run, in degrees
+median_tip_stop_mm  median distance of the tip from its target at the stops, in mm
+worst_tip_stop_mm   largest distance of the tip from its target at any stop, in mm
+tip_settle_s        median time for the tip to get within 1 mm after a move, in seconds
+all_stops_settled   True when the tip got within 1 mm at every stop
+stop_count          how many stops: holds of 0.25 s or more on one target
+
+>>> # one recording, offline: call a metric on the run and get a number back
+>>> run = runs[32]                     # station CAN 11, rung 0.9, a repeat
+>>> median_tip_stop_mm(run)
+0.23094052947652116
+>>> worst_tip_stop_mm(run)
+0.3302425825356255
+
+>>> # the same recording, live: its rows fed in 7 at a time, as they would arrive
+>>> live = LiveScore(PENDULUM_ARM_METRICS)
+>>> for chunk in chunks(run, rows=7):
+...     live.add(chunk)
+>>> live.result()["worst_tip_stop_mm"]
+0.3302425825356255
+
+>>> # equal: live and offline give the same value for every metric
+>>> offline = {metric.__name__: metric(run) for metric in PENDULUM_ARM_METRICS}
+>>> live.result() == offline
+True
+
+>>> # many runs into a table: CAN 11's 42 runs, one row per station and rung
+>>> can11_runs = [recording for recording in runs if recording.station == "can11"]
+>>> stop_metrics = [median_tip_stop_mm, worst_tip_stop_mm]
+>>> table = scorecard(can11_runs, by=["station", "rung"], metrics=stop_metrics)
+>>> table
+station  rung  runs  median_tip_stop_mm  worst_tip_stop_mm
+can11     0.2     7               0.291              0.610
+can11     0.4     7               0.163              1.293
+can11     0.6     7               0.220              0.576
+can11     0.8     7               0.250              0.713
+can11     0.9     7               0.374              1.143
+can11     1.0     7               0.558              1.317
+
+>>> # Zach's 1 mm gate on the tip stop: a plain number, kept outside the metric functions
+>>> gate_mm = 1.0                      # owner: Zach, 2026-11-11
+
+>>> # its verdict per rung: the median stop passes every rung, the worst stop fails three
+>>> table["median passes"] = [stop <= gate_mm for stop in table["median_tip_stop_mm"]]
+>>> table["worst passes"] = [stop <= gate_mm for stop in table["worst_tip_stop_mm"]]
+>>> table
+station  rung  runs  median_tip_stop_mm  worst_tip_stop_mm  median passes  worst passes
+can11     0.2     7               0.291              0.610           True          True
+can11     0.4     7               0.163              1.293           True         False
+can11     0.6     7               0.220              0.576           True          True
+can11     0.8     7               0.250              0.713           True          True
+can11     0.9     7               0.374              1.143           True         False
+can11     1.0     7               0.558              1.317           True         False
+
+# 2 · setup   (0.31 s)
+>>> # the data: round 8 of the pendulum rack (real and twin), the five-bar's speed ladder
+>>> import fixture
+
+>>> # this variant: the metric functions, each part type's list of them, and the rack's gates
+>>> import gates
+>>> import parts
+>>> from run_metrics import LiveScore, Table, chunks, scorecard
+>>> from run_metrics import metric_card, metric_table, passes_over_rows
+>>> from run_metrics import lag_ms, limited_rows_pct, overshoot_deg, faulted_runs
+>>> from run_metrics import median_tip_stop_mm, worst_tip_stop_mm
+>>> from run_metrics import tip_settle_s, tracking_rms_deg
+
+>>> real_runs = fixture.pendulum_runs("real")
+>>> sim_runs = fixture.pendulum_runs("sim")
+>>> chain_runs = fixture.chain_runs("real") + fixture.chain_runs("sim")
+>>> len(real_runs), len(sim_runs), len(chain_runs)
+(252, 252, 10)
+
+# 3 · a part type's metrics   (0.00 s)
+>>> parts.INTEGRATED_SERVO_MODELS
+<ModelFamily IntegratedServo · integrated_servo · 14 models: M0.ideal, M1.datasheet, M2.coulomb_viscous, M3.stribeck, M3.load, M3.lugre, M3.weakening_capture, M4.ripple, M4.drivetrain, M5.dcmotor, M5.envelope, M5.wear, M6.residual, M7.learned>
+>>> metric_table(parts.INTEGRATED_SERVO_METRICS)
+metric             unit  many runs                      live
+tracking_rms_deg   deg   median over the runs           True
+tracking_peak_deg  deg   largest over the runs          True
+overshoot_deg      deg   largest over all their stops   True
+limited_rows_pct   %     share of all their rows        True
+faulted_runs             how many runs faulted         False
+lag_ms             ms    median over the runs          False
+
+>>> print(parts.PENDULUM_ARM_MODELS.title)
+A chain of rigid links and joints, open or closed: a whole arm, a sub-assembly, a wrist, a five-bar.
+>>> metric_table(parts.PENDULUM_ARM_METRICS)
+metric              unit  many runs                     live
+tracking_rms_deg    deg   median over the runs          True
+tracking_peak_deg   deg   largest over the runs         True
+median_tip_stop_mm  mm    median over all their stops   True
+worst_tip_stop_mm   mm    largest over all their stops  True
+tip_settle_s        s     median over all their stops   True
+all_stops_settled         all of their stops            True
+stop_count                total over the runs           True
+
+>>> metric_table(parts.RIGID_BODY_CHAIN_METRICS)
+metric                unit  many runs               live
+j2_tracking_rms_deg   deg   median over the runs   False
+c1_tracking_rms_deg   deg   median over the runs   False
+tool_tracking_rms_mm  mm    median over the runs   False
+worst_tool_error_mm   mm    largest over the runs  False
+
+>>> metric_card(median_tip_stop_mm)
+{'name': 'median_tip_stop_mm',
+ 'description': 'median distance of the tip from its target at the stops, in mm',
+ 'unit': 'mm',
+ 'many runs': 'median over all their stops',
+ 'live': True,
+ 'value': 'number',
+ 'references': ['bam_rack_twin T4 stop accuracy',
+                'robotdx.diagnostics.stock (io-diagnostics main a7fc658) stop_error'],
+ 'function': 'run_metrics.median_tip_stop_mm'}
+
+# 4 · one recording, offline and live   (0.02 s)
+>>> run = real_runs[32]                     # CAN 11, rung 0.9, a repeat
+>>> run
+Run(real can11 rung 0.9 repeat · 318 rows)
+
+>>> live_metrics = parts.PENDULUM_ARM_METRICS + [overshoot_deg, limited_rows_pct]
+>>> in_sevens = LiveScore(live_metrics)
+>>> for chunk in chunks(run, rows=7):
+...     in_sevens.add(chunk)
+>>> one_by_one = LiveScore(live_metrics)
+>>> for single_row in chunks(run, rows=1):
+...     one_by_one.add(single_row)
+
+>>> seven_rows, one_row = in_sevens.result(), one_by_one.result()
+>>> rows = []
+>>> for metric in live_metrics:
+...     name = metric.__name__
+...     rows.append({"metric": name, "offline": metric(run), "live, 7 rows": seven_rows[name],
+...                  "live, 1 row": one_row[name]})
+>>> Table(rows)
+metric              offline  live, 7 rows  live, 1 row
+tracking_rms_deg      0.146         0.146        0.146
+tracking_peak_deg     0.324         0.324        0.324
+median_tip_stop_mm    0.231         0.231        0.231
+worst_tip_stop_mm     0.330         0.330        0.330
+tip_settle_s          0.000         0.000        0.000
+all_stops_settled      True          True         True
+stop_count                2             2            2
+overshoot_deg         0.000         0.000        0.000
+limited_rows_pct      0.000         0.000        0.000
+
+>>> offline = {metric.__name__: metric(run) for metric in live_metrics}
+>>> seven_rows == offline, one_row == offline
+(True, True)
+>>> passes_over_rows(run)                   # nine metrics, the run's rows read once
+1
+
+>>> in_sevens.kept_in_memory()
+{'running sums': 6, 'rows of the move in progress': 175, 'finished stops (3 numbers each)': 1}
+
+>>> lag_ms(run)
+-0.7412035601233334
+>>> try:
+...     LiveScore([lag_ms])
+... except ValueError as reason:
+...     print(reason)
+lag_ms needs the whole run: score it when the run has ended
+
+# 5 · runs to a deployment, gates applied   (0.11 s)
+>>> rung_metrics = parts.PENDULUM_ARM_METRICS + [limited_rows_pct, faulted_runs]
+>>> table = scorecard(real_runs, by=["station", "rung"], metrics=rung_metrics)
+>>> len(table)
+36
+
+>>> Table(gates.gate_rows())
+gate                  column              at most  owner
+tracks                tracking_rms_deg      0.500  agent (pendulum_goal)
+tracks                tracking_peak_deg     1.500  agent (pendulum_goal)
+tracks                limited_rows_pct      2.000  agent (pendulum_goal)
+tracks                faulted_runs              0  agent (pendulum_goal)
+tip stop, median      median_tip_stop_mm    1.000  Zach, 2026-11-11
+tip stop, median      tip_settle_s          0.300  agent (pendulum_goal)
+tip stop, every stop  worst_tip_stop_mm     1.000  proposed: Zach's 1 mm on every stop
+
+>>> for gate_name, gate in gates.GATES.items():
+...     table[gate_name] = gates.passes(table, gate)
+>>> for gate_name in gates.GATES:
+...     print(f"{gate_name:<21} passes {sum(table[gate_name])} of {len(table)} rung cells")
+tracks                passes 31 of 36 rung cells
+tip stop, median      passes 36 of 36 rung cells
+tip stop, every stop  passes 33 of 36 rung cells
+
+>>> table.pivot(index="station", columns="rung", values="worst_tip_stop_mm")
+station    0.2    0.4    0.6    0.8    0.9    1.0
+can1     0.061  0.047  0.050  0.073  0.066  0.065
+can11    0.610  1.293  0.576  0.713  1.143  1.317
+can12    0.052  0.029  0.087  0.127  0.143  0.161
+can13    0.035  0.030  0.049  0.080  0.095  0.117
+can14    0.046  0.035  0.066  0.073  0.061  0.074
+can15    0.125  0.087  0.087  0.078  0.063  0.173
+>>> table.pivot(index="station", columns="rung", values="tip stop, every stop")
+station   0.2    0.4   0.6   0.8    0.9    1.0
+can1     True   True  True  True   True   True
+can11    True  False  True  True  False  False
+can12    True   True  True  True   True   True
+can13    True   True  True  True   True   True
+can14    True   True  True  True   True   True
+can15    True   True  True  True   True   True
+>>> gates.highest_rung(table, ["tracks", "tip stop, median"])
+{'can1': 0.9, 'can11': 1.0, 'can12': 0.9, 'can13': 0.9, 'can14': 0.9, 'can15': 0.9}
+
+>>> station_metrics = [tracking_rms_deg, median_tip_stop_mm, worst_tip_stop_mm]
+>>> scorecard(real_runs, by=["station"], metrics=station_metrics)
+station  runs  tracking_rms_deg  median_tip_stop_mm  worst_tip_stop_mm
+can1       42             0.259               0.022              0.073
+can11      42             0.101               0.322              1.317
+can12      42             0.207               0.062              0.161
+can13      42             0.129               0.024              0.117
+can14      42             0.204               0.030              0.074
+can15      42             0.095               0.031              0.173
+>>> scorecard(real_runs, by=["deployment"], metrics=station_metrics)
+deployment         runs  tracking_rms_deg  median_tip_stop_mm  worst_tip_stop_mm
+one-dof-test-rack   252             0.139               0.034              1.317
+
+# 6 · the twin's output (sim vs target)   (0.14 s)
+>>> sim_metrics = [tracking_rms_deg, median_tip_stop_mm, worst_tip_stop_mm, tip_settle_s]
+>>> sim_table = scorecard(sim_runs, by=["station", "rung"], metrics=sim_metrics)
+>>> sum(gates.passes(sim_table, gates.GATES["tip stop, median"]))
+36
+
+>>> can11_both = [one for one in real_runs + sim_runs if one.station == "can11"]
+>>> scorecard(can11_both, by=["rung", "source"], metrics=sim_metrics[:3])
+rung  source  runs  tracking_rms_deg  median_tip_stop_mm  worst_tip_stop_mm
+ 0.2  real       7             0.095               0.291              0.610
+ 0.2  sim        7             0.091               0.146              0.172
+ 0.4  real       7             0.079               0.163              1.293
+ 0.4  sim        7             0.114               0.225              0.399
+ 0.6  real       7             0.061               0.220              0.576
+ 0.6  sim        7             0.138               0.154              0.226
+ 0.8  real       7             0.099               0.250              0.713
+ 0.8  sim        7             0.180               0.174              0.353
+ 0.9  real       7             0.135               0.374              1.143
+ 0.9  sim        7             0.213               0.344              0.658
+ 1.0  real       7             0.163               0.558              1.317
+ 1.0  sim        7             0.257               0.538              1.062
+
+# 7 · the chain, a view, a new metric   (1.57 s)
+>>> scorecard(chain_runs, by=["source", "rung"], metrics=parts.RIGID_BODY_CHAIN_METRICS)
+source  rung                         runs  j2_tracking_rms_deg  c1_tracking_rms_deg  tool_tracking_rms_mm  worst_tool_error_mm
+real    vertical.0.10mps.full_ff        1                0.652                0.597                 5.035               24.793
+real    vertical.0.10mps.gravity_ff     1                0.625                0.556                 5.145               23.798
+real    vertical.0.20mps.full_ff        1                0.762                0.555                 5.290               26.208
+real    vertical.0.20mps.gravity_ff     1                0.910                0.692                 6.804               33.068
+real    vertical.0.35mps.full_ff        1                0.977                0.582                 5.967               22.907
+sim     vertical.0.10mps.full_ff        1                0.844                0.435                 3.960                9.464
+sim     vertical.0.10mps.gravity_ff     1                0.908                0.514                 4.829               17.896
+sim     vertical.0.20mps.full_ff        1                0.871                0.422                 4.066               10.546
+sim     vertical.0.20mps.gravity_ff     1                1.083                0.651                 6.469               27.011
+sim     vertical.0.35mps.full_ff        1                0.888                0.429                 4.236                9.392
+
+>>> import pathlib
+>>> import _viz
+>>> import run_metrics
+
+>>> can11_runs = [one for one in real_runs if one.station == "can11"]
+>>> can11_runs.sort(key=lambda one: one.rung)
+>>> stops_mm, rung_labels = [], []
+>>> for one in can11_runs:
+...     run_stops = run_metrics.tip_stop_errors_mm(one)
+...     stops_mm += run_stops
+...     rung_labels += [f"rung {one.rung}"] * len(run_stops)
+>>> len(stops_mm), max(stops_mm)
+(84, 1.3171758816081196)
+
+>>> view = _viz.View(title="CAN 11 · every stop at the tip, by rung", unit="mm",
+...                  hint=worst_tip_stop_mm.hint, x=list(range(len(stops_mm))), y=stops_mm,
+...                  group=rung_labels, target=1.0, target_label="Zach's 1 mm",
+...                  x_label="stop", y_label="mm")
+>>> media = pathlib.Path(run_metrics.__file__).parent / "media"
+>>> media.mkdir(exist_ok=True)
+>>> figure, axes = _viz.plot(view, path=media / "tip-stops.png")
+>>> axes.get_title()
+'CAN 11 · every stop at the tip, by rung'
+
+>>> payload = _viz.wandb_payload(view, "can11/tip_stop_mm")
+>>> payload["summary"]
+{'can11/tip_stop_mm/max': 1.3171758816081196,
+ 'can11/tip_stop_mm/n': 84,
+ 'can11/tip_stop_mm/target': 1.0}
+
+>>> calls = _viz.rerun_calls(view, "metrics/can11/tip_stop_mm")
+>>> rrd_file = _viz.write_rrd(calls, media / "tip-stops.rrd")
+>>> len(calls)
+85
+
+>>> # a new metric is one plain function (stock.moving: the rows with a commanded speed)
+>>> import math
+>>> import statistics
+
+>>> import numpy as np
+>>> import stock
+>>> from run_metrics import as_list
+
+>>> def velocity_error_rms_deg_s(runs):
+...     """RMS of measured - target speed while the arm moves, in deg/s"""
+...     per_run = []
+...     for one_run in as_list(runs):
+...         moving = stock.moving(one_run.target)
+...         measured = one_run.measured.velocities[moving, 0]
+...         target = one_run.target.velocities[moving, 0]
+...         per_run.append(math.degrees(math.sqrt(np.mean((measured - target) ** 2))))
+...     return statistics.median(per_run)
+
+>>> velocity_error_rms_deg_s(run)
+4.3445365411852865
+>>> new_metrics = [tracking_rms_deg, velocity_error_rms_deg_s]
+>>> scorecard(can11_runs, by=["rung"], metrics=new_metrics)
+rung  runs  tracking_rms_deg  velocity_error_rms_deg_s
+ 0.2     7             0.095                     1.851
+ 0.4     7             0.079                     1.903
+ 0.6     7             0.061                     2.604
+ 0.8     7             0.099                     4.073
+ 0.9     7             0.135                     4.834
+ 1.0     7             0.163                     5.550
+
+# 8 · other inputs: repeats and a calibration   (0.07 s)
+>>> import calibration
+>>> from run_metrics import tip_repeatability_mm
+>>> from run_metrics import feedforward_residual_rms_nm, performance_gain
+
+>>> can11_rung_09 = [one for one in real_runs if one.station == "can11" and one.rung == 0.9]
+>>> repeats = [one for one in can11_rung_09 if one.labels["kind"] == "repeat"]
+>>> len(repeats)
+5
+>>> tip_repeatability_mm(repeats, k=3)      # ISO 9283, mm at the tip, the worst stop
+0.38729537480154735
+
+>>> nominal_runs = calibration.held_out_runs("nominal")
+>>> fitted_runs = calibration.held_out_runs("fitted")
+>>> feedforward_residual_rms_nm(nominal_runs)
+0.22196952061068506
+>>> feedforward_residual_rms_nm(fitted_runs)
+0.004184752627886934
+>>> performance_gain(feedforward_residual_rms_nm, nominal_runs, fitted_runs)
+0.21778476798279814

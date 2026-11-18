@@ -1,0 +1,38 @@
+{
+ "scores": {
+  "lg": {
+   "score": 5,
+   "evidence": "25 code lines in the contract's eight steps; every name imported and the data's origin in the first comment; verbs are a function call, add / result(), scorecard(by=...) and a list comprehension; each output is a number or a small table. Soft spot: a lone number's unit is in the function name, not printed beside it."
+  },
+  "fr1": {
+   "score": 5,
+   "evidence": "PENDULUM_ARM_METRICS sits beside PENDULUM_ARM_MODELS in parts.py; each function carries name, docstring, references, unit, base and config (metric_card). parts.py stands in for robot_models' part modules."
+  },
+  "fr2": {
+   "score": 5,
+   "evidence": "One call per recording (worst_tip_stop_mm(run)); one per level (scorecard by station+rung / station / deployment); pooled vs per-run stated per metric in metric_table's 'many runs' column."
+  },
+  "fr3": {
+   "score": 3,
+   "evidence": "Bit-exact live = offline at 7-row and 1-row chunks, stops safe across chunk boundaries, alignment checked and stated; but memory holds the move in progress (175 of run 32's 318 rows), bounded by the move, not constant."
+  },
+  "fr4": {
+   "score": 5,
+   "evidence": "gate_mm = 1.0 with its owner on the glance, median and worst side by side per rung; every gate is a (column, at most, owner) row in gates.py, owned by Zach, the agent or a proposal; no function holds a threshold."
+  },
+  "fr5": {
+   "score": 5,
+   "evidence": "A new metric is one plain function defined in the session and passed straight to scorecard; adding it to a part is one name in its list (making it live also needs a running sum in RunTotals)."
+  },
+  "fr6": {
+   "score": 3,
+   "evidence": "The stop rule (stock.py, proposed robot_msgs.compare.stops), goal, lag and the chain's ErrorStats have one home each; the pendulum's tracking RMS is re-summed row by row here instead of read from robot_msgs.compare.ErrorStats."
+  },
+  "fr7": {
+   "score": 5,
+   "evidence": "One View of every CAN 11 tip stop drawn to matplotlib (media/tip-stops.png), built as a W&B payload and written to a Rerun .rrd; the data-ui hint comes from the metric (worst_tip_stop_mm.hint)."
+  }
+ },
+ "lg_unexplained": [],
+ "total": 93.0
+}
