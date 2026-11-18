@@ -1,0 +1,53 @@
+{
+ "scores": {
+  "lg": {
+   "score": 1,
+   "evidence": "Runs as shown and every name is imported (fixture, as_run, robot_metrics), but fold, state/empty, close, strata, tails, aliases, on=\"items\"/share and the Collection(15 aliases over 5 states) repr carry the meaning, none explained at first use: anchor 1's coined jargon."
+  },
+  "fr1": {
+   "score": 3,
+   "evidence": "catalog.pendulum_arm() lists the arm's 15 rows, each a stock metric with name, unit, description and references, but in robot_metrics.catalog, away from the part type (robotparts/robot_models .metrics is PEP 0001's next step)."
+  },
+  "fr2": {
+   "score": 3,
+   "evidence": "One call per recording (values(fold(run))) and one summarize(..., by=...) per grouping with each alias's across rule; a six-lever deployment is a hand loop over six collections. Between 3 and 5."
+  },
+  "fr3": {
+   "score": 3,
+   "evidence": "Exact (live == offline bit for bit) and stops safe across 7-row chunks, but the lag and stop states grow with the run: 636 + 607 samples held for a 318-row play."
+  },
+  "fr4": {
+   "score": 5,
+   "evidence": "Objective(alias, op, value, unit, share, on, owner) judged outside the metric; the catalog's gates name agent / Zach / proposed; median and every stop side by side, the worst stop in the message."
+  },
+  "fr5": {
+   "score": 5,
+   "evidence": "A new metric is one Alias(...) over a stock metric (velocity error RMS, session cell 6); a part type is one catalog function returning PartMetrics."
+  },
+  "fr6": {
+   "score": 5,
+   "evidence": "PEP 0001 §7-8 names each copy's fate: RobotDx's stock computes through ErrorStat/StopStat/CodeShare (started 11-17, byte-identical), sim2real.metrics.actuator replaced, the stop rule proposed into robot_msgs.compare."
+  },
+  "fr7": {
+   "score": 5,
+   "evidence": "collection.view() -> plot() on matplotlib; the same View to adapters.wandb.payload and adapters.rerun.write_rrd; hint carried ('distribution')."
+  }
+ },
+ "lg_unexplained": [
+  "Collection(15 aliases over 5 states): a framework repr echoed for `arm` (what are aliases, what are states?)",
+  ".collection(): why a part's metrics must become a Collection before use",
+  "arm.aliases: 'alias' for one named metric row",
+  "'servo/' prefix on 9 of the 15 names: the arm's child part, never said",
+  "'' as a unit for 'servo/stops' and 'all stops settled' (a count and a bool, unlabelled)",
+  "Run(... · plan 318, state 318, target 318): plan vs target vs state streams, unexplained",
+  "fold: arm.fold(run), and the comment 'the whole recording, one fold'",
+  "arm.values(...): reading numbers out of a folded state",
+  "state / arm.empty(): a running total kept as a value, with update(state, chunk) returning a new one",
+  "close: arm.close(state), 'the recording ended'",
+  "strata / stratum: summarize's groups",
+  "stratum.tails: n / median / worst of every stop",
+  "on=\"value\" vs on=\"items\", and share=1.0: median-of-stops vs every stop",
+  "'(proposed)' in the verdict: the every-stop objective's default owner, not visible in the code"
+ ],
+ "total": 60.6
+}

@@ -1,0 +1,381 @@
+# 1 · API at a glance   (1.01 s)
+>>> # load the real runs: round 8's 252 plays on the 1-DOF test rack, read from /archive
+>>> from fixture import pendulum_runs
+>>> from fixture_runs import as_run         # one play as 0.1.0's Run: its streams + labels
+>>> from robot_metrics import Objective, catalog, summarize
+
+>>> # the pendulum arm's metrics (CAN 11's arm, 339 mm to the tip), each with its unit
+>>> arm = catalog.pendulum_arm(tip_length_m=0.339).collection()
+>>> arm
+Collection(15 aliases over 5 states)
+>>> {name: alias.unit for name, alias in arm.aliases.items()}
+{'servo/tracking RMS': 'deg',
+ 'servo/tracking peak': 'deg',
+ 'servo/stop error': 'deg',
+ 'servo/stop error p95': 'deg',
+ 'servo/stop error worst': 'deg',
+ 'servo/overshoot': 'deg',
+ 'servo/lag': 'ms',
+ 'servo/limiter share': '%',
+ 'servo/stops': '',
+ 'tip tracking RMS': 'mm',
+ 'tip stop error': 'mm',
+ 'tip stop p95': 'mm',
+ 'tip stop worst': 'mm',
+ 'tip settle': 's',
+ 'all stops settled': ''}
+
+>>> # one recording, offline: CAN 11, rung 0.9, a repeat
+>>> run = as_run(pendulum_runs("real")[32])
+>>> run
+Run(real station=can11 rung=0.9 kind=repeat · plan 318, state 318, target 318)
+>>> offline = arm.values(arm.fold(run))     # offline: the whole recording, one fold
+>>> offline["tip stop error"]               # mm, at the tip
+0.23094052947652116
+
+>>> # the same recording, live: fed in chunks of 7 rows as they would arrive
+>>> state = arm.empty()                     # live: the same fold, 7 samples at a time
+>>> for chunk in run.chunks(7):
+...     state = arm.update(state, chunk)
+>>> live = arm.values(arm.close(state))
+
+>>> # equal: live and offline give the same numbers
+>>> live == offline
+True
+
+>>> # many runs into a table: CAN 11's 42 runs, one row per rung
+>>> can11_runs = [as_run(play) for play in pendulum_runs("real") if play.station == "can11"]
+>>> strata = summarize(arm, can11_runs, by=("station", "rung"))
+>>> for (station, rung), stratum in sorted(strata.items()):
+...     tail = stratum.tails["tip stop error"]
+...     print(f"rung {rung}: stops median {tail.median:.2f} mm, worst {tail.worst:.2f} mm")
+rung 0.2: stops median 0.29 mm, worst 0.61 mm
+rung 0.4: stops median 0.16 mm, worst 1.29 mm
+rung 0.6: stops median 0.22 mm, worst 0.58 mm
+rung 0.8: stops median 0.25 mm, worst 0.71 mm
+rung 0.9: stops median 0.37 mm, worst 1.14 mm
+rung 1.0: stops median 0.56 mm, worst 1.32 mm
+
+>>> # Zach's 1 mm tip-stop gate, outside the metric: on the median stop, and on every stop
+>>> median_stop = Objective("tip stop error", "<=", 1.0, unit="mm", on="value", owner="Zach")
+>>> every_stop = Objective("tip stop error", "<=", 1.0, unit="mm", share=1.0, on="items")
+>>> median_stop.title, every_stop.title
+('tip stop error <= 1 mm', '100% of tip stop error <= 1 mm')
+
+>>> # its verdict per rung: the median stop, and every stop with the worst one
+>>> for (station, rung), stratum in sorted(strata.items()):
+...     median_verdict = median_stop.judge(stratum).verdict
+...     every_stop_result = every_stop.judge(stratum).message
+...     print(f"rung {rung}: median {median_verdict} · every stop: {every_stop_result}")
+rung 0.2: median pass · every stop: 14 of 14 pass, worst 0.6098 mm (proposed)
+rung 0.4: median pass · every stop: 12 of 14 pass, worst 1.293 mm (proposed)
+rung 0.6: median pass · every stop: 14 of 14 pass, worst 0.5763 mm (proposed)
+rung 0.8: median pass · every stop: 14 of 14 pass, worst 0.7127 mm (proposed)
+rung 0.9: median pass · every stop: 13 of 14 pass, worst 1.143 mm (proposed)
+rung 1.0: median pass · every stop: 12 of 14 pass, worst 1.317 mm (proposed)
+
+# 2 · setup: imports, then the real data   (0.29 s)
+>>> import pathlib
+
+>>> import calibration                    # round 1: the friction ladder's held-out runs
+>>> from fixture import chain_runs, pendulum_runs, stations    # round 1: runs from /archive
+>>> from fixture_runs import as_run       # one fixture run as 0.1.0's Run: streams + labels
+>>> from robot_metrics import DEGREES, Alias, Collection, ErrorStat, HeldOutPair
+>>> from robot_metrics import CodeShare, PerformanceGain, Repeat, Repeatability, StopStat
+>>> from robot_metrics import TimeOffset, catalog, highest_passing, summarize
+>>> from robot_metrics.adapters import rerun as rerun_sink
+>>> from robot_metrics.adapters import wandb as wandb_sink
+>>> from robot_metrics.views import plot
+
+>>> # round 8 of the 1-DOF test rack: 252 real plays, and the twin's answer to each
+>>> real_runs = [as_run(play) for play in pendulum_runs("real")]
+>>> sim_runs = [as_run(play) for play in pendulum_runs("sim")]
+>>> len(real_runs), len(sim_runs)
+(252, 252)
+
+>>> # each station's lever (m): the tip moves tip length x the joint angle
+>>> tip_lengths = {name: facts["tip_length_m"] for name, facts in sorted(stations().items())}
+>>> tip_lengths
+{'can1': 0.031, 'can11': 0.339, 'can12': 0.0265, 'can13': 0.0396, 'can14': 0.031, 'can15': 0.1}
+
+>>> # the five-bar's speed ladder of 2026-11-10: the real arm's rungs, then its sim twin's
+>>> chain = [as_run(rung) for rung in chain_runs("real") + chain_runs("sim")]
+>>> len(chain)
+10
+
+>>> # where the view's picture and .rrd go (gitignored)
+>>> REPORT_MEDIA = pathlib.Path("/home/bam/robot_models/reports/media")
+>>> MEDIA = REPORT_MEDIA / "robot-models-metrics-api-proposals-2026-11-18"
+>>> MEDIA.mkdir(parents=True, exist_ok=True)
+
+# 3 · a part type's metrics   (0.00 s)
+>>> servo = catalog.integrated_servo()
+>>> print(servo.table())
+integrated_servo.metrics: 9 aliases over 5 states
+  tracking RMS      [deg]  ErrorStat(statistic='rms', rows='moving', field='positions', joint=0)
+  tracking peak     [deg]  ErrorStat(statistic='max_abs', rows='all', field='positions', joint=0)
+  stop error        [deg]  StopStat(of='error', statistic='median', band=inf, include_last_dwell=True, joint=0, dwell_min_s=0.25, settle_window_s=0.05, count_first_dwell=False)
+  stop error p95    [deg]  StopStat(of='error', statistic='p95', band=inf, include_last_dwell=True, joint=0, dwell_min_s=0.25, settle_window_s=0.05, count_first_dwell=False)
+  stop error worst  [deg]  StopStat(of='error', statistic='max', band=inf, include_last_dwell=True, joint=0, dwell_min_s=0.25, settle_window_s=0.05, count_first_dwell=False)
+  overshoot         [deg]  StopStat(of='overshoot', statistic='max', band=inf, include_last_dwell=True, joint=0, dwell_min_s=0.25, settle_window_s=0.05, count_first_dwell=False)
+  lag               [ ms]  TimeOffset(max_offset_s=0.25)  (end of run)
+  limiter share     [  %]  CodeShare(codes=(97, 98, 99, 102), channel='fault')
+  stops             [  -]  StopStat(of='count', statistic='count', band=inf, include_last_dwell=True, joint=0, dwell_min_s=0.25, settle_window_s=0.05, count_first_dwell=False)
+
+>>> can11_arm = catalog.pendulum_arm(tip_length_m=tip_lengths["can11"])
+>>> print(can11_arm.table())
+pendulum_arm.metrics: 15 aliases over 5 states
+  servo/tracking RMS      [deg]  ErrorStat(statistic='rms', rows='moving', field='positions', joint=0)
+  servo/tracking peak     [deg]  ErrorStat(statistic='max_abs', rows='all', field='positions', joint=0)
+  servo/stop error        [deg]  StopStat(of='error', statistic='median', band=inf, include_last_dwell=True, joint=0, dwell_min_s=0.25, settle_window_s=0.05, count_first_dwell=False)
+  servo/stop error p95    [deg]  StopStat(of='error', statistic='p95', band=inf, include_last_dwell=True, joint=0, dwell_min_s=0.25, settle_window_s=0.05, count_first_dwell=False)
+  servo/stop error worst  [deg]  StopStat(of='error', statistic='max', band=inf, include_last_dwell=True, joint=0, dwell_min_s=0.25, settle_window_s=0.05, count_first_dwell=False)
+  servo/overshoot         [deg]  StopStat(of='overshoot', statistic='max', band=inf, include_last_dwell=True, joint=0, dwell_min_s=0.25, settle_window_s=0.05, count_first_dwell=False)
+  servo/lag               [ ms]  TimeOffset(max_offset_s=0.25)  (end of run)
+  servo/limiter share     [  %]  CodeShare(codes=(97, 98, 99, 102), channel='fault')
+  servo/stops             [  -]  StopStat(of='count', statistic='count', band=inf, include_last_dwell=True, joint=0, dwell_min_s=0.25, settle_window_s=0.05, count_first_dwell=False)
+  tip tracking RMS        [ mm]  ErrorStat(statistic='rms', rows='moving', field='positions', joint=0)
+  tip stop error          [ mm]  StopStat(of='error', statistic='median', band=inf, include_last_dwell=True, joint=0, dwell_min_s=0.25, settle_window_s=0.05, count_first_dwell=False)
+  tip stop p95            [ mm]  StopStat(of='error', statistic='p95', band=inf, include_last_dwell=True, joint=0, dwell_min_s=0.25, settle_window_s=0.05, count_first_dwell=False)
+  tip stop worst          [ mm]  StopStat(of='error', statistic='max', band=inf, include_last_dwell=True, joint=0, dwell_min_s=0.25, settle_window_s=0.05, count_first_dwell=False)
+  tip settle              [  s]  StopStat(of='settle', statistic='median', band=0.0029498525073746312, include_last_dwell=True, joint=0, dwell_min_s=0.25, settle_window_s=0.05, count_first_dwell=False)
+  all stops settled       [  -]  StopStat(of='settled', statistic='all', band=0.0029498525073746312, include_last_dwell=True, joint=0, dwell_min_s=0.25, settle_window_s=0.05, count_first_dwell=False)
+
+>>> print(catalog.rigid_chain(("j2", "c1")).table())
+rigid_body_chain.metrics: 4 aliases over 3 states
+  j2/tracking RMS    [deg]  ErrorStat(statistic='rms', rows='all', field='positions', joint=0)
+  c1/tracking RMS    [deg]  ErrorStat(statistic='rms', rows='all', field='positions', joint=1)
+  tool tracking RMS  [ mm]  ErrorStat(statistic='rms', rows='all', field='positions', joint=0)
+  tool worst         [ mm]  ErrorStat(statistic='max_abs', rows='all', field='positions', joint=0)
+
+>>> can11 = can11_arm.collection()
+>>> can11.aliases["tip stop error"].card()
+{'name': 'tip stop error',
+ 'unit': 'mm',
+ 'signal': 'target/state',
+ 'target': None,
+ 'function': 'robot_metrics.StopStat',
+ 'across': 'pool',
+ 'of_child': 'servo',
+ 'base': 'StopStat',
+ 'config': "of='error', statistic='median', band=inf, include_last_dwell=True, joint=0, "
+           'dwell_min_s=0.25, settle_window_s=0.05, count_first_dwell=False',
+ 'description': 'A quantity of every stop (a dwell >= 0.25 s at zero commanded speed on one target '
+                "that a move led into; its error the mean of the dwell's last 50 ms), pooled over "
+                'the stops it is given.',
+ 'references': ['bam_rack_twin pendulum_score.stops / RobotDx T4 stop_accuracy',
+                'robotdx.diagnostics.stock (io-diagnostics main a7fc658) stop_error',
+                'robot_msgs.compare.goal (overshoot)',
+                'ISO 9283:1998 §7.2 (pose accuracy at a stop)'],
+ 'value_type': 'number',
+ 'input': 'AlignedPair',
+ 'live': True,
+ 'version': '1',
+ 'hint': 'distribution'}
+>>> can11.aliases["all stops settled"].card()["value_type"]
+'bool'
+
+# 4 · one recording, offline and live   (0.05 s)
+>>> run = real_runs[32]                       # CAN 11, rung 0.9, a repeat
+>>> offline = can11.values(can11.fold(run))
+
+>>> state = can11.empty()
+>>> for chunk in run.chunks(7):
+...     state = can11.update(state, chunk)
+>>> live = can11.values(can11.close(state))
+
+>>> names = ["servo/tracking RMS", "servo/tracking peak", "tip stop error", "tip stop worst",
+...          "tip settle", "servo/overshoot", "servo/lag", "servo/stops"]
+>>> print(f"{'':<20} {'offline':>10} {'live':>10}")
+                        offline       live
+>>> for name in names:
+...     offline_value, live_value = offline[name], live[name]
+...     unit = can11.aliases[name].unit
+...     print(f"{name:<20} {offline_value:10.6f} {live_value:10.6f}  {unit}")
+servo/tracking RMS     0.145869   0.145869  deg
+servo/tracking peak    0.323937   0.323937  deg
+tip stop error         0.230941   0.230941  mm
+tip stop worst         0.330243   0.330243  mm
+tip settle             0.000000   0.000000  s
+servo/overshoot        0.000000   0.000000  deg
+servo/lag             -0.741204  -0.741204  ms
+servo/stops            2.000000   2.000000
+>>> live == offline
+True
+
+>>> # lag needs the whole run (a cross-correlation): 0.1.0 marks it end-of-run
+>>> can11.aliases["servo/lag"].metric.live
+False
+
+# 5 · runs to a deployment, gates applied   (1.15 s)
+>>> strata = {}
+>>> for station, tip_length_m in tip_lengths.items():
+...     station_arm = catalog.pendulum_arm(tip_length_m).collection()
+...     station_runs = [run for run in real_runs if run.labels["station"] == station]
+...     strata.update(summarize(station_arm, station_runs, by=("station", "rung")))
+>>> len(strata)
+36
+
+>>> gates = catalog.pendulum_gates()
+>>> for name, gate in gates.items():
+...     for objective in gate.objectives:
+...         print(f"{name:<22} {objective.title:<36} {objective.owner}")
+tracks                 servo/tracking RMS <= 0.5 deg        agent (pendulum_goal)
+tracks                 servo/tracking peak <= 1.5 deg       agent (pendulum_goal)
+tracks                 servo/limiter share <= 2 %           agent (pendulum_goal)
+tracks                 faulted runs <= 0                    agent (pendulum_goal)
+tip stop (median)      tip stop error <= 1 mm               Zach 2026-11-11 (the scorecard's median)
+tip stop (median)      tip settle <= 0.3 s                  agent (pendulum_goal)
+tip stop (every stop)  100% of tip stop error <= 1 mm       proposed: Zach 2026-11-11 on every stop
+
+>>> passed = {name: {} for name in gates}
+>>> for key, stratum in strata.items():
+...     for name, gate in gates.items():
+...         passed[name][key] = gate.judge(stratum).verdict == "pass"
+>>> for name, cells in passed.items():
+...     print(f"{name:<22} {sum(cells.values())} of {len(cells)} rung cells pass")
+tracks                 31 of 36 rung cells pass
+tip stop (median)      36 of 36 rung cells pass
+tip stop (every stop)  33 of 36 rung cells pass
+
+>>> tracks_and_stops = {}
+>>> for key in strata:
+...     tracks_and_stops[key] = passed["tracks"][key] and passed["tip stop (median)"][key]
+>>> highest_passing(tracks_and_stops)
+{'can1': 0.9, 'can11': 1.0, 'can12': 0.9, 'can13': 0.9, 'can14': 0.9, 'can15': 0.9}
+
+>>> rungs = sorted({rung for station, rung in strata})
+>>> header = "worst stop mm"
+>>> for rung in rungs:
+...     header += f"{rung:>7}"
+>>> print(header)
+worst stop mm    0.2    0.4    0.6    0.8    0.9    1.0
+>>> for station in tip_lengths:
+...     row = f"{station:<13}"
+...     for rung in rungs:
+...         worst_mm = strata[(station, rung)].values["tip stop worst"]
+...         row += f"{worst_mm:7.2f}"
+...     print(row)
+can1            0.06   0.05   0.05   0.07   0.07   0.07
+can11           0.61   1.29   0.58   0.71   1.14   1.32
+can12           0.05   0.03   0.09   0.13   0.14   0.16
+can13           0.04   0.03   0.05   0.08   0.10   0.12
+can14           0.05   0.03   0.07   0.07   0.06   0.07
+can15           0.13   0.09   0.09   0.08   0.06   0.17
+
+# 6 · the twin's output (sim vs target)   (1.14 s)
+>>> sim_strata = {}
+>>> for station, tip_length_m in tip_lengths.items():
+...     station_arm = catalog.pendulum_arm(tip_length_m).collection()
+...     station_runs = [run for run in sim_runs if run.labels["station"] == station]
+...     sim_strata.update(summarize(station_arm, station_runs, by=("station", "rung")))
+
+>>> print("CAN 11 rung   RMS real °   RMS sim °   stop real mm   stop sim mm")
+CAN 11 rung   RMS real °   RMS sim °   stop real mm   stop sim mm
+>>> for rung in rungs:
+...     real_values = strata[("can11", rung)].values
+...     sim_values = sim_strata[("can11", rung)].values
+...     rms_real = real_values["servo/tracking RMS"]
+...     rms_sim = sim_values["servo/tracking RMS"]
+...     stop_real = real_values["tip stop error"]
+...     stop_sim = sim_values["tip stop error"]
+...     rms_text = f"{rms_real:12.3f} {rms_sim:11.3f}"
+...     stop_text = f"{stop_real:14.3f} {stop_sim:13.3f}"
+...     print(f"{rung:11.1f} {rms_text} {stop_text}")
+        0.2        0.095       0.091          0.291         0.146
+        0.4        0.079       0.114          0.163         0.225
+        0.6        0.061       0.138          0.220         0.154
+        0.8        0.099       0.180          0.250         0.174
+        0.9        0.135       0.213          0.374         0.344
+        1.0        0.163       0.257          0.558         0.538
+
+>>> median_gate = gates["tip stop (median)"]
+>>> sim_verdicts = [median_gate.judge(stratum).verdict for stratum in sim_strata.values()]
+>>> sim_verdicts.count("pass"), len(sim_verdicts)
+(36, 36)
+
+# 7 · the chain, a view, a new metric   (1.20 s)
+>>> chain_metrics = catalog.rigid_chain(("j2", "c1")).collection()
+>>> for rung_run in chain:
+...     values = chain_metrics.values(chain_metrics.fold(rung_run))
+...     tool_mm, worst_mm = values["tool tracking RMS"], values["tool worst"]
+...     print(f"{rung_run.id:<34} tool RMS {tool_mm:6.2f} mm, worst {worst_mm:6.2f} mm")
+real:vertical.0.10mps.gravity_ff   tool RMS   5.14 mm, worst  23.80 mm
+real:vertical.0.10mps.full_ff      tool RMS   5.04 mm, worst  24.79 mm
+real:vertical.0.20mps.gravity_ff   tool RMS   6.80 mm, worst  33.07 mm
+real:vertical.0.20mps.full_ff      tool RMS   5.29 mm, worst  26.21 mm
+real:vertical.0.35mps.full_ff      tool RMS   5.97 mm, worst  22.91 mm
+sim:vertical.0.10mps.gravity_ff    tool RMS   4.83 mm, worst  17.90 mm
+sim:vertical.0.10mps.full_ff       tool RMS   3.96 mm, worst   9.46 mm
+sim:vertical.0.20mps.gravity_ff    tool RMS   6.47 mm, worst  27.01 mm
+sim:vertical.0.20mps.full_ff       tool RMS   4.07 mm, worst  10.55 mm
+sim:vertical.0.35mps.full_ff       tool RMS   4.24 mm, worst   9.39 mm
+
+>>> states_by_rung = {}
+>>> for rung in rungs:
+...     states_by_rung[f"rung {rung:g}"] = strata[("can11", rung)].merged
+>>> stops_view = can11.view(
+...     "tip stop error",
+...     states_by_rung,
+...     title="CAN 11 · every stop at the tip, by rung (round 8, real)",
+...     target=1.0,
+...     target_label="Zach's 1 mm",
+... )
+>>> len(stops_view.y), stops_view.hint
+(84, 'distribution')
+>>> figure, axes = plot(stops_view, path=MEDIA / "baseline-tip-stops.png")
+
+>>> payload = wandb_sink.payload(stops_view, "can11/tip_stop_mm")      # built, not sent
+>>> payload["summary"]
+{'can11/tip_stop_mm/n': 84,
+ 'can11/tip_stop_mm/max': 1.3171758816081196,
+ 'can11/tip_stop_mm/target': 1.0}
+>>> rrd_path = MEDIA / "baseline-tip-stops.rrd"
+>>> rrd = rerun_sink.write_rrd(stops_view, "metrics/can11/tip_stop_mm", rrd_path)
+>>> rrd.name
+'baseline-tip-stops.rrd'
+
+>>> velocity_error = ErrorStat(statistic="rms", rows="moving", field="velocities")
+>>> velocity_alias = Alias("velocity error RMS", velocity_error, unit="deg/s", scale=DEGREES)
+>>> with_velocity = Collection([*can11.aliases.values(), velocity_alias])
+>>> velocity_values = with_velocity.values(with_velocity.fold(run))
+>>> velocity_values["velocity error RMS"]
+4.3445365411852865
+>>> can11.computations, with_velocity.computations
+(5, 6)
+
+# 8 · other inputs: repeats and a calibration   (0.10 s)
+>>> inputs = (ErrorStat, StopStat, TimeOffset, CodeShare, Repeatability, PerformanceGain)
+>>> {metric.__name__: metric.Input.__name__ for metric in inputs}
+{'ErrorStat': 'AlignedPair',
+ 'StopStat': 'AlignedPair',
+ 'TimeOffset': 'CommandAndState',
+ 'CodeShare': 'AlignedPair',
+ 'Repeatability': 'Repeat',
+ 'PerformanceGain': 'HeldOutPair'}
+
+>>> repeats = []
+>>> for repeat_run in real_runs:
+...     labels = repeat_run.labels
+...     same_cell = labels["station"] == "can11" and labels["rung"] == 0.9
+...     if same_cell and labels["kind"] == "repeat":
+...         streams = repeat_run.streams
+...         repeats.append(Repeat(("can11", 0.9), streams["target"], streams["state"]))
+>>> len(repeats)
+5
+>>> repeatability = Repeatability(k=3.0)
+>>> repeatability_rad = repeatability.compute(repeatability.fold(repeats))
+>>> repeatability_rad * tip_lengths["can11"] * 1e3      # mm at the tip
+0.3872953748015474
+
+>>> residual_rms = ErrorStat(statistic="rms", field="effort")
+>>> residual = Alias("feed-forward residual RMS", residual_rms, unit="N·m")
+>>> nominal_runs = tuple(as_run(plateau) for plateau in calibration.held_out_runs("nominal"))
+>>> fitted_runs = tuple(as_run(plateau) for plateau in calibration.held_out_runs("fitted"))
+>>> gain = PerformanceGain(metric=residual)
+>>> held_out = HeldOutPair(nominal=nominal_runs, fitted=fitted_runs)
+>>> gain_state = gain.update(gain.empty(), held_out)
+>>> gain.sides(gain_state)                    # N·m on the held-out runs: nominal, fitted
+(0.22196952061068506, 0.004184752627886935)
+>>> gain.compute(gain_state)                  # nominal minus fitted
+0.21778476798279814
