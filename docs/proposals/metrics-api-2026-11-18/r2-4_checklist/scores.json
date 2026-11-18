@@ -1,0 +1,38 @@
+{
+ "scores": {
+  "lg": {
+   "score": 5,
+   "evidence": "26 lines; imports first with the data's origin; plain verbs (card.check, card.measure, card.live, live.update); print(card) gives each measure's plain meaning; every output is a table with units or True; owners read 'Zach 2026-11-11' and 'AI agent'."
+  },
+  "fr1": {
+   "score": 5,
+   "evidence": "parts.py: INTEGRATED_SERVO.models (robot_models' IntegratedServo) beside INTEGRATED_SERVO.metrics (its checklist); each row a configured stock measure with name, description, references and unit (Check.card())."
+  },
+  "fr2": {
+   "score": 5,
+   "evidence": "card.check(run) per recording; by=['station', 'rung'] and by=['station'] for the roll-ups; pooled vs per-run stated per measure (Check.card()['across runs']). The deployment is 'every station passes', one all(...) line, since tip numbers never pool across levers."
+  },
+  "fr3": {
+   "score": 3,
+   "evidence": "live = offline (bit-identical at 7-row chunks, 2.8e-17 at 1-row chunks); stops survive chunk boundaries; alignment stated. Memory grows with the stops kept and lag keeps the whole run (live.kept() prints it)."
+  },
+  "fr4": {
+   "score": 5,
+   "evidence": "target and owner on the row, nothing inside the measure; median and worst tip stop are two visible rows; owner per row (Zach / AI agent / proposed)."
+  },
+  "fr5": {
+   "score": 5,
+   "evidence": "a new metric is one Check(...) in the list: Card(name, arm.checks + [velocity]); a new part type is one Card."
+  },
+  "fr6": {
+   "score": 3,
+   "evidence": "no fourth copy: robot_metrics 0.1.0 does the arithmetic; robot_msgs.compare keeps the error math, robot_metrics the stop rule; sim2real.metrics and robotdx.diagnostics.stock would call it (stated, not done)."
+  },
+  "fr7": {
+   "score": 5,
+   "evidence": "card.view(row, runs, by=...) -> round 1's View -> matplotlib PNG, W&B payload, Rerun .rrd; the data-ui hint ('distribution') comes from the stock metric."
+  }
+ },
+ "lg_unexplained": [],
+ "total": 93.0
+}

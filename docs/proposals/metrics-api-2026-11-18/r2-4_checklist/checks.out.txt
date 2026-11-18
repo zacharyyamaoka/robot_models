@@ -1,0 +1,12 @@
+# G1 parity: /home/bam/robot_models/.venv/bin/python /home/bam/robot_models/docs/proposals/metrics-api-2026-11-18/check_parity.py r2-4_checklist
+check_scenario.py md5 7d9ced1478d59e72fe4513e4466fbb59 (frozen)
+PASS  r2-4_checklist
+      · max |deviation|: chain.rel 0.00e+00, overshoot_deg 0.00e+00, real_plays.stops 0.00e+00, real_plays.tracking_peak_deg 0.00e+00, real_plays.tracking_rms_deg 0.00e+00, real_rungs.limiter_share 0.00e+00, real_rungs.settle_s 0.00e+00, real_rungs.stop_tool_max_mm 0.00e+00, real_rungs.stop_tool_mm 2.78e-17, real_rungs.tracking_peak_deg 0.00e+00, real_rungs.tracking_rms_deg 0.00e+00, sim_plays.tracking_rms_deg 0.00e+00, sim_rungs.stop_tool_max_mm 0.00e+00, sim_rungs.stop_tool_mm 3.47e-18, sim_rungs.tracking_peak_deg 0.00e+00, sim_rungs.tracking_rms_deg 0.00e+00
+
+# G2 runs as shown: check_standalone.py on a one-variant gallery-spec.json drawn from session.json with round 1's flow_html (round 2's build_gallery.py did not exist yet), --path round 1, the uv python with matplotlib and rerun-sdk 0.40.0, --jobs 1
+round round · 2 displayed blocks · uv run --offline --project /home/bam/robot_models --with matplotlib --with rerun-sdk==0.40.0 python -I · source gallery-spec.json
+PASS  r2-4   API at a glance
+      · 17 statements ran, every output as shown
+PASS  r2-4   The session that ran
+      · 66 statements ran, every output as shown
+standalone: 2 of 2 blocks PASS

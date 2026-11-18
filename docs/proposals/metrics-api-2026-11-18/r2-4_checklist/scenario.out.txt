@@ -1,0 +1,338 @@
+# 1 · API at a glance   (1.10 s)
+>>> # load the real runs: round 8 of the 1-DOF test rack, 252 recordings (round 1's fixture.py)
+>>> from fixture import pendulum_runs
+>>> from checklist import Card, Check, in_chunks
+>>> from checklist import rms_tracking_error, median_stop_error, worst_stop_error, stop_count
+>>> runs = pendulum_runs("real")
+>>> len(runs)
+252
+
+>>> # the pendulum arm's checklist: what is measured, its unit, its target and who set it
+>>> card = Card("pendulum arm", [
+...     Check("tracking RMS", measure=rms_tracking_error(), unit="deg",
+...           target="<= 0.5", owner="AI agent"),
+...     Check("median tip stop", measure=median_stop_error(at="tip"), unit="mm",
+...           target="<= 1.0", owner="Zach 2026-11-11"),
+...     Check("worst tip stop", measure=worst_stop_error(at="tip"), unit="mm",
+...           target="<= 1.0", owner="Zach 2026-11-11"),
+...     Check("stops", measure=stop_count(), unit="stops"),
+... ])
+>>> print(card)
+pendulum arm: 4 checks
+check            how it is measured                     unit   target
+tracking RMS     RMS of measured - target while moving  deg    <= 0.5 (AI agent)
+median tip stop  median stop error at the tip           mm     <= 1.0 (Zach 2026-11-11)
+worst tip stop   largest stop error at the tip          mm     <= 1.0 (Zach 2026-11-11)
+stops            number of stops                        stops  none: observed
+
+>>> # one recording, offline: CAN 11 at rung 0.9, a repeat
+>>> run = runs[32]
+>>> card.check(run)
+pendulum arm · 1 recording: can11, rung 0.9
+check            measured   target  owner            result
+tracking RMS     0.146 deg  <= 0.5  AI agent         pass
+median tip stop  0.231 mm   <= 1.0  Zach 2026-11-11  pass
+worst tip stop   0.330 mm   <= 1.0  Zach 2026-11-11  pass
+stops            2 stops    -       -                observed
+
+>>> # the same recording, live: fed 7 rows at a time, as they would arrive
+>>> live = card.live()                  # keeps running sums and the stops so far, not the rows
+>>> for chunk in in_chunks(run, rows=7):
+...     live.update(chunk)
+>>> card.check(live)
+pendulum arm · live: 46 chunks, 318 rows so far
+check            measured   target  owner            result
+tracking RMS     0.146 deg  <= 0.5  AI agent         pass
+median tip stop  0.231 mm   <= 1.0  Zach 2026-11-11  pass
+worst tip stop   0.330 mm   <= 1.0  Zach 2026-11-11  pass
+stops            2 stops    -       -                observed
+
+>>> # equal: live and offline give the same numbers
+>>> card.measure(live) == card.measure(run)
+True
+
+>>> # many runs into a table by station and rung: CAN 11's six rungs
+>>> can11 = [run for run in runs if run.station == "can11"]
+>>> card.measure(can11, by=["station", "rung"])
+station  rung  runs  tracking RMS (deg)  median tip stop (mm)  worst tip stop (mm)  stops
+can11    0.2      7               0.095                 0.291                0.610     14
+can11    0.4      7               0.079                 0.163                1.293     14
+can11    0.6      7               0.061                 0.220                0.576     14
+can11    0.8      7               0.099                 0.250                0.713     14
+can11    0.9      7               0.135                 0.374                1.143     14
+can11    1.0      7               0.163                 0.558                1.317     14
+
+>>> # Zach's 1 mm tip-stop gate: the target and its owner sit on the row, not in the measure
+>>> print(card["worst tip stop"])
+worst tip stop: worst_stop_error(at="tip") in mm, target <= 1.0, set by Zach 2026-11-11
+
+>>> # its verdict per station and rung: the median tip stop passes everywhere, the worst does not
+>>> card.check(runs, by=["station", "rung"])
+pendulum arm · 252 recordings in 36 groups by station, rung
+check            target  owner            passing   failing groups
+tracking RMS     <= 0.5  AI agent         31 of 36  can1 1.0: 1.209 deg
+                                                    can12 1.0: 0.931 deg
+                                                    can13 1.0: 0.586 deg
+                                                    can14 1.0: 1.217 deg
+                                                    can15 1.0: 1.205 deg
+median tip stop  <= 1.0  Zach 2026-11-11  36 of 36
+worst tip stop   <= 1.0  Zach 2026-11-11  33 of 36  can11 0.4: 1.293 mm
+                                                    can11 0.9: 1.143 mm
+                                                    can11 1.0: 1.317 mm
+stops            -       -                observed
+
+# 2 · setup   (0.32 s)
+>>> # the data: round 1's fixture reads round 8 (real), the twin's answers (sim) and the five-bar ladder
+>>> import pathlib
+>>> from fixture import pendulum_runs, chain_runs
+>>> import calibration
+>>> import _viz
+>>> from checklist import Card, Check, in_chunks, performance_gain, repeatability
+>>> from checklist import rms_tracking_error
+>>> from parts import INTEGRATED_SERVO, PENDULUM_ARM, RIGID_CHAIN
+>>> from rung_ladder import highest_passing_rung
+
+>>> real = pendulum_runs("real")
+>>> sim = pendulum_runs("sim")
+>>> five_bar = chain_runs("real") + chain_runs("sim")
+>>> len(real), len(sim), len(five_bar)
+(252, 252, 10)
+
+# 3 · a part's metrics, beside its models   (0.00 s)
+>>> INTEGRATED_SERVO.models.keys()          # robot_models' model family for the servo
+('M0.ideal', 'M1.datasheet', 'M2.coulomb_viscous', 'M3.stribeck', 'M3.load', 'M3.lugre',
+ 'M3.weakening_capture', 'M4.ripple', 'M4.drivetrain', 'M5.dcmotor', 'M5.envelope', 'M5.wear',
+ 'M6.residual', 'M7.learned')
+
+>>> print(INTEGRATED_SERVO.metrics)
+integrated servo: 7 checks
+check          how it is measured                           unit   target
+tracking RMS   RMS of measured - target while moving        deg    <= 0.5 (AI agent)
+tracking peak  largest |measured - target|                  deg    <= 1.5 (AI agent)
+limiter share  share of rows the limiter or a fault shaped  %      <= 2.0 (AI agent)
+faulted runs   runs that faulted (yes / no per run)         runs   == 0 (AI agent)
+overshoot      largest overshoot past a stop's target       deg    none: observed
+lag            how late the reply runs behind the plan      ms     none: observed
+stops          number of stops                              stops  none: observed
+
+>>> arm = PENDULUM_ARM.metrics
+>>> print(arm)
+pendulum arm: 10 checks
+check            how it is measured                            unit   target
+tracking RMS     RMS of measured - target while moving         deg    <= 0.5 (AI agent)
+tracking peak    largest |measured - target|                   deg    <= 1.5 (AI agent)
+limiter share    share of rows the limiter or a fault shaped   %      <= 2.0 (AI agent)
+faulted runs     runs that faulted (yes / no per run)          runs   == 0 (AI agent)
+overshoot        largest overshoot past a stop's target        deg    none: observed
+lag              how late the reply runs behind the plan       ms     none: observed
+stops            number of stops                               stops  none: observed
+median tip stop  median stop error at the tip                  mm     <= 1.0 (Zach 2026-11-11)
+tip settle       median time to settle within 1 mm at the tip  s      <= 0.3 (AI agent)
+worst tip stop   largest stop error at the tip                 mm     <= 1.0 (proposed, Zach's 1 mm)
+
+>>> print(RIGID_CHAIN.metrics)
+five-bar arm: 4 checks
+check       how it is measured                 unit  target
+j2 RMS      RMS of measured - target           deg   none: observed
+c1 RMS      RMS of measured - target, joint 1  deg   none: observed
+tool RMS    RMS of tool error                  mm    none: observed
+tool worst  largest tool error                 mm    none: observed
+
+>>> arm["worst tip stop"].card()            # Zach's Metric fields for one row
+{'name': 'worst tip stop',
+ 'description': 'largest stop error at the tip',
+ 'references': ['bam_rack_twin pendulum_score.stops / RobotDx T4 stop_accuracy',
+                'robotdx.diagnostics.stock (io-diagnostics main a7fc658) stop_error',
+                'robot_msgs.compare.goal (overshoot)',
+                'ISO 9283:1998 §7.2 (pose accuracy at a stop)',
+                'Great Expectations: expect_column_values_to_be_between (the target is applied '
+                'apart)'],
+ 'function': 'checklist.worst_stop_error(at="tip")',
+ 'unit': 'mm',
+ 'target': '<= 1.0 mm',
+ 'owner': "proposed, Zach's 1 mm",
+ 'value_type': 'number',
+ 'across runs': 'pooled over every stop or row'}
+
+# 4 · one recording, offline and live   (0.31 s)
+>>> run = real[32]                          # CAN 11, rung 0.9, a repeat
+>>> arm.check(run)
+pendulum arm · 1 recording: can11, rung 0.9
+check            measured   target  owner                  result
+tracking RMS     0.146 deg  <= 0.5  AI agent               pass
+tracking peak    0.324 deg  <= 1.5  AI agent               pass
+limiter share    0.000 %    <= 2.0  AI agent               pass
+faulted runs     0 runs     == 0    AI agent               pass
+overshoot        0.000 deg  -       -                      observed
+lag              -0.741 ms  -       -                      observed
+stops            2 stops    -       -                      observed
+median tip stop  0.231 mm   <= 1.0  Zach 2026-11-11        pass
+tip settle       0.000 s    <= 0.3  AI agent               pass
+worst tip stop   0.330 mm   <= 1.0  proposed, Zach's 1 mm  pass
+
+>>> live = arm.live()
+>>> for chunk in in_chunks(run, rows=7):
+...     live.update(chunk)
+>>> arm.measure(live) == arm.measure(run)
+True
+>>> print(live.kept())                      # what the running measure holds between chunks
+rows of the card                                               kept between chunks
+tracking RMS                                                   4 numbers
+tracking peak                                                  4 numbers
+limiter share                                                  2 numbers
+overshoot, stops, median tip stop, tip settle, worst tip stop  1 stop + 175 rows of the open move
+lag                                                            every row so far (318): needs the whole run
+
+>>> one_row = arm.live()                    # every chunk boundary falls inside a move or a stop
+>>> for chunk in in_chunks(run, rows=1):
+...     one_row.update(chunk)
+>>> whole, by_row = arm.measure(run), arm.measure(one_row)
+>>> by_row["stops"], by_row["worst tip stop"] == whole["worst tip stop"]
+(2.0, True)
+>>> max(abs(by_row[name] - whole[name]) for name in whole)     # float round-off in the sums only
+2.7755575615628914e-17
+
+# 5 · runs to a deployment, the targets applied   (2.13 s)
+>>> by_rung = arm.check(real, by=["station", "rung"])
+>>> by_rung
+pendulum arm · 252 recordings in 36 groups by station, rung
+check            target  owner                  passing   failing groups
+tracking RMS     <= 0.5  AI agent               31 of 36  can1 1.0: 1.209 deg
+                                                          can12 1.0: 0.931 deg
+                                                          can13 1.0: 0.586 deg
+                                                          can14 1.0: 1.217 deg
+                                                          can15 1.0: 1.205 deg
+tracking peak    <= 1.5  AI agent               31 of 36  can1 1.0: 3.953 deg
+                                                          can12 1.0: 2.619 deg
+                                                          can13 1.0: 1.962 deg
+                                                          can14 1.0: 3.678 deg
+                                                          can15 1.0: 3.344 deg
+limiter share    <= 2.0  AI agent               36 of 36
+faulted runs     == 0    AI agent               36 of 36
+overshoot        -       -                      observed
+lag              -       -                      observed
+stops            -       -                      observed
+median tip stop  <= 1.0  Zach 2026-11-11        36 of 36
+tip settle       <= 0.3  AI agent               36 of 36
+worst tip stop   <= 1.0  proposed, Zach's 1 mm  33 of 36  can11 0.4: 1.293 mm
+                                                          can11 0.9: 1.143 mm
+                                                          can11 1.0: 1.317 mm
+
+>>> tracks = ["tracking RMS", "tracking peak", "limiter share", "faulted runs"]
+>>> median_stop = ["median tip stop", "tip settle"]
+>>> highest_passing_rung(by_rung, tracks + median_stop)
+{'can1': 0.9, 'can11': 1.0, 'can12': 0.9, 'can13': 0.9, 'can14': 0.9, 'can15': 0.9}
+
+>>> by_station = arm.check(real, by=["station"])
+>>> by_station
+pendulum arm · 252 recordings in 6 groups by station
+check            target  owner                  passing   failing groups
+tracking RMS     <= 0.5  AI agent               6 of 6
+tracking peak    <= 1.5  AI agent               1 of 6    can1: 3.953 deg
+                                                          can12: 2.619 deg
+                                                          can13: 1.962 deg
+                                                          can14: 3.678 deg
+                                                          can15: 3.344 deg
+limiter share    <= 2.0  AI agent               6 of 6
+faulted runs     == 0    AI agent               6 of 6
+overshoot        -       -                      observed
+lag              -       -                      observed
+stops            -       -                      observed
+median tip stop  <= 1.0  Zach 2026-11-11        6 of 6
+tip settle       <= 0.3  AI agent               6 of 6
+worst tip stop   <= 1.0  proposed, Zach's 1 mm  5 of 6    can11: 1.317 mm
+>>> deployment_passes = all(by_station.passing(tracks + median_stop).values())
+>>> deployment_passes
+False
+
+# 6 · the twin's output (sim vs target)   (1.04 s)
+>>> arm.check(sim, by=["station", "rung"])
+pendulum arm · 252 recordings in 36 groups by station, rung
+check            target  owner                  passing   failing groups
+tracking RMS     <= 0.5  AI agent               32 of 36  can1 1.0: 0.701 deg
+                                                          can12 1.0: 0.702 deg
+                                                          can14 1.0: 0.813 deg
+                                                          can15 1.0: 0.999 deg
+tracking peak    <= 1.5  AI agent               32 of 36  can1 1.0: 1.971 deg
+                                                          can12 1.0: 2.074 deg
+                                                          can14 1.0: 2.273 deg
+                                                          can15 1.0: 2.929 deg
+limiter share    <= 2.0  AI agent               32 of 36  can1 1.0: 2.424 %
+                                                          can12 1.0: 3.397 %
+                                                          can14 1.0: 2.779 %
+                                                          can15 1.0: 4.990 %
+faulted runs     == 0    AI agent               36 of 36
+overshoot        -       -                      observed
+lag              -       -                      observed
+stops            -       -                      observed
+median tip stop  <= 1.0  Zach 2026-11-11        36 of 36
+tip settle       <= 0.3  AI agent               36 of 36
+worst tip stop   <= 1.0  proposed, Zach's 1 mm  35 of 36  can11 1.0: 1.062 mm
+
+>>> tip_stops = Card("tip stops", [arm["median tip stop"], arm["worst tip stop"]])
+>>> can11_sim = [run for run in sim if run.station == "can11"]
+>>> tip_stops.measure(can11_sim, by=["source", "rung"])
+source  rung  runs  median tip stop (mm)  worst tip stop (mm)
+sim     0.2      7                 0.146                0.172
+sim     0.4      7                 0.225                0.399
+sim     0.6      7                 0.154                0.226
+sim     0.8      7                 0.174                0.353
+sim     0.9      7                 0.344                0.658
+sim     1.0      7                 0.538                1.062
+
+# 7 · the five-bar, a view, a new row   (0.99 s)
+>>> RIGID_CHAIN.metrics.measure(five_bar, by=["source", "rung"])
+source  rung                         runs  j2 RMS (deg)  c1 RMS (deg)  tool RMS (mm)  tool worst (mm)
+real    vertical.0.10mps.full_ff        1         0.652         0.597          5.035           24.793
+real    vertical.0.10mps.gravity_ff     1         0.625         0.556          5.145           23.798
+real    vertical.0.20mps.full_ff        1         0.762         0.555          5.290           26.208
+real    vertical.0.20mps.gravity_ff     1         0.910         0.692          6.804           33.068
+real    vertical.0.35mps.full_ff        1         0.977         0.582          5.967           22.907
+sim     vertical.0.10mps.full_ff        1         0.844         0.435          3.960            9.464
+sim     vertical.0.10mps.gravity_ff     1         0.908         0.514          4.829           17.896
+sim     vertical.0.20mps.full_ff        1         0.871         0.422          4.066           10.546
+sim     vertical.0.20mps.gravity_ff     1         1.083         0.651          6.469           27.011
+sim     vertical.0.35mps.full_ff        1         0.888         0.429          4.236            9.392
+
+>>> can11 = [run for run in real if run.station == "can11"]
+>>> title = "CAN 11 · every stop at the tip, by rung"
+>>> view = arm.view("worst tip stop", can11, by="rung", title=title)
+>>> len(view.y), view.hint
+(84, 'distribution')
+
+>>> media = pathlib.Path("/home/bam/robot_models/reports/media/robot-models-metrics-api-proposals-2026-11-18")
+>>> media.mkdir(parents=True, exist_ok=True)
+>>> figure, axes = _viz.plot(view, path=media / "r2-4-tip-stops.png")
+>>> payload = _viz.wandb_payload(view, "can11/tip_stop_mm")
+>>> payload["summary"]
+{'can11/tip_stop_mm/max': 1.3171758816081196,
+ 'can11/tip_stop_mm/n': 84,
+ 'can11/tip_stop_mm/target': 1.0}
+>>> calls = _viz.rerun_calls(view, "metrics/can11/tip_stop_mm")
+>>> _viz.write_rrd(calls, media / "r2-4-tip-stops.rrd")
+PosixPath('/home/bam/robot_models/reports/media/robot-models-metrics-api-proposals-2026-11-18/r2-4-tip-stops.rrd')
+
+>>> velocity = Check("velocity RMS", measure=rms_tracking_error(of="velocity"), unit="deg/s")
+>>> with_velocity = Card("pendulum arm", arm.checks + [velocity])
+>>> with_velocity.measure(run)["velocity RMS"]
+4.3445365411852865
+
+# 8 · other inputs: repeats and a calibration   (0.08 s)
+>>> repeats = [run for run in can11 if run.rung == 0.9 and run.labels["kind"] == "repeat"]
+>>> len(repeats)
+5
+>>> repeat_card = Card("CAN 11 at rung 0.9", [
+...     Check("tip repeatability", measure=repeatability(k=3, at="tip"), unit="mm"),
+... ])
+>>> repeat_card.check(repeats)
+CAN 11 at rung 0.9 · 5 recordings
+check              measured  target  owner  result
+tip repeatability  0.387 mm  -       -      observed
+
+>>> friction_fit = performance_gain(rms_tracking_error(of="torque", while_moving=False))
+>>> nominal = calibration.held_out_runs("nominal")
+>>> fitted = calibration.held_out_runs("fitted")
+>>> friction_fit.sides(nominal, fitted)     # torque left to the feedback, N·m: nominal, fitted
+(0.22196952061068506, 0.004184752627886935)
+>>> friction_fit(nominal, fitted)           # N·m the fitted friction model saves
+0.21778476798279814
