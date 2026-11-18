@@ -1,0 +1,32 @@
+round metrics-api-2026-11-17 · 10 displayed blocks · /home/bam/robot_models/.venv/bin/python -I · source robot-models-metrics-api-proposals-2026-11-17.html
+FAIL  v1     API at a glance
+      - NameError: name 'DwellError' is not defined
+      - at: stop_worst = DwellError(statistic="max")
+FAIL  v1     The session that ran
+      - NameError: name 'INTEGRATED_SERVO' is not defined
+      - at: print(INTEGRATED_SERVO.table())
+FAIL  v2     API at a glance
+      - NameError: name 'Dwell' is not defined
+      - at: stop_worst = Dwell(quantity="error", statistic="max")
+FAIL  v2     The session that ran
+      - NameError: name 'IntegratedServo' is not defined
+      - at: IntegratedServo                                  # .models: the family itself
+FAIL  v3     API at a glance
+      - NameError: name 'StopStatistic' is not defined
+      - at: stop_worst = StopStatistic(of="error", statistic="max")
+FAIL  v3     The session that ran
+      - NameError: name 'INTEGRATED_SERVO' is not defined
+      - at: print(INTEGRATED_SERVO.table())
+FAIL  v4     API at a glance
+      - NameError: name 'Dwell' is not defined
+      - at: stop_worst = Dwell(of="error", statistic="max")
+FAIL  v4     The session that ran
+      - NameError: name 'INTEGRATED_SERVO' is not defined
+      - at: print(INTEGRATED_SERVO.table())
+FAIL  v5     API at a glance
+      - NameError: name 'StopEvents' is not defined
+      - at: stop_worst = StopEvents(of="error", statistic="max")
+FAIL  v5     The session that ran
+      - NameError: name 'rack' is not defined
+      - at: tree = rack(TIPS)
+standalone: 0 of 10 blocks PASS
