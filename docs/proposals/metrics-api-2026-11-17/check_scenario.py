@@ -24,6 +24,9 @@ Each variant folder vN_<name>/ has scenario.py with run() -> dict holding:
     declared      {"integrated_servo": [metric names], "rigid_body_chain": [metric names]}
     added         {"name": metric added in the session, "values": {play id: number}}
     aliases       [{"name", "base", "config", "unit", "signal"}, ...]   amendment 3: a part's aliases, base = the class
+    inputs        {base class name: its declared input type}   amendment 4
+    repeatability {"group": "<station>@<rung>", "k", "value" (rad, worst stop index), "repeats"}   over real repeats
+    performance_gain {"alias", "nominal", "fitted", "gain"}   the alias on the sealed ladder's held-out runs (N·m)
     dedup         {"aliases": aliases evaluated on one recording, "computed": base computations actually run}
 
 Definitions the numbers follow (the scorecard's, plus two rows it lacks):
@@ -74,7 +77,7 @@ LAG_MS = 1e-6
 CHAIN_REL = 1e-9
 LIVE = 1e-9
 LIMITERS = (97, 98, 99, 102)
-FORBIDDEN_READS = re.compile(r"scorecards|latest_real|summary\.json|check_scenario")
+FORBIDDEN_READS = re.compile(r"scorecards|latest_real|summary\.json|check_scenario|oracle_residual_rms|_truth")
 FORBIDDEN_IMPORTS = re.compile(r"^\s*(import|from)\s+(pandas|scipy|torch|sim2real|bam_rack_twin|traj_compare)\b", re.M)
 
 
@@ -152,6 +155,34 @@ def _overshoot_oracle(run: fixture.Run) -> float:
             worst = max(worst, float(np.max((q[row:end + 1] - target[row]) * direction)))
         last_still, row = end, end + 1
     return math.degrees(max(worst, 0.0))
+
+
+def _repeatability_oracle(group: list, k: float) -> float | None:
+    """ISO 9283 RP at each stop index over same-input repeats: mean(l) + k * std(l, ddof=1), l = |e - mean(e)| of the
+    signed stop errors (mean of the dwell's last 50 ms); the worst stop index, radians. Independent of stock.py."""
+
+    per_repeat = []
+    for run in group:
+        t, q = run.measured.t, run.measured.positions[:, 0]
+        target, still = run.target.positions[:, 0], np.abs(run.target.velocities[:, 0]) < 1e-9
+        errors, row = [], 0
+        while row < len(t):
+            if not still[row]:
+                row += 1
+                continue
+            end = row
+            while end + 1 < len(t) and still[end + 1] and abs(target[end + 1] - target[row]) < 1e-9:
+                end += 1
+            if row > 0 and t[end] - t[row] >= 0.25:
+                tail = np.arange(row, end + 1)[t[row:end + 1] >= t[end] - 0.05]
+                errors.append(float(np.mean(q[tail] - target[tail])))
+            row = end + 1
+        per_repeat.append(errors)
+    if len({len(errors) for errors in per_repeat}) != 1 or len(per_repeat) < 2:
+        return None
+    matrix = np.asarray(per_repeat)
+    distance = np.abs(matrix - matrix.mean(axis=0))
+    return float(np.max(distance.mean(axis=0) + k * distance.std(axis=0, ddof=1)))
 
 
 def _close(got, want, tol: float) -> bool:
@@ -267,11 +298,34 @@ def check(folder: pathlib.Path, oracle: dict, chain: dict) -> tuple[list[str], l
         bases = [alias["base"] for alias in aliases]
         if len(set(bases)) == len(bases):
             problems.append("G6 no base metric serves two aliases: the meaning must come from the data, not the class")
-        if any(alias["unit"] in alias["base"] for alias in aliases if alias["unit"]):
-            problems.append("G7 a unit is in a base class name: units belong to the alias")
+        # ruler fix 2026-11-17 21:05 MST (after v1-v3 were built; it only narrows a false positive): compare whole words
+        # of the CamelCase name, never substrings (the old test read the "s" of StopStatistic as the unit seconds)
+        unit_words = {"deg", "degrees", "mm", "rad", "mrad", "ms", "millimetres", "radians"}
+        for alias in aliases:
+            words = {word.lower() for word in re.findall(r"[A-Z][a-z]*|[a-z]+", alias["base"])}
+            if words & (unit_words | ({alias["unit"].lower()} if len(alias["unit"]) > 1 else set())):
+                problems.append(f"G7 base {alias['base']} names a unit: units belong to the alias")
+                break
     dedup = out.get("dedup") or {}
     if not dedup or not (0 < int(dedup.get("computed", 0)) < int(dedup.get("aliases", 0))):
         problems.append(f"G8 dedup {dedup!r}: aliases sharing (base, config) and data must compute once")
+    # amendment 4 (2026-11-17 21:05 MST, the Sim2Real Routines session): input types per class, two worked examples
+    inputs = out.get("inputs") or {}
+    if len(set(inputs.values())) < 3 or not {"Repeatability", "PerformanceGain"} <= set(inputs):
+        problems.append(f"A4 inputs {inputs!r}: each class declares its input; Repeatability and PerformanceGain "
+                        "take other inputs than a run recording")
+    repeat = out.get("repeatability") or {}
+    station, rung = str(repeat.get("group", "@")).split("@")
+    group = [run for run in runs.values() if run.station == station and f"{run.rung:g}" == rung and run.labels["kind"] == "repeat"]
+    oracle_rp = _repeatability_oracle(group, float(repeat.get("k", 3.0))) if group else None
+    if oracle_rp is None or not _close(repeat.get("value"), oracle_rp, 1e-12) or repeat.get("repeats") != len(group):
+        problems.append(f"A4 repeatability {repeat!r} vs oracle {oracle_rp!r} over {len(group)} repeats")
+    gain = out.get("performance_gain") or {}
+    import calibration
+    nominal, fitted = calibration.oracle_residual_rms("nominal"), calibration.oracle_residual_rms("fitted")
+    if not (_close(gain.get("nominal"), nominal, 1e-9) and _close(gain.get("fitted"), fitted, 1e-9)
+            and _close(gain.get("gain"), nominal - fitted, 1e-9)):
+        problems.append(f"A4 performance_gain {gain!r} vs oracle nominal {nominal!r} fitted {fitted!r}")
     notes.append("max |deviation|: " + ", ".join(f"{k} {v:.2e}" for k, v in sorted(worst.items())))
     return problems, notes
 

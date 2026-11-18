@@ -108,16 +108,33 @@ formulas live in three places today". Revise them and the ranking moves.
    it"; "100% agreed keep the target outside of compute"). → G6, G7, G8. His closing question, "What does run data
    look like? ... History, DataStream, Run, Episode, Result ... do we also carry in the rerun thing?", is answered
    per variant (each names its recording type and how it points at the run's `.rrd`).
+4. **2026-11-17 21:05 MST, other inputs than a recording** (the Sim2Real Routines session, via the coordinator; v1-v3
+   were built, v4-v5 not): every base class declares its input type; `Repeatability(k=3)` takes one real repeat at a
+   time over round 8's same-input repeats (ISO 9283 RP at each stop); `PerformanceGain(metric=<alias>)` reuses an
+   alias by identity on held-out runs played with nominal and with fitted values ([calibration.py](calibration.py):
+   the earlier round's sealed friction ladder, robot_models' own fit) and returns the difference. The
+   `CalibrationOutcome` record lives in robot_metrics or robot_msgs, never sim2real. Checked against independent
+   oracles in the check. Same commit: a ruler fix that only narrows a false positive (G7 compared units as
+   substrings and read the "s" of `StopStatistic` as seconds; it now compares whole CamelCase words).
+5. **2026-11-17 21:10 MST, the prior-art note** (`Metric Library APIs — Prior Art (2026-11-17)`, §1, §4, §5). It
+   arrived after v1-v3 were built and the criteria frozen, so it does not reweight them. Instead each variant gets a
+   **prior-art check** in the gallery (P1 the torchmetrics shape without torch; P2 state as a mergeable value; P3
+   Limits outside the config; P4 OpenSLO occurrence gates with a tail statistic per stratum, Wilson intervals for
+   bools; P5 alignment as an explicit step with a tolerance; P6 context beside the data and provenance carried; P7
+   a per-metric live flag, a version on stored values, units converted only at display), and v4 / v5 take the
+   positions v1-v3 left open: v4 is the note's recommended core (state as a value, Limits out of RobotDx's configs,
+   occurrence gates), v5 the part tree that passes context beside the data. "Live == offline" means within 1e-9
+   (G4); v1-v3 happen to agree bit for bit on round 8, a summed state need not.
 
-## The five directions (assigned before building)
+## The five directions (assigned before building; v4 re-allocated by amendment 5 before it was built)
 
 | | name | where it lives (dependency direction) | streaming state | diagnostics and gates | across-run summary | prior art |
 |---|---|---|---|---|---|---|
 | v1 | robot_metrics | a new `robot_metrics` package on robot_msgs; robotparts' part type holds `.metrics` | sufficient statistics (sum, count, max) and a stop tracker carried across chunks | a `Diagnostic(metric, Limits)` wrapper | `merge_state` pools; a `PerRun(metric, "median")` wrapper | torchmetrics (`add_state`, `merge_state`, wrappers), Keras metrics |
 | v2 | Family metrics | `robot_models.metrics`; `IntegratedServo.metrics` declared in the family body beside its models | a cat buffer: `update` appends, `compute` runs the functional twin | `Gate(target Value, owner)` on the deployment record | one object fed the rung's runs; the constructor's `across_runs=` | torchmetrics cat states, RobotDx's `TrackingErrorConfig.across_runs` |
 | v3 | Signals and aliases | the math in `robot_msgs.metrics` (signals only); meaning bound by aliases in each part's catalog | raw topics: command and state arrive apart; an aligner pairs them live | an alias carries its Limits | rliable-style: per-run scores, median and IQM with bootstrap CIs | rliable, Hugging Face `evaluate` cards, evo |
-| v4 | RobotDx split | io-diagnostics: `robotdx.metrics` (stock/* ported) and `robotdx.diagnostics` (Limits, Result unchanged) | a bounded window: live is the last `window_s`, offline one window spanning the run | RobotDx's `Result`: judge, view hint, record v0.2, gate matrix | RobotDx's `center(per_run, across_runs)`, rollup over subjects | RobotDx, ROS diagnostic_updater, torchmetrics |
-| v5 | Part tree | robotparts: `RobotPart.metrics`, and an assembly's metrics compose its children's (deployment → arm → servo) | segment events: each move and dwell becomes an event with its own statistics | per-node status, a parent is its worst child; gates on nodes | per node, grouped by dataset labels, rolled up the tree | ROS 2 diagnostic_aggregator, Drake / like_keras ports |
+| v4 | Folded values | io-diagnostics' stock math lifted into a `robot_metrics` on robot_msgs; RobotDx keeps `Limits` / `Result` / records, the Limits moved out of its configs (amendment 5) | state is an immutable value: `empty` / `update(state, chunk)` / `merge` / `compute`; live is a fold over chunks | OpenSLO occurrence gates (`op`, `value`, `share`) with a tail statistic per stratum; RobotDx `Result` per verdict | merge the states of a stratum; Wilson intervals for bool metrics | clu / torcheval, OpenSLO, RobotDx |
+| v5 | Part tree | robotparts: `RobotPart.metrics`, and an assembly's metrics compose its children's (deployment → arm → servo); context (the part) passed beside the data | segment events: each move and dwell becomes an event with its own statistics | per-node status, a parent is its worst child; gates on nodes | per node, grouped by dataset labels, rolled up the tree | ROS 2 diagnostic_aggregator, nuPlan `compute(history, scenario)`, Drake / like_keras ports |
 
 Considered, not built: **adopting torchmetrics itself.** Measured here: `import torchmetrics` takes 3.9 s and 450 MB
 of RAM (numpy + `robot_msgs.compare`: 0.15 s, 41 MB), and its venv carries 2.7 GB (torch 804 MB, nvidia 1.9 GB);

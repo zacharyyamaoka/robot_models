@@ -144,3 +144,19 @@ def stops(target: JointTrajectory, measured: JointTrajectory, *, scale: float = 
                               np.asarray(target.positions[:, joint], float),
                               np.asarray(target.velocities[:, joint], float))
     return found + tracker.finish()
+
+
+def settle_time(stop: Stop, band: float, scale: float = 1.0) -> float:
+    """A stop's settle time against any band, read from the dwell rows it carries (the tracker's own rule): from the
+    move's end to the first row after which every row stays inside ``band``; 0 inside from the start; inf never.
+    WHY a function of the stop and not of the tracker: the band is the caller's config (a tip's 1 mm, a joint's share),
+    so one pass over the data serves every band."""
+
+    t = stop.move_t[stop.move_end:]
+    error = scale * np.abs(stop.move_q[stop.move_end:] - stop.move_target[stop.move_end:])
+    outside = np.flatnonzero(error > band)
+    if not outside.size:
+        return 0.0
+    if outside[-1] == t.size - 1:
+        return math.inf
+    return float(t[outside[-1] + 1] - t[0])
