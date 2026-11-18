@@ -47,7 +47,7 @@ from robot_msgs.std.header import Header
 from robot_msgs.trajectory import JointTrajectory, PoseTrajectory
 
 ROUND = Path("/archive/datasets/bam_rig/onedof_2026-11-15/round8")
-SCORECARD = Path("/archive/datasets/bam_rig/onedof_2026-11-15/scorecards/latest_real.json")
+SCORECARD = Path("/archive/datasets/bam_rig/onedof_2026-11-15/scorecards/round8.json")  # WHY: latest_real.json moves every round (round 9 on 11-17 21:43); round8.json is the byte-identical round-8 file (md5 3b98de359d22)
 SIM_MEMO = Path(os.environ.get("BAM_PENDULUM_SIM_MEMO") or Path.home() / ".cache/bam_rack_twin/pendulum_sim_memo")
 CHAIN_LADDER = Path("/archive/datasets/bam_rig/rack_2026-11-10/fivebar_real/ladder_real_124755/ladder")
 DEPLOYMENT = "one-dof-test-rack"

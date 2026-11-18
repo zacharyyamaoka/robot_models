@@ -61,7 +61,7 @@ sys.path.insert(0, str(HERE))
 import fixture  # noqa: E402
 from robot_msgs.compare import estimate_time_offset  # noqa: E402
 
-SCORECARD = pathlib.Path("/archive/datasets/bam_rig/onedof_2026-11-15/scorecards/latest_real.json")
+SCORECARD = pathlib.Path("/archive/datasets/bam_rig/onedof_2026-11-15/scorecards/round8.json")  # WHY: latest_real.json moves every round (round 9 on 11-17 21:43); round8.json is the byte-identical round-8 file (md5 3b98de359d22)
 CHAIN_SUMMARY = fixture.CHAIN_LADDER / "summary.json"
 
 # WHY these tolerances: each variant runs the same arithmetic on the same files as the scorer, so anything above float
