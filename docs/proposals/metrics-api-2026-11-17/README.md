@@ -139,3 +139,36 @@ formulas live in three places today". Revise them and the ranking moves.
 Considered, not built: **adopting torchmetrics itself.** Measured here: `import torchmetrics` takes 3.9 s and 450 MB
 of RAM (numpy + `robot_msgs.compare`: 0.15 s, 41 MB), and its venv carries 2.7 GB (torch 804 MB, nvidia 1.9 GB);
 tensors would sit between robot_msgs arrays and every metric. Its shape is adopted by all five instead.
+
+## Result (2026-11-17, after all five were built and checked)
+
+`check_scenario.py` → **5 of 5 PASS** ([check.out.txt](check.out.txt)). Every variant reproduces round 8's scorecard
+at float round-off (worst: 2.2e-16 deg on tracking, 2.8e-17 mm on stops, the sim side the same), the five-bar
+ladder's robot_msgs numbers to 2.8e-15 relative, the gate counts (tracking 31, tip stop median 36, every stop 33 of
+36 rung cells) and each station's highest rung (CAN 11 1.0, the rest 0.9). Overshoot and lag match independent
+oracles; `Repeatability(k=3)` on CAN 11's five real 0.9-rung repeats is 0.387 mm at the tip in all five; the sealed
+ladder's `PerformanceGain` is 0.2220 → 0.0042 N·m (gain 0.2178 N·m).
+
+| | variant | where the metrics live | streaming state | one live update (12 aliases) | AI score |
+|---|---|---|---|---|---|
+| v4 | [Folded values](v4_folded_values/README.md) | robot_metrics beside RobotDx, on robot_msgs | an immutable value, folded | 0.97 ms / 7 rows | **84** |
+| v1 | [robot_metrics](v1_robot_metrics/README.md) | its own robot_metrics package, on robot_msgs | add_state attributes | 1.4 ms / 7 rows | 80 |
+| v3 | [Signals and aliases](v3_signals/README.md) | robot_msgs.metrics + the part's catalog | raw topics, live aligner | 0.66 ms / 1 row | 78 |
+| v2 | [Family metrics](v2_family_metrics/README.md) | robot_models, on the ModelFamily | cat buffer + functional | append 0.01 ms; compute 18 ms | 76 |
+| v5 | [Part tree](v5_part_tree/README.md) | robotparts, the part tree | move / dwell events | 0.71 ms / 7 rows | 74 |
+
+**AI pick: v4, 84.** Not a co-leader call (v1 is 4 points behind), but fragile: weight "reads like torchmetrics" or
+the part's adjacency (fr1) up and v1 ties it. **Splice recommended:** v4's value state, occurrence objectives and
+RobotDx Result, under v1's torchmetrics face (`Metric.plot()`, compute groups, `update` / `compute` / `reset` via
+`Stream`), with v3's `Aligner` as the explicit alignment step for raw topics and v5's rule that an assembly reads its
+child's computation (the arm shows its servo's stops through the lever). Gallery:
+`/home/bam/robot_models/reports/robot-models-metrics-api-proposals-2026-11-17.html`
+([build_gallery.py](build_gallery.py), [capture_gallery.py](capture_gallery.py)).
+
+Findings the round surfaced on the way:
+- **The scorecard's ruler is reproducible from robot_msgs streams alone** once the target is the plan at each reply's
+  instant; the plan linearly interpolated (robot_msgs.compare's own resampling) is off by up to 9.4e-4 deg.
+- **Lag reads negative on CAN 11** (-0.16 to -1.35 ms per rung): each reply is stamped when its command was sent,
+  after its tick, so the response "leads" the plan tick. It is the ruler's convention showing, not a fast joint.
+- **Merging states needs equal configs:** the six stations have six tip lengths, so a deployment-level tip number
+  cannot be one merged state; the deployment reads gates per stratum (v4) or worst children (v5).

@@ -68,11 +68,11 @@ class CalibrationOutcome:
 def _sealed() -> Any:
     spec = importlib.util.spec_from_file_location("sealed_fixture", SEALED / "fixture.py")
     module = importlib.util.module_from_spec(spec)
-    sys.path.insert(0, str(SEALED))
-    try:
-        spec.loader.exec_module(module)
-    finally:
-        sys.path.remove(str(SEALED))
+    if str(SEALED) not in sys.path:
+        # WHY appended, not inserted: its rig_log() imports _truth at call time, and its own fixture.py must never
+        # shadow this round's (the first fixture on sys.path wins)
+        sys.path.append(str(SEALED))
+    spec.loader.exec_module(module)
     return module
 
 
@@ -88,11 +88,8 @@ def _models() -> tuple[Any, Any]:
 
 def outcome() -> CalibrationOutcome:
     nominal, fitted = _models()
-    sys.path.insert(0, str(SEALED))
-    try:
-        from _truth import CASES  # the sealed truth: a sim knows it, a rig never does
-    finally:
-        sys.path.remove(str(SEALED))
+    _sealed()
+    from _truth import CASES  # the sealed truth: a sim knows it, a rig never does
     names = ("coulomb_friction", "viscous_friction", "breakaway_torque", "stribeck_velocity")
     fitted_values = fitted.values()
     return CalibrationOutcome(

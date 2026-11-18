@@ -1,0 +1,142 @@
+# 1 · a part's metrics   (0.00 s)
+>>> tree = rack(TIPS)
+>>> arm = tree.child("can11 arm")
+>>> for node in (arm.children[0], arm):
+...     print(f"{node.name}: models {getattr(node.models, '__name__', None) or node.models.type} · context {dict(node.context)}")
+...     for alias in node.metrics:
+...         print(f"  {alias.name:<20} {alias.metric!r:<55} {('child ' + alias.of_child + ' ') if alias.of_child else ''}{alias.signal} [{alias.unit or '-'}]")
+>>> print("five-bar:", FIVE_BAR.name, "->", [c.name for c in FIVE_BAR.children], "· its own:", [a.name for a in FIVE_BAR.metrics])
+>>> card = arm.metrics[1].card()
+>>> {key: card[key] for key in ("name", "base", "config", "unit", "signal", "description", "references", "value_type")}
+can11 servo: models IntegratedServo · context {}
+  tracking RMS         TrackingError(statistic='rms', field='positions', joint=0) output [deg]
+  tracking peak        TrackingError(statistic='max_abs', field='positions', joint=0) output [deg]
+  stop error p90 (T4)  StopEvents(of='error', statistic='p90', band=inf, include_last_dwell=True, joint=0) output [deg]
+  overshoot            StopEvents(of='overshoot', statistic='max', band=inf, include_last_dwell=True, joint=0) output [deg]
+  lag                  Lag(max_offset_s=0.25)                                  command [ms]
+  limiter share        CodeShare(codes=(97, 98, 99, 102), channel='fault')     output [%]
+can11 arm: models rigid_body_chain · context {'lever_mm': 339.0, 'tip_length_m': 0.339}
+  tip tracking RMS     TrackingError(statistic='rms', field='positions', joint=0) child can11 servo output [mm]
+  tip stop error       StopEvents(of='error', statistic='median', band=inf, include_last_dwell=True, joint=0) child can11 servo output [mm]
+  tip stop worst       StopEvents(of='error', statistic='max', band=inf, include_last_dwell=True, joint=0) child can11 servo output [mm]
+  tip settle           StopEvents(of='settle', statistic='median', band=0.0029498525073746312, include_last_dwell=True, joint=0) child can11 servo output [s]
+  all stops settled    StopEvents(of='settled', statistic='all', band=0.0029498525073746312, include_last_dwell=True, joint=0) child can11 servo output [-]
+  stops                StopEvents(of='count', statistic='count', band=inf, include_last_dwell=True, joint=0) child can11 servo output [-]
+five-bar: bam_fb five-bar -> ['j2 servo', 'c1 servo'] · its own: ['tool tracking RMS', 'tool worst']
+{'name': 'tip stop error', 'base': 'StopEvents', 'config': "of='error', statistic='median', band=inf, include_last_dwell=True, joint=0", 'unit': 'mm', 'signal': 'can11 servo/output', 'description': 'A quantity of every stop event (a dwell >= 0.25 s at zero commanded speed a move led into).', 'references': ['bam_rack_twin T4', 'MATLAB stepinfo', 'robot_msgs.compare.goal'], 'value_type': 'number'}
+
+# 2 · one recording, offline and live   (0.88 s)
+>>> run = fixture.pendulum_runs("real")[32]                  # CAN 11, rung 0.9, repeat
+>>> offline, live, node = live_vs_offline(run)
+>>> for name in ("tracking RMS", "tracking peak", "tip stop error", "tip stop worst", "tip settle", "overshoot", "lag", "stops"):
+...     print(f"{name:<15} offline {offline[name]:10.6f}   live {live[name]:10.6f}   |diff| {abs(offline[name] - live[name]):.1e}")
+>>> events = node.children[0].segmenters[("output", ("positions", 0, True))].events()
+>>> print(len(events), "events:", " · ".join(f"{e.kind} {e.t0:.2f}-{e.t1:.2f} s" + (f" stop {abs(e.stops[0].error) * 1e3 * TIPS['can11']:.3f} mm" if e.stops else "") for e in events))
+>>> print("segmentations per update:", {n.name: n.computations for n in node.walk()}, "for", len(node.metrics) + len(node.children[0].metrics), "aliases")
+tracking RMS    offline   0.145869   live   0.145869   |diff| 0.0e+00
+tracking peak   offline   0.323937   live   0.323937   |diff| 0.0e+00
+tip stop error  offline   0.230941   live   0.230941   |diff| 0.0e+00
+tip stop worst  offline   0.330243   live   0.330243   |diff| 0.0e+00
+tip settle      offline   0.000000   live   0.000000   |diff| 0.0e+00
+overshoot       offline   0.000000   live   0.000000   |diff| 0.0e+00
+lag             offline  -0.741204   live  -0.741204   |diff| 0.0e+00
+stops           offline   2.000000   live   2.000000   |diff| 0.0e+00
+5 events: dwell 1.50-1.50 s · move 1.51-1.93 s · dwell 1.94-2.93 s stop 0.132 mm · move 2.94-3.37 s · dwell 3.38-4.67 s stop 0.330 mm
+segmentations per update: {'can11 arm': 0, 'can11 servo': 2} for 12 aliases
+
+# 3 · runs to a deployment, gates applied   (1.88 s)
+>>> real_tree = observe_all("real")
+>>> real = tables(real_tree)
+>>> judged = verdicts(real_tree, real[1])
+>>> mark = {True: "✓", False: "✗"}
+>>> for (station, rung), v in sorted(real[1].items()):
+...     if station in ("can11", "can12"):
+...         c = judged["cells"][(station, rung)]
+...         print(f"{station}@{rung:<4g} RMS {v['tracking RMS']:.2f}° peak {v['tracking peak']:.2f}° · tip stop {v['tip stop error']:.2f} (worst {v['tip stop worst']:.2f}) mm · {mark[c['tracks']]} {mark[c['tip stop (median)']]} {mark[c['tip stop (every stop)']]} · {LEVEL[c['level']]}")
+>>> print({n: sum(bool(c[n]) for c in judged["cells"].values()) for n in ("tracks", "tip stop (median)", "tip stop (every stop)")}, "of 36 ·", judged["highest"])
+>>> status = {}                                              # each node judged on its own checks, worst over rungs
+>>> for arm in real_tree.children:
+...     station, servo = arm.name.split()[0], arm.children[0]
+...     servo_level = max((servo.level(real[1][(station, r)]) for r in RUNGS), key=lambda lw: lw[0])
+...     arm_own = max((arm.level(real[1][(station, r)]) for r in RUNGS), key=lambda lw: lw[0])
+...     status[servo.name] = servo_level
+...     status[arm.name] = (max(arm_own[0], servo_level[0]), arm_own[1])      # a parent is its worst child
+>>> status[real_tree.name] = (max(level for level, _ in status.values()), [])
+>>> print("\n".join(show(real_tree, status)[:7]))
+can11@0.2  RMS 0.10° peak 0.31° · tip stop 0.29 (worst 0.61) mm · ✓ ✓ ✓ · OK
+can11@0.4  RMS 0.08° peak 0.27° · tip stop 0.16 (worst 1.29) mm · ✓ ✓ ✗ · ERROR
+can11@0.6  RMS 0.06° peak 0.20° · tip stop 0.22 (worst 0.58) mm · ✓ ✓ ✓ · OK
+can11@0.8  RMS 0.10° peak 0.32° · tip stop 0.25 (worst 0.71) mm · ✓ ✓ ✓ · OK
+can11@0.9  RMS 0.13° peak 0.38° · tip stop 0.37 (worst 1.14) mm · ✓ ✓ ✗ · ERROR
+can11@1    RMS 0.16° peak 0.60° · tip stop 0.56 (worst 1.32) mm · ✓ ✓ ✗ · ERROR
+can12@0.2  RMS 0.07° peak 0.28° · tip stop 0.03 (worst 0.05) mm · ✓ ✓ ✓ · OK
+can12@0.4  RMS 0.13° peak 0.32° · tip stop 0.02 (worst 0.03) mm · ✓ ✓ ✓ · OK
+can12@0.6  RMS 0.18° peak 0.54° · tip stop 0.04 (worst 0.09) mm · ✓ ✓ ✓ · OK
+can12@0.8  RMS 0.23° peak 0.51° · tip stop 0.09 (worst 0.13) mm · ✓ ✓ ✓ · OK
+can12@0.9  RMS 0.25° peak 0.56° · tip stop 0.10 (worst 0.14) mm · ✓ ✓ ✓ · OK
+can12@1    RMS 0.93° peak 2.62° · tip stop 0.12 (worst 0.16) mm · ✗ ✓ ✓ · ERROR
+{'tracks': 31, 'tip stop (median)': 36, 'tip stop (every stop)': 33} of 36 · {'can1': 0.9, 'can11': 1.0, 'can12': 0.9, 'can13': 0.9, 'can14': 0.9, 'can15': 0.9}
+ERROR  one-dof-test-rack
+  ERROR  can1 arm
+    ERROR  can1 servo  (tracking RMS 1.21 > 0.5 (agent); tracking peak 3.95 > 1.5 (agent))
+  ERROR  can11 arm  (tip stop worst 1.29 > 1 (proposed))
+    OK     can11 servo
+  ERROR  can12 arm
+    ERROR  can12 servo  (tracking RMS 0.931 > 0.5 (agent); tracking peak 2.62 > 1.5 (agent))
+
+# 4 · the twin's output (sim vs target)   (2.13 s)
+>>> sim_tree = observe_all("sim")
+>>> sim = tables(sim_tree)
+>>> for rung in RUNGS:
+...     r, s = real[1][("can11", rung)], sim[1][("can11", rung)]
+...     print(f"CAN 11 @{rung:.1f}: tracking RMS real {r['tracking RMS']:.3f}° sim {s['tracking RMS']:.3f}° · tip stop real {r['tip stop error']:.3f} sim {s['tip stop error']:.3f} mm")
+>>> print("sim tip stop (median):", sum(bool(c["tip stop (median)"]) for c in verdicts(sim_tree, sim[1])["cells"].values()), "of 36")
+CAN 11 @0.2: tracking RMS real 0.095° sim 0.091° · tip stop real 0.291 sim 0.146 mm
+CAN 11 @0.4: tracking RMS real 0.079° sim 0.114° · tip stop real 0.163 sim 0.225 mm
+CAN 11 @0.6: tracking RMS real 0.061° sim 0.138° · tip stop real 0.220 sim 0.154 mm
+CAN 11 @0.8: tracking RMS real 0.099° sim 0.180° · tip stop real 0.250 sim 0.174 mm
+CAN 11 @0.9: tracking RMS real 0.135° sim 0.213° · tip stop real 0.374 sim 0.344 mm
+CAN 11 @1.0: tracking RMS real 0.163° sim 0.257° · tip stop real 0.558 sim 0.538 mm
+sim tip stop (median): 36 of 36
+
+# 5 · the chain, a view, a new metric   (2.50 s)
+>>> for key, values in chain_values().items():
+...     print(f"{key:<34} " + " · ".join(f"{name} {value:.3f}" for name, value in values.items()))
+>>> import _viz
+>>> arm = real_tree.child("can11 arm")
+>>> groups = arm.children[0].groups(("rung",))
+>>> stops = [item for rung in RUNGS for item in arm.items("tip stop error", groups[(rung,)])]
+>>> labels = [f"{rung:g}" for rung in RUNGS for _ in arm.items("tip stop error", groups[(rung,)])]
+>>> shown = _viz.View(title="CAN 11 · every stop at the tip, by rung", unit="mm", hint="distribution", x=list(range(len(stops))), y=stops, group=labels, target=1.0, target_label="Zach's 1 mm", x_label="stop", y_label="mm")
+>>> try:
+...     _viz.plot(shown, path=MEDIA / "v5-tip-stops.png"); print("plot ->", MEDIA / "v5-tip-stops.png")
+>>> except ImportError:
+...     print("plot: matplotlib not installed (the viz extra)")
+>>> print("W&B:", _viz.wandb_payload(shown, "can11/tip_stop_mm")["summary"], "· Rerun ->", _viz.write_rrd(_viz.rerun_calls(shown, "metrics/can11/tip_stop_mm"), MEDIA / "v5-tip-stops.rrd"))
+>>> node = Part("can11 servo", None, servo_aliases() + (VELOCITY_ERROR,), SERVO_SIGNALS)
+>>> node.observe(streams(run), {})
+>>> print(f"velocity error RMS {node.values()['velocity error RMS']:.3f} deg/s · segmentations {node.computations}")
+real:vertical.0.10mps.gravity_ff   tool tracking RMS 5.145 · tool worst 23.798 · j2 tracking RMS 0.625 · c1 tracking RMS 0.556
+real:vertical.0.10mps.full_ff      tool tracking RMS 5.035 · tool worst 24.793 · j2 tracking RMS 0.652 · c1 tracking RMS 0.597
+real:vertical.0.20mps.gravity_ff   tool tracking RMS 6.804 · tool worst 33.068 · j2 tracking RMS 0.910 · c1 tracking RMS 0.692
+real:vertical.0.20mps.full_ff      tool tracking RMS 5.290 · tool worst 26.208 · j2 tracking RMS 0.762 · c1 tracking RMS 0.555
+real:vertical.0.35mps.full_ff      tool tracking RMS 5.967 · tool worst 22.907 · j2 tracking RMS 0.977 · c1 tracking RMS 0.582
+sim:vertical.0.10mps.gravity_ff    tool tracking RMS 4.829 · tool worst 17.896 · j2 tracking RMS 0.908 · c1 tracking RMS 0.514
+sim:vertical.0.10mps.full_ff       tool tracking RMS 3.960 · tool worst 9.464 · j2 tracking RMS 0.844 · c1 tracking RMS 0.435
+sim:vertical.0.20mps.gravity_ff    tool tracking RMS 6.469 · tool worst 27.011 · j2 tracking RMS 1.083 · c1 tracking RMS 0.651
+sim:vertical.0.20mps.full_ff       tool tracking RMS 4.066 · tool worst 10.546 · j2 tracking RMS 0.871 · c1 tracking RMS 0.422
+sim:vertical.0.35mps.full_ff       tool tracking RMS 4.236 · tool worst 9.392 · j2 tracking RMS 0.888 · c1 tracking RMS 0.429
+plot -> /home/bam/robot_models/reports/media/robot-models-metrics-api-proposals-2026-11-17/v5-tip-stops.png
+W&B: {'can11/tip_stop_mm/max': 1.3171758816081196, 'can11/tip_stop_mm/n': 84, 'can11/tip_stop_mm/target': 1.0} · Rerun -> /home/bam/robot_models/reports/media/robot-models-metrics-api-proposals-2026-11-17/v5-tip-stops.rrd
+velocity error RMS 4.345 deg/s · segmentations 3
+
+# 6 · other inputs: repeats and a calibration   (0.09 s)
+>>> print({cls.__name__: cls.Input for cls in (TrackingError, StopEvents, Lag, Repeatability, PerformanceGain)})
+>>> rp, repeats = repeatability("can11", 0.9)
+>>> print(f"CAN 11 @0.9: RP (k=3) over {repeats} real repeats: {rp * 1e3 * TIPS['can11']:.3f} mm at the tip")
+>>> outcome = calibration.outcome()                       # the record: robot_msgs (a CalibrationOutcome message)
+>>> nominal, fitted, gain = performance_gain()
+>>> print(f"PerformanceGain({FF_RESIDUAL.name!r}): nominal {nominal:.4f}, fitted {fitted:.4f}, gain {gain:.4f} N·m")
+{'TrackingError': 'Events', 'StopEvents': 'Events', 'Lag': "the run's raw pairs (plan, state)", 'Repeatability': "Repeats (one node's event logs of one command)", 'PerformanceGain': 'HeldOutPair (two event logs of the same held-out runs)'}
+CAN 11 @0.9: RP (k=3) over 5 real repeats: 0.387 mm at the tip
+PerformanceGain('feed-forward residual RMS'): nominal 0.2220, fitted 0.0042, gain 0.2178 N·m

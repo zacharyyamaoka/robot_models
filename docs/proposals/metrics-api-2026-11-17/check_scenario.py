@@ -225,6 +225,11 @@ def check(folder: pathlib.Path, oracle: dict, chain: dict) -> tuple[list[str], l
         out = module.run()
     finally:
         sys.path.remove(str(folder))
+        # harness fix 2026-11-17 22:05 MST (no ruler change): two variants may both call their package robot_metrics or
+        # their module parts; forget every module loaded from this variant's folder so the next one imports its own
+        for name, loaded in list(sys.modules.items()):
+            if str(getattr(loaded, "__file__", "") or "").startswith(str(folder) + "/"):
+                del sys.modules[name]
     worst: dict[str, float] = {}
     _compare_rows("real_plays", out["real_plays"], oracle["plays"],
                   {"tracking_rms_deg": TRACKING_DEG, "tracking_peak_deg": TRACKING_DEG, "stops": 0}, problems, worst)
