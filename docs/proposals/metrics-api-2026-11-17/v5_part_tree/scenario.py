@@ -1,6 +1,6 @@
 """v5 · Part tree: the shared scenario as one REPL session on round 8's real runs.
 
-    /home/bam/robot_models/.venv/bin/python /home/bam/robot_models/docs/proposals/metrics-api-2026-11-17/v5_part_tree/scenario.py
+    uv run --offline --project /home/bam/robot_models --with matplotlib --with rerun-sdk==0.40.0 python /home/bam/robot_models/docs/proposals/metrics-api-2026-11-17/v5_part_tree/scenario.py
 
 Writes scenario.out.txt and session.json beside this file (the view cell needs the viz extra). ``run()`` is what the
 frozen check calls: the same API, no transcript.
@@ -19,7 +19,7 @@ import fixture  # noqa: E402
 from _session import Session  # noqa: E402
 from part_metrics import (LEVEL, Alias, CodeShare, Lag, Part, PerformanceGain, Repeatability, Segmenter,  # noqa: E402
                           StopEvents, TrackingError)
-from parts import DEGREES, FIVE_BAR, RUNGS, SERVO_SIGNALS, rack, servo_aliases  # noqa: E402
+from parts import DEGREES, FIVE_BAR, RUNGS, SERVO_SIGNALS, pendulum_arm, rack, servo_aliases  # noqa: E402
 
 MEDIA = pathlib.Path("/home/bam/robot_models/reports/media/robot-models-metrics-api-proposals-2026-11-17")
 TIPS = {station: facts["tip_length_m"] for station, facts in fixture.stations().items()}
@@ -202,91 +202,255 @@ def show(node: Part, values_by_node: dict, depth: int = 0) -> list[str]:
     return lines
 
 
+def plays_of(station: str, rung: float) -> list:
+    """One rung cell's real plays, as the roll-up groups them."""
+
+    return [run for run in fixture.pendulum_runs("real") if run.station == station and run.rung == rung]
+
+
+def stream_chunks(run, rows: int = 7) -> list[dict]:
+    """The run's named streams as a live feed delivers them: ``rows`` state samples at a time (the data adapter)."""
+
+    named = streams(run)
+    times = run.measured.t
+    edges = list(times[rows - 1::rows])
+    if not edges or edges[-1] < times[-1]:
+        edges.append(times[-1])
+    chunks, low = [], -float("inf")
+    for high in edges:
+        chunks.append({name: stream[(stream.t > low) & (stream.t <= high)] for name, stream in named.items()})
+        low = high
+    return chunks
+
+
+def metrics_table(node: Part) -> str:
+    """A node's aliases as a table: name, configured metric, the child it reads (if any), signal, unit."""
+
+    lines = [f"{node.name}: {len(node.metrics)} aliases"]
+    for alias in node.metrics:
+        source = f"child {alias.of_child} " if alias.of_child else ""
+        lines.append(f"  {alias.name:<20} {alias.metric!r:<62} {source}{alias.signal} [{alias.unit or '-'}]")
+    return "\n".join(lines)
+
+
+def rung_table(rungs: dict, judged: dict, stations: tuple[str, ...]) -> str:
+    """The rung cells of ``stations`` with their three verdicts and the arm's level (display only)."""
+
+    mark = {True: "✓", False: "✗"}
+    lines = ["station rung   RMS °  peak °  stop mm  worst mm   tracks · median · every stop   level"]
+    for (station, rung), values in sorted(rungs.items()):
+        if station not in stations:
+            continue
+        cell = judged["cells"][(station, rung)]
+        marks = "        ".join(mark[bool(cell[name])] for name in ("tracks", "tip stop (median)",
+                                                                   "tip stop (every stop)"))
+        lines.append(f"{station:<7}{rung:5.1f}{values['tracking RMS']:8.2f}{values['tracking peak']:8.2f}"
+                     f"{values['tip stop error']:9.2f}{values['tip stop worst']:10.2f}   {marks}      "
+                     f"{LEVEL[cell['level']]}")
+    return "\n".join(lines)
+
+
+def worst(judgements: list[tuple[int, list[str]]]) -> tuple[int, list[str]]:
+    """The worst (level, reasons) of several: a parent's level is its worst child's (diagnostic_aggregator)."""
+
+    return max(judgements, key=lambda judgement: judgement[0])
+
+
+# WHY the same seven headings in every variant: the five glances are compared side by side, row by row.
+GLANCE = ("API at a glance", "The design's shape before any detail: a metric over move and dwell events, an alias "
+          "that can read a child part, a node's .metrics beside its .models and .children, live through the subtree, "
+          "offline as one observe(), checks judged into levels, and a rung as a group of the node's ledger.", '''
+# a metric: a config over move and dwell events; this key names the shared segmenter
+stop_worst = StopEvents(of="error", statistic="max")
+stop_worst.segmenter()
+
+# an alias: a name on a node's signal; an assembly's alias reads its child's events
+tip_stop_worst = Alias("tip stop worst", stop_worst, "output", "mm", scale_by="lever_mm",
+                       of_child="can11 servo")
+tip_stop_worst
+
+# a part type's metrics, beside its models and its children
+arm = pendulum_arm("can11", tip_length_m=0.339)
+arm.child("can11 servo").models
+[alias.name for alias in arm.metrics]
+
+# live: the arm's subtree takes chunks; each segmenter carries the open move or dwell
+run = fixture.pendulum_runs("real")[32]
+arm.begin()
+for chunk in stream_chunks(run, rows=7):
+    arm.update(chunk)
+arm.value("tip stop worst", live=True)
+
+# offline: one observe() per run, written to each node's ledger
+arm.observe(streams(run), {"rung": run.rung})
+arm.value("tip stop worst")
+
+# a gate: checks declared on the node with their owners, judged into a level
+arm.checks
+level, reasons = arm.level(arm.values())
+LEVEL[level], reasons
+
+# across runs: a rung is a group of the node's ledger, every stop pooled
+rung_arm = pendulum_arm("can11", tip_length_m=0.339)
+for play in plays_of("can11", rung=0.9):
+    rung_arm.observe(streams(play), {"rung": play.rung})
+by_rung = rung_arm.child("can11 servo").groups(("rung",))
+rung_values = rung_arm.values(by_rung[(0.9,)])
+rung_values["tip stop worst"]
+level, reasons = rung_arm.level(rung_values)
+LEVEL[level], reasons
+''')
+
 CELLS = [
     ("a part's metrics", "The rack is a tree of RobotParts; each node lists aliases on ITS signal beside its models. "
      "The arm's tip aliases name the servo child: the servo computes once, the arm shows it through its lever.", '''
 tree = rack(TIPS)
+[arm.name for arm in tree.children]
+
 arm = tree.child("can11 arm")
-for node in (arm.children[0], arm):
-    print(f"{node.name}: models {getattr(node.models, '__name__', None) or node.models.type} · context {dict(node.context)}")
-    for alias in node.metrics:
-        print(f"  {alias.name:<20} {alias.metric!r:<55} {('child ' + alias.of_child + ' ') if alias.of_child else ''}{alias.signal} [{alias.unit or '-'}]")
-print("five-bar:", FIVE_BAR.name, "->", [c.name for c in FIVE_BAR.children], "· its own:", [a.name for a in FIVE_BAR.metrics])
-card = arm.metrics[1].card()
-{key: card[key] for key in ("name", "base", "config", "unit", "signal", "description", "references", "value_type")}
+servo = arm.child("can11 servo")
+servo.models
+print(metrics_table(servo))
+
+arm.models.type
+arm.context
+print(metrics_table(arm))
+
+FIVE_BAR.name
+[child.name for child in FIVE_BAR.children]
+[alias.name for alias in FIVE_BAR.metrics]
+
+aliases = {alias.name: alias for alias in arm.metrics}
+aliases["tip stop error"].card()
 '''),
     ("one recording, offline and live", "Live, the arm subtree takes 7-row chunks; each node's segmenter carries the "
      "open move or dwell across chunk boundaries; events are what the drill-down opens.", '''
-run = fixture.pendulum_runs("real")[32]                  # CAN 11, rung 0.9, repeat
-offline, live, node = live_vs_offline(run)
-for name in ("tracking RMS", "tracking peak", "tip stop error", "tip stop worst", "tip settle", "overshoot", "lag", "stops"):
-    print(f"{name:<15} offline {offline[name]:10.6f}   live {live[name]:10.6f}   |diff| {abs(offline[name] - live[name]):.1e}")
-events = node.children[0].segmenters[("output", ("positions", 0, True))].events()
-print(len(events), "events:", " · ".join(f"{e.kind} {e.t0:.2f}-{e.t1:.2f} s" + (f" stop {abs(e.stops[0].error) * 1e3 * TIPS['can11']:.3f} mm" if e.stops else "") for e in events))
-print("segmentations per update:", {n.name: n.computations for n in node.walk()}, "for", len(node.metrics) + len(node.children[0].metrics), "aliases")
+run = fixture.pendulum_runs("real")[32]       # CAN 11, rung 0.9, a repeat
+offline, live, live_arm = live_vs_offline(run)
+
+names = ["tracking RMS", "tracking peak", "tip stop error", "tip stop worst",
+         "tip settle", "overshoot", "lag", "stops"]
+print(f"{'':<15} {'offline':>10} {'live':>10}")
+for name in names:
+    difference = abs(offline[name] - live[name])
+    print(f"{name:<15} {offline[name]:10.6f} {live[name]:10.6f}  diff {difference:.1e}")
+
+segment_key = ("output", ("positions", 0, True))
+events = live_arm.child("can11 servo").segmenters[segment_key].events()
+len(events)
+
+tip_mm = 1e3 * TIPS["can11"]
+for event in events:
+    line = f"{event.kind:<5} {event.t0:6.2f} - {event.t1:5.2f} s"
+    if event.stops:
+        line += f"   stop {abs(event.stops[0].error) * tip_mm:.3f} mm"
+    print(line)
+
+{node.name: node.computations for node in live_arm.walk()}     # segmentations per update
+len(live_arm.metrics) + len(live_arm.child("can11 servo").metrics)    # aliases they serve
 '''),
     ("runs to a deployment, gates applied", "Every play observed by its arm subtree; per rung each node's aliases; the "
      "rack's status is its worst child (diagnostic_aggregator), with the reason named.", '''
 real_tree = observe_all("real")
-real = tables(real_tree)
-judged = verdicts(real_tree, real[1])
-mark = {True: "✓", False: "✗"}
-for (station, rung), v in sorted(real[1].items()):
-    if station in ("can11", "can12"):
-        c = judged["cells"][(station, rung)]
-        print(f"{station}@{rung:<4g} RMS {v['tracking RMS']:.2f}° peak {v['tracking peak']:.2f}° · tip stop {v['tip stop error']:.2f} (worst {v['tip stop worst']:.2f}) mm · {mark[c['tracks']]} {mark[c['tip stop (median)']]} {mark[c['tip stop (every stop)']]} · {LEVEL[c['level']]}")
-print({n: sum(bool(c[n]) for c in judged["cells"].values()) for n in ("tracks", "tip stop (median)", "tip stop (every stop)")}, "of 36 ·", judged["highest"])
-status = {}                                              # each node judged on its own checks, worst over rungs
+real_plays, real_rungs = tables(real_tree)
+len(real_plays), len(real_rungs)
+
+judged = verdicts(real_tree, real_rungs)
+print(rung_table(real_rungs, judged, stations=("can11", "can12")))
+
+gate_names = ("tracks", "tip stop (median)", "tip stop (every stop)")
+cells = judged["cells"].values()
+{name: sum(bool(cell[name]) for cell in cells) for name in gate_names}
+judged["highest"]
+
+real_tree.child("can11 arm").checks
+
+status = {}
 for arm in real_tree.children:
     station, servo = arm.name.split()[0], arm.children[0]
-    servo_level = max((servo.level(real[1][(station, r)]) for r in RUNGS), key=lambda lw: lw[0])
-    arm_own = max((arm.level(real[1][(station, r)]) for r in RUNGS), key=lambda lw: lw[0])
-    status[servo.name] = servo_level
-    status[arm.name] = (max(arm_own[0], servo_level[0]), arm_own[1])      # a parent is its worst child
+    rung_values = [real_rungs[(station, rung)] for rung in RUNGS]
+    servo_status = worst([servo.level(values) for values in rung_values])
+    arm_own = worst([arm.level(values) for values in rung_values])
+    status[servo.name] = servo_status
+    status[arm.name] = (max(arm_own[0], servo_status[0]), arm_own[1])    # its worst child
 status[real_tree.name] = (max(level for level, _ in status.values()), [])
-print("\\n".join(show(real_tree, status)[:7]))
+for line in show(real_tree, status):
+    print(line)
 '''),
     ("the twin's output (sim vs target)", "The same tree on the twin's answers.", '''
 sim_tree = observe_all("sim")
-sim = tables(sim_tree)
+sim_plays, sim_rungs = tables(sim_tree)
+
+print("CAN 11 rung   RMS real °   RMS sim °   stop real mm   stop sim mm")
 for rung in RUNGS:
-    r, s = real[1][("can11", rung)], sim[1][("can11", rung)]
-    print(f"CAN 11 @{rung:.1f}: tracking RMS real {r['tracking RMS']:.3f}° sim {s['tracking RMS']:.3f}° · tip stop real {r['tip stop error']:.3f} sim {s['tip stop error']:.3f} mm")
-print("sim tip stop (median):", sum(bool(c["tip stop (median)"]) for c in verdicts(sim_tree, sim[1])["cells"].values()), "of 36")
+    real_values = real_rungs[("can11", rung)]
+    sim_values = sim_rungs[("can11", rung)]
+    rms = (real_values["tracking RMS"], sim_values["tracking RMS"])
+    stop = (real_values["tip stop error"], sim_values["tip stop error"])
+    print(f"{rung:11.1f} {rms[0]:12.3f} {rms[1]:11.3f} {stop[0]:14.3f} {stop[1]:13.3f}")
+
+sim_cells = verdicts(sim_tree, sim_rungs)["cells"].values()
+sum(bool(cell["tip stop (median)"]) for cell in sim_cells)
 '''),
     ("the chain, a view, a new metric", "The five-bar is a node whose children are its joints; the same TrackingError "
      "on joints and tool. A view to matplotlib, W&B and Rerun; a new alias on the servo node.", '''
-for key, values in chain_values().items():
-    print(f"{key:<34} " + " · ".join(f"{name} {value:.3f}" for name, value in values.items()))
+chain = chain_values()
+for run_id, values in chain.items():
+    rounded = {name: round(value, 3) for name, value in values.items()}
+    print(run_id, rounded)
+
+can11_arm = real_tree.child("can11 arm")
+by_rung = can11_arm.child("can11 servo").groups(("rung",))
+stops, rung_labels = [], []
+for rung in RUNGS:
+    rung_stops = can11_arm.items("tip stop error", by_rung[(rung,)])
+    stops += rung_stops
+    rung_labels += [f"{rung:g}"] * len(rung_stops)
+len(stops)
+
 import _viz
-arm = real_tree.child("can11 arm")
-groups = arm.children[0].groups(("rung",))
-stops = [item for rung in RUNGS for item in arm.items("tip stop error", groups[(rung,)])]
-labels = [f"{rung:g}" for rung in RUNGS for _ in arm.items("tip stop error", groups[(rung,)])]
-shown = _viz.View(title="CAN 11 · every stop at the tip, by rung", unit="mm", hint="distribution", x=list(range(len(stops))), y=stops, group=labels, target=1.0, target_label="Zach's 1 mm", x_label="stop", y_label="mm")
-try:
-    _viz.plot(shown, path=MEDIA / "v5-tip-stops.png"); print("plot ->", MEDIA / "v5-tip-stops.png")
-except ImportError:
-    print("plot: matplotlib not installed (the viz extra)")
-print("W&B:", _viz.wandb_payload(shown, "can11/tip_stop_mm")["summary"], "· Rerun ->", _viz.write_rrd(_viz.rerun_calls(shown, "metrics/can11/tip_stop_mm"), MEDIA / "v5-tip-stops.rrd"))
-node = Part("can11 servo", None, servo_aliases() + (VELOCITY_ERROR,), SERVO_SIGNALS)
-node.observe(streams(run), {})
-print(f"velocity error RMS {node.values()['velocity error RMS']:.3f} deg/s · segmentations {node.computations}")
+title = "CAN 11 · every stop at the tip, by rung"
+view = _viz.View(title=title, unit="mm", hint="distribution",
+                 x=list(range(len(stops))), y=stops, group=rung_labels,
+                 target=1.0, target_label="Zach's 1 mm", x_label="stop", y_label="mm")
+_viz.plot(view, path=MEDIA / "v5-tip-stops.png")
+
+payload = _viz.wandb_payload(view, "can11/tip_stop_mm")
+payload["summary"]
+
+calls = _viz.rerun_calls(view, "metrics/can11/tip_stop_mm")
+_viz.write_rrd(calls, MEDIA / "v5-tip-stops.rrd")
+
+VELOCITY_ERROR
+with_velocity_aliases = servo_aliases() + (VELOCITY_ERROR,)
+with_velocity = Part("can11 servo", None, with_velocity_aliases, SERVO_SIGNALS)
+with_velocity.observe(streams(run), {})
+with_velocity.value("velocity error RMS")
+with_velocity.computations
 '''),
     ("other inputs: repeats and a calibration", "Repeatability reads a node's event logs of one command; "
      "PerformanceGain two event logs of the same held-out runs. A recording is only the common case.", '''
-print({cls.__name__: cls.Input for cls in (TrackingError, StopEvents, Lag, Repeatability, PerformanceGain)})
-rp, repeats = repeatability("can11", 0.9)
-print(f"CAN 11 @0.9: RP (k=3) over {repeats} real repeats: {rp * 1e3 * TIPS['can11']:.3f} mm at the tip")
-outcome = calibration.outcome()                       # the record: robot_msgs (a CalibrationOutcome message)
+inputs = (TrackingError, StopEvents, Lag, Repeatability, PerformanceGain)
+{cls.__name__: cls.Input for cls in inputs}
+
+repeatability_value, repeats = repeatability("can11", 0.9)
+repeats
+repeatability_value * tip_mm              # mm at the tip
+
+outcome = calibration.outcome()           # a robot_msgs CalibrationOutcome message
+outcome.model
+
+FF_RESIDUAL.name
 nominal, fitted, gain = performance_gain()
-print(f"PerformanceGain({FF_RESIDUAL.name!r}): nominal {nominal:.4f}, fitted {fitted:.4f}, gain {gain:.4f} N·m")
+nominal, fitted                           # N·m on the held-out runs
+gain
 '''),
 ]
 
 
 def main() -> None:
     session = Session(dict(globals()))
+    session.cell(*GLANCE, kind="glance")
     for label, caption, code in CELLS:
         session.cell(label, caption, code)
     session.write(HERE)

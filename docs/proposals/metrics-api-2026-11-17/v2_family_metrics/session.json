@@ -1,44 +1,497 @@
 [
  {
+  "label": "API at a glance",
+  "caption": "The design's shape before any detail: a metric, an alias, a part type's .metrics, live, offline, a gate kept outside compute(), and a rung summarised across runs.",
+  "kind": "glance",
+  "code": "# a metric: one base, its constructor is the config (a buffer + a functional twin)\nstop_worst = Dwell(quantity=\"error\", statistic=\"max\")\n\n# an alias: a name, the signal it reads, a display unit\ntip_stop_worst = Alias(\"tip stop worst\", stop_worst, \"joint\", unit=\"mm\", factor=339.0)\ntip_stop_worst\n\n# a part type's metrics, beside its models: both on the ModelFamily\nIntegratedServo\nIntegratedServo.metrics\narm = pendulum_arm(tip_length_m=0.339)\nlist(arm.aliases)\n\n# live: chunks appended to the buffer, compute() re-reads it\nepisode = Episode.from_run(fixture.pendulum_runs(\"real\")[32])\nlive = arm.clone()\nfor chunk in episode.chunks(rows=7):\n    live.update(chunk)\nlive.end_run()\nlive.compute()[\"tip stop worst\"]\n\n# offline: call the family's Metrics on the whole episode\noffline = arm(episode)\noffline[\"tip stop worst\"]\n\n# a gate: an alias against a robot_msgs Value that carries its source\nwithin_1mm = Gate(\"tip stop worst\", at_most(1.0, \"mm\", \"Zach 2026-11-11\"))\nwithin_1mm.check(offline)\n\n# across runs: one Metrics fed every play of the rung, run after run\nrung = arm.clone()\nfor play in plays_of(\"can11\", rung=0.9):\n    rung.update(play)\n    rung.end_run()\nrung_values = rung.compute()\nrung_values[\"tip stop worst\"]\nwithin_1mm.check(rung_values)",
+  "output": "Alias(name='tip stop worst',\n      metric=Dwell(quantity='error', statistic='max', band=inf, include_last_dwell=True, joint=0),\n      signal='joint',\n      unit='mm',\n      factor=339.0,\n      owner='')\n<ModelFamily IntegratedServo · integrated_servo · 14 models: M0.ideal, M1.datasheet, M2.coulomb_viscous, M3.stribeck, M3.load, M3.lugre, M3.weakening_capture, M4.ripple, M4.drivetrain, M5.dcmotor, M5.envelope, M5.wear, M6.residual, M7.learned>\nMetrics(6 aliases, 6 members)\n['tracking RMS', 'tracking peak', 'stop error p90 (T4)', 'overshoot', 'lag', 'limiter share',\n 'tip tracking RMS', 'tip stop error', 'tip stop worst', 'tip settle', 'all stops settled',\n 'stops']\n0.3302425825356255\n0.3302425825356255\nTrue\n1.142941174428201\nFalse",
+  "seconds": "0.87",
+  "statements": [
+   {
+    "code": "# a metric: one base, its constructor is the config (a buffer + a functional twin)\nstop_worst = Dwell(quantity=\"error\", statistic=\"max\")",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "# an alias: a name, the signal it reads, a display unit\ntip_stop_worst = Alias(\"tip stop worst\", stop_worst, \"joint\", unit=\"mm\", factor=339.0)",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "tip_stop_worst",
+    "output": "Alias(name='tip stop worst',\n      metric=Dwell(quantity='error', statistic='max', band=inf, include_last_dwell=True, joint=0),\n      signal='joint',\n      unit='mm',\n      factor=339.0,\n      owner='')",
+    "gap": false
+   },
+   {
+    "code": "# a part type's metrics, beside its models: both on the ModelFamily\nIntegratedServo",
+    "output": "<ModelFamily IntegratedServo · integrated_servo · 14 models: M0.ideal, M1.datasheet, M2.coulomb_viscous, M3.stribeck, M3.load, M3.lugre, M3.weakening_capture, M4.ripple, M4.drivetrain, M5.dcmotor, M5.envelope, M5.wear, M6.residual, M7.learned>",
+    "gap": true
+   },
+   {
+    "code": "IntegratedServo.metrics",
+    "output": "Metrics(6 aliases, 6 members)",
+    "gap": false
+   },
+   {
+    "code": "arm = pendulum_arm(tip_length_m=0.339)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "list(arm.aliases)",
+    "output": "['tracking RMS', 'tracking peak', 'stop error p90 (T4)', 'overshoot', 'lag', 'limiter share',\n 'tip tracking RMS', 'tip stop error', 'tip stop worst', 'tip settle', 'all stops settled',\n 'stops']",
+    "gap": false
+   },
+   {
+    "code": "# live: chunks appended to the buffer, compute() re-reads it\nepisode = Episode.from_run(fixture.pendulum_runs(\"real\")[32])",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "live = arm.clone()",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "for chunk in episode.chunks(rows=7):\n    live.update(chunk)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "live.end_run()",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "live.compute()[\"tip stop worst\"]",
+    "output": "0.3302425825356255",
+    "gap": false
+   },
+   {
+    "code": "# offline: call the family's Metrics on the whole episode\noffline = arm(episode)",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "offline[\"tip stop worst\"]",
+    "output": "0.3302425825356255",
+    "gap": false
+   },
+   {
+    "code": "# a gate: an alias against a robot_msgs Value that carries its source\nwithin_1mm = Gate(\"tip stop worst\", at_most(1.0, \"mm\", \"Zach 2026-11-11\"))",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "within_1mm.check(offline)",
+    "output": "True",
+    "gap": false
+   },
+   {
+    "code": "# across runs: one Metrics fed every play of the rung, run after run\nrung = arm.clone()",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "for play in plays_of(\"can11\", rung=0.9):\n    rung.update(play)\n    rung.end_run()",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "rung_values = rung.compute()",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "rung_values[\"tip stop worst\"]",
+    "output": "1.142941174428201",
+    "gap": false
+   },
+   {
+    "code": "within_1mm.check(rung_values)",
+    "output": "False",
+    "gap": false
+   }
+  ]
+ },
+ {
   "label": "a part's metrics",
   "caption": "The family IS the part type's models; its metrics are declared beside them. The arm is the servo's Metrics plus tip aliases; the chain's are keyed by type id until it has a family.",
-  "code": "print(IntegratedServo, \"->\", IntegratedServo.keys()[:4], \"...\")          # .models: the family itself\nprint(IntegratedServo.metrics.table(\"IntegratedServo\"))\narm = pendulum_arm(tip_length_m=TIPS[\"can11\"])\nprint(arm.table(\"1-DOF pendulum arm (CAN 11, 339 mm)\"))\nprint(METRICS_BY_TYPE[\"rigid_body_chain\"].table(\"rigid_body_chain\"))\ncard = arm.aliases[\"tip stop error\"].card()\n{key: card[key] for key in (\"name\", \"base\", \"config\", \"unit\", \"description\", \"references\", \"value_type\")}",
-  "output": "<ModelFamily IntegratedServo · integrated_servo · 14 models: M0.ideal, M1.datasheet, M2.coulomb_viscous, M3.stribeck, M3.load, M3.lugre, M3.weakening_capture, M4.ripple, M4.drivetrain, M5.dcmotor, M5.envelope, M5.wear, M6.residual, M7.learned> -> ('M0.ideal', 'M1.datasheet', 'M2.coulomb_viscous', 'M3.stribeck') ...\nIntegratedServo.metrics: 6 aliases over 6 configured metrics\n  tracking RMS         ErrorStat(statistic='rms', rows='moving', field='positions', joint=0, across_runs='median') on joint   [deg]\n  tracking peak        ErrorStat(statistic='max_abs', rows='all', field='positions', joint=0, across_runs='max') on joint   [deg]\n  stop error p90 (T4)  Dwell(quantity='error', statistic='p90', band=inf, include_last_dwell=True, joint=0) on joint   [deg]\n  overshoot            Dwell(quantity='overshoot', statistic='max', band=inf, include_last_dwell=True, joint=0) on joint   [deg]\n  lag                  TimeOffset(max_offset_s=0.25, across_runs='median')                    on command [ms]\n  limiter share        CodeShare(codes=(97, 98, 99, 102), channel='fault')                    on joint   [%]\n1-DOF pendulum arm (CAN 11, 339 mm).metrics: 12 aliases over 11 configured metrics\n  tracking RMS         ErrorStat(statistic='rms', rows='moving', field='positions', joint=0, across_runs='median') on joint   [deg]\n  tracking peak        ErrorStat(statistic='max_abs', rows='all', field='positions', joint=0, across_runs='max') on joint   [deg]\n  stop error p90 (T4)  Dwell(quantity='error', statistic='p90', band=inf, include_last_dwell=True, joint=0) on joint   [deg]\n  overshoot            Dwell(quantity='overshoot', statistic='max', band=inf, include_last_dwell=True, joint=0) on joint   [deg]\n  lag                  TimeOffset(max_offset_s=0.25, across_runs='median')                    on command [ms]\n  limiter share        CodeShare(codes=(97, 98, 99, 102), channel='fault')                    on joint   [%]\n  tip tracking RMS     ErrorStat(statistic='rms', rows='moving', field='positions', joint=0, across_runs='median') on joint   [mm]\n  tip stop error       Dwell(quantity='error', statistic='median', band=inf, include_last_dwell=True, joint=0) on joint   [mm]\n  tip stop worst       Dwell(quantity='error', statistic='max', band=inf, include_last_dwell=True, joint=0) on joint   [mm]\n  tip settle           Dwell(quantity='settle', statistic='median', band=0.0029498525073746312, include_last_dwell=True, joint=0) on joint   [s]\n  all stops settled    Dwell(quantity='settled', statistic='all', band=0.0029498525073746312, include_last_dwell=True, joint=0) on joint   [-]\n  stops                Dwell(quantity='count', statistic='sum', band=inf, include_last_dwell=True, joint=0) on joint   [-]\nrigid_body_chain.metrics: 4 aliases over 4 configured metrics\n  j2 tracking RMS    ErrorStat(statistic='rms', rows='all', field='positions', joint=0, across_runs='median') on joints  [deg]\n  c1 tracking RMS    ErrorStat(statistic='rms', rows='all', field='positions', joint=1, across_runs='median') on joints  [deg]\n  tool tracking RMS  ErrorStat(statistic='rms', rows='all', field='positions', joint=0, across_runs='median') on tool    [mm]\n  tool worst         ErrorStat(statistic='max_abs', rows='all', field='positions', joint=0, across_runs='max') on tool    [mm]\n{'name': 'tip stop error', 'base': 'Dwell', 'config': \"quantity='error', statistic='median', band=inf, include_last_dwell=True, joint=0\", 'unit': 'mm', 'description': 'A quantity of every stop (a dwell >= 0.25 s at zero commanded speed on one target that a move led into), pooled over the runs: its error over the last 50 ms, its settle time, its overshoot.', 'references': ['bam_rack_twin acceptance T4 (dwell >= 0.25 s, error = mean of its last 50 ms)', 'MATLAB stepinfo; ROS 2 joint_trajectory_controller goal check', 'ISO 9283 pose accuracy'], 'value_type': 'number'}",
-  "seconds": "0.00"
+  "kind": "session",
+  "code": "IntegratedServo                                  # .models: the family itself\nprint(IntegratedServo.metrics.table(\"IntegratedServo\"))\n\narm = pendulum_arm(tip_length_m=TIPS[\"can11\"])    # CAN 11: the 339 mm heavy pendulum\nprint(arm.table(\"1-DOF pendulum arm (CAN 11, 339 mm)\"))\n\nchain_metrics = METRICS_BY_TYPE[\"rigid_body_chain\"]\nprint(chain_metrics.table(\"rigid_body_chain\"))\n\narm.aliases[\"tip stop error\"].card()",
+  "output": "<ModelFamily IntegratedServo · integrated_servo · 14 models: M0.ideal, M1.datasheet, M2.coulomb_viscous, M3.stribeck, M3.load, M3.lugre, M3.weakening_capture, M4.ripple, M4.drivetrain, M5.dcmotor, M5.envelope, M5.wear, M6.residual, M7.learned>\nIntegratedServo.metrics: 6 aliases over 6 configured metrics\n  tracking RMS         ErrorStat(statistic='rms', rows='moving', field='positions', joint=0, across_runs='median') on joint   [deg]\n  tracking peak        ErrorStat(statistic='max_abs', rows='all', field='positions', joint=0, across_runs='max') on joint   [deg]\n  stop error p90 (T4)  Dwell(quantity='error', statistic='p90', band=inf, include_last_dwell=True, joint=0) on joint   [deg]\n  overshoot            Dwell(quantity='overshoot', statistic='max', band=inf, include_last_dwell=True, joint=0) on joint   [deg]\n  lag                  TimeOffset(max_offset_s=0.25, across_runs='median')                    on command [ms]\n  limiter share        CodeShare(codes=(97, 98, 99, 102), channel='fault')                    on joint   [%]\n1-DOF pendulum arm (CAN 11, 339 mm).metrics: 12 aliases over 11 configured metrics\n  tracking RMS         ErrorStat(statistic='rms', rows='moving', field='positions', joint=0, across_runs='median') on joint   [deg]\n  tracking peak        ErrorStat(statistic='max_abs', rows='all', field='positions', joint=0, across_runs='max') on joint   [deg]\n  stop error p90 (T4)  Dwell(quantity='error', statistic='p90', band=inf, include_last_dwell=True, joint=0) on joint   [deg]\n  overshoot            Dwell(quantity='overshoot', statistic='max', band=inf, include_last_dwell=True, joint=0) on joint   [deg]\n  lag                  TimeOffset(max_offset_s=0.25, across_runs='median')                    on command [ms]\n  limiter share        CodeShare(codes=(97, 98, 99, 102), channel='fault')                    on joint   [%]\n  tip tracking RMS     ErrorStat(statistic='rms', rows='moving', field='positions', joint=0, across_runs='median') on joint   [mm]\n  tip stop error       Dwell(quantity='error', statistic='median', band=inf, include_last_dwell=True, joint=0) on joint   [mm]\n  tip stop worst       Dwell(quantity='error', statistic='max', band=inf, include_last_dwell=True, joint=0) on joint   [mm]\n  tip settle           Dwell(quantity='settle', statistic='median', band=0.0029498525073746312, include_last_dwell=True, joint=0) on joint   [s]\n  all stops settled    Dwell(quantity='settled', statistic='all', band=0.0029498525073746312, include_last_dwell=True, joint=0) on joint   [-]\n  stops                Dwell(quantity='count', statistic='sum', band=inf, include_last_dwell=True, joint=0) on joint   [-]\nrigid_body_chain.metrics: 4 aliases over 4 configured metrics\n  j2 tracking RMS    ErrorStat(statistic='rms', rows='all', field='positions', joint=0, across_runs='median') on joints  [deg]\n  c1 tracking RMS    ErrorStat(statistic='rms', rows='all', field='positions', joint=1, across_runs='median') on joints  [deg]\n  tool tracking RMS  ErrorStat(statistic='rms', rows='all', field='positions', joint=0, across_runs='median') on tool    [mm]\n  tool worst         ErrorStat(statistic='max_abs', rows='all', field='positions', joint=0, across_runs='max') on tool    [mm]\n{'name': 'tip stop error',\n 'unit': 'mm',\n 'signal': 'joint',\n 'target': None,\n 'function': 'robot_models.metrics.Dwell.functional',\n 'base': 'Dwell',\n 'config': \"quantity='error', statistic='median', band=inf, include_last_dwell=True, joint=0\",\n 'description': 'A quantity of every stop (a dwell >= 0.25 s at zero commanded speed on one target '\n                'that a move led into), pooled over the runs: its error over the last 50 ms, its '\n                'settle time, its overshoot.',\n 'references': ['bam_rack_twin acceptance T4 (dwell >= 0.25 s, error = mean of its last 50 ms)',\n                'MATLAB stepinfo; ROS 2 joint_trajectory_controller goal check',\n                'ISO 9283 pose accuracy'],\n 'value_type': 'number',\n 'hint': 'distribution'}",
+  "seconds": "0.00",
+  "statements": [
+   {
+    "code": "IntegratedServo                                  # .models: the family itself",
+    "output": "<ModelFamily IntegratedServo · integrated_servo · 14 models: M0.ideal, M1.datasheet, M2.coulomb_viscous, M3.stribeck, M3.load, M3.lugre, M3.weakening_capture, M4.ripple, M4.drivetrain, M5.dcmotor, M5.envelope, M5.wear, M6.residual, M7.learned>",
+    "gap": false
+   },
+   {
+    "code": "print(IntegratedServo.metrics.table(\"IntegratedServo\"))",
+    "output": "IntegratedServo.metrics: 6 aliases over 6 configured metrics\n  tracking RMS         ErrorStat(statistic='rms', rows='moving', field='positions', joint=0, across_runs='median') on joint   [deg]\n  tracking peak        ErrorStat(statistic='max_abs', rows='all', field='positions', joint=0, across_runs='max') on joint   [deg]\n  stop error p90 (T4)  Dwell(quantity='error', statistic='p90', band=inf, include_last_dwell=True, joint=0) on joint   [deg]\n  overshoot            Dwell(quantity='overshoot', statistic='max', band=inf, include_last_dwell=True, joint=0) on joint   [deg]\n  lag                  TimeOffset(max_offset_s=0.25, across_runs='median')                    on command [ms]\n  limiter share        CodeShare(codes=(97, 98, 99, 102), channel='fault')                    on joint   [%]",
+    "gap": false
+   },
+   {
+    "code": "arm = pendulum_arm(tip_length_m=TIPS[\"can11\"])    # CAN 11: the 339 mm heavy pendulum",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "print(arm.table(\"1-DOF pendulum arm (CAN 11, 339 mm)\"))",
+    "output": "1-DOF pendulum arm (CAN 11, 339 mm).metrics: 12 aliases over 11 configured metrics\n  tracking RMS         ErrorStat(statistic='rms', rows='moving', field='positions', joint=0, across_runs='median') on joint   [deg]\n  tracking peak        ErrorStat(statistic='max_abs', rows='all', field='positions', joint=0, across_runs='max') on joint   [deg]\n  stop error p90 (T4)  Dwell(quantity='error', statistic='p90', band=inf, include_last_dwell=True, joint=0) on joint   [deg]\n  overshoot            Dwell(quantity='overshoot', statistic='max', band=inf, include_last_dwell=True, joint=0) on joint   [deg]\n  lag                  TimeOffset(max_offset_s=0.25, across_runs='median')                    on command [ms]\n  limiter share        CodeShare(codes=(97, 98, 99, 102), channel='fault')                    on joint   [%]\n  tip tracking RMS     ErrorStat(statistic='rms', rows='moving', field='positions', joint=0, across_runs='median') on joint   [mm]\n  tip stop error       Dwell(quantity='error', statistic='median', band=inf, include_last_dwell=True, joint=0) on joint   [mm]\n  tip stop worst       Dwell(quantity='error', statistic='max', band=inf, include_last_dwell=True, joint=0) on joint   [mm]\n  tip settle           Dwell(quantity='settle', statistic='median', band=0.0029498525073746312, include_last_dwell=True, joint=0) on joint   [s]\n  all stops settled    Dwell(quantity='settled', statistic='all', band=0.0029498525073746312, include_last_dwell=True, joint=0) on joint   [-]\n  stops                Dwell(quantity='count', statistic='sum', band=inf, include_last_dwell=True, joint=0) on joint   [-]",
+    "gap": false
+   },
+   {
+    "code": "chain_metrics = METRICS_BY_TYPE[\"rigid_body_chain\"]",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "print(chain_metrics.table(\"rigid_body_chain\"))",
+    "output": "rigid_body_chain.metrics: 4 aliases over 4 configured metrics\n  j2 tracking RMS    ErrorStat(statistic='rms', rows='all', field='positions', joint=0, across_runs='median') on joints  [deg]\n  c1 tracking RMS    ErrorStat(statistic='rms', rows='all', field='positions', joint=1, across_runs='median') on joints  [deg]\n  tool tracking RMS  ErrorStat(statistic='rms', rows='all', field='positions', joint=0, across_runs='median') on tool    [mm]\n  tool worst         ErrorStat(statistic='max_abs', rows='all', field='positions', joint=0, across_runs='max') on tool    [mm]",
+    "gap": false
+   },
+   {
+    "code": "arm.aliases[\"tip stop error\"].card()",
+    "output": "{'name': 'tip stop error',\n 'unit': 'mm',\n 'signal': 'joint',\n 'target': None,\n 'function': 'robot_models.metrics.Dwell.functional',\n 'base': 'Dwell',\n 'config': \"quantity='error', statistic='median', band=inf, include_last_dwell=True, joint=0\",\n 'description': 'A quantity of every stop (a dwell >= 0.25 s at zero commanded speed on one target '\n                'that a move led into), pooled over the runs: its error over the last 50 ms, its '\n                'settle time, its overshoot.',\n 'references': ['bam_rack_twin acceptance T4 (dwell >= 0.25 s, error = mean of its last 50 ms)',\n                'MATLAB stepinfo; ROS 2 joint_trajectory_controller goal check',\n                'ISO 9283 pose accuracy'],\n 'value_type': 'number',\n 'hint': 'distribution'}",
+    "gap": true
+   }
+  ]
  },
  {
   "label": "one recording, offline and live",
   "caption": "update() appends chunks and compute() runs the functional twin over the buffer, so live is offline by construction; the memo shows the arm's aliases that the servo already computed.",
-  "code": "episode = Episode.from_run(fixture.pendulum_runs(\"real\")[32])          # CAN 11, rung 0.9, repeat\noffline = arm(episode)\nlive = arm.clone()\nfor number, chunk in enumerate(episode.chunks(rows=7)):\n    live.update(chunk)\n    if number == 40:\n        print(f\"after 280 rows: tip stop worst so far {live.compute()['tip stop worst']:.3f} mm\")\nlive.end_run()\nfor name in (\"tracking RMS\", \"tracking peak\", \"tip stop error\", \"tip stop worst\", \"tip settle\", \"overshoot\", \"lag\", \"stops\"):\n    print(f\"{name:<15} offline {offline[name]:10.6f}   live {live.compute()[name]:10.6f}   {arm.aliases[name].unit}\")\nprint(\"dedup:\", dedup_on(episode))\nprint(\"functional twin:\", ErrorStat.functional(ErrorStat.Config(statistic=\"rms\", rows=\"moving\"), [(episode.streams[\"target\"], episode.streams[\"state\"])]) * DEGREES, \"deg\")",
-  "output": "after 280 rows: tip stop worst so far 0.330 mm\ntracking RMS    offline   0.145869   live   0.145869   deg\ntracking peak   offline   0.323937   live   0.323937   deg\ntip stop error  offline   0.230941   live   0.230941   mm\ntip stop worst  offline   0.330243   live   0.330243   mm\ntip settle      offline   0.000000   live   0.000000   s\novershoot       offline   0.000000   live   0.000000   deg\nlag             offline  -0.741204   live  -0.741204   ms\nstops           offline   2.000000   live   2.000000   \ndedup: {'aliases': 12, 'computed': 5, 'memo_hits': 7, 'stop_passes': 1}\nfunctional twin: 0.14586865605334176 deg",
-  "seconds": "0.84"
+  "kind": "session",
+  "code": "run = fixture.pendulum_runs(\"real\")[32]           # CAN 11, rung 0.9, a repeat\nepisode = Episode.from_run(run)\n\noffline = arm(episode)\n\nlive = arm.clone()\nfor number, chunk in enumerate(episode.chunks(rows=7)):\n    live.update(chunk)\n    if number == 40:\n        so_far = live.compute()[\"tip stop worst\"]\n        print(f\"after 280 rows: worst stop so far {so_far:.3f} mm\")\nlive.end_run()\nlive_values = live.compute()\n\nnames = [\"tracking RMS\", \"tracking peak\", \"tip stop error\", \"tip stop worst\",\n         \"tip settle\", \"overshoot\", \"lag\", \"stops\"]\nfor name in names:\n    print(f\"{name:<15} offline {offline[name]:10.6f}   live {live_values[name]:10.6f}\")\n\ndedup_on(episode)\n\nrms_config = ErrorStat.Config(statistic=\"rms\", rows=\"moving\")\none_run = [(episode.streams[\"target\"], episode.streams[\"state\"])]\nErrorStat.functional(rms_config, one_run) * DEGREES      # the functional twin, in degrees",
+  "output": "after 280 rows: worst stop so far 0.330 mm\ntracking RMS    offline   0.145869   live   0.145869\ntracking peak   offline   0.323937   live   0.323937\ntip stop error  offline   0.230941   live   0.230941\ntip stop worst  offline   0.330243   live   0.330243\ntip settle      offline   0.000000   live   0.000000\novershoot       offline   0.000000   live   0.000000\nlag             offline  -0.741204   live  -0.741204\nstops           offline   2.000000   live   2.000000\n{'aliases': 12, 'computed': 5, 'memo_hits': 7, 'stop_passes': 1}\n0.14586865605334176",
+  "seconds": "0.02",
+  "statements": [
+   {
+    "code": "run = fixture.pendulum_runs(\"real\")[32]           # CAN 11, rung 0.9, a repeat",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "episode = Episode.from_run(run)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "offline = arm(episode)",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "live = arm.clone()",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "for number, chunk in enumerate(episode.chunks(rows=7)):\n    live.update(chunk)\n    if number == 40:\n        so_far = live.compute()[\"tip stop worst\"]\n        print(f\"after 280 rows: worst stop so far {so_far:.3f} mm\")",
+    "output": "after 280 rows: worst stop so far 0.330 mm",
+    "gap": false
+   },
+   {
+    "code": "live.end_run()",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "live_values = live.compute()",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "names = [\"tracking RMS\", \"tracking peak\", \"tip stop error\", \"tip stop worst\",\n         \"tip settle\", \"overshoot\", \"lag\", \"stops\"]",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "for name in names:\n    print(f\"{name:<15} offline {offline[name]:10.6f}   live {live_values[name]:10.6f}\")",
+    "output": "tracking RMS    offline   0.145869   live   0.145869\ntracking peak   offline   0.323937   live   0.323937\ntip stop error  offline   0.230941   live   0.230941\ntip stop worst  offline   0.330243   live   0.330243\ntip settle      offline   0.000000   live   0.000000\novershoot       offline   0.000000   live   0.000000\nlag             offline  -0.741204   live  -0.741204\nstops           offline   2.000000   live   2.000000",
+    "gap": false
+   },
+   {
+    "code": "dedup_on(episode)",
+    "output": "{'aliases': 12, 'computed': 5, 'memo_hits': 7, 'stop_passes': 1}",
+    "gap": true
+   },
+   {
+    "code": "rms_config = ErrorStat.Config(statistic=\"rms\", rows=\"moving\")",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "one_run = [(episode.streams[\"target\"], episode.streams[\"state\"])]",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "ErrorStat.functional(rms_config, one_run) * DEGREES      # the functional twin, in degrees",
+    "output": "0.14586865605334176",
+    "gap": false
+   }
+  ]
  },
  {
   "label": "runs to a deployment, gates applied",
   "caption": "A rung is one Metrics object fed its plays; the deployment record holds the targets as robot_msgs Values with their source; verdicts read the computed values.",
-  "code": "real = score(\"real\")\nverdicts = judged(real[1])\nprint(summary(real[1], verdicts, stations=(\"can11\", \"can12\")))",
-  "output": "cell         RMS°  peak°  tip stop mm (worst)  oversh°  lag ms   tracks · tip stop (median) · tip stop (every stop)\ncan11@0.2    0.10   0.31         0.29 (0.61)    0.034   -1.35   ✓        ✓        ✓\ncan11@0.4    0.08   0.27         0.16 (1.29)    0.225   -0.42   ✓        ✓        ✗\ncan11@0.6    0.06   0.20         0.22 (0.58)    0.136   -0.16   ✓        ✓        ✓\ncan11@0.8    0.10   0.32         0.25 (0.71)    0.010   -0.43   ✓        ✓        ✓\ncan11@0.9    0.13   0.38         0.37 (1.14)    0.044   -0.59   ✓        ✓        ✗\ncan11@1      0.16   0.60         0.56 (1.32)    0.000   -0.71   ✓        ✓        ✗\ncan12@0.2    0.07   0.28         0.03 (0.05)    0.111    0.26   ✓        ✓        ✓\ncan12@0.4    0.13   0.32         0.02 (0.03)    0.070    0.32   ✓        ✓        ✓\ncan12@0.6    0.18   0.54         0.04 (0.09)    0.059    0.24   ✓        ✓        ✓\ncan12@0.8    0.23   0.51         0.09 (0.13)    0.000    0.09   ✓        ✓        ✓\ncan12@0.9    0.25   0.56         0.10 (0.14)    0.000    0.07   ✓        ✓        ✓\ncan12@1      0.93   2.62         0.12 (0.16)    0.000    0.81   ✗        ✓        ✓\ntracks: 31 of 36 · tracking RMS <= 0.5 deg (agent (pendulum_goal.Thresholds)); tracking peak <= 1.5 deg (agent (pendulum_goal.Thresholds)); limiter share <= 2 % (agent (pendulum_goal.Thresholds)); faults <= 0  (agent (pendulum_goal.Thresholds))\ntip stop (median): 36 of 36 · tip stop error <= 1 mm (Zach 2026-11-11 ('final tool error sub 1mm')); tip settle <= 0.3 s (agent (pendulum_goal.Thresholds))\ntip stop (every stop): 33 of 36 · tip stop worst <= 1 mm (proposed: Zach's 1 mm on every stop)\nhighest rung tracked: can1 0.9, can11 1, can12 0.9, can13 0.9, can14 0.9, can15 0.9",
-  "seconds": "2.16"
+  "kind": "session",
+  "code": "real_plays, real_rungs = score(\"real\")\nlen(real_plays), len(real_rungs)\n\nverdicts = judged(real_rungs)\nprint(summary(real_rungs, verdicts, stations=(\"can11\", \"can12\")))\n\nevery_stop = DEPLOYMENT.verdicts[\"tip stop (every stop)\"]\nevery_stop\nDEPLOYMENT.judge(real_rungs[(\"can11\", 0.9)])",
+  "output": "(252, 36)\ncell         RMS°  peak°  tip stop mm (worst)  oversh°  lag ms   tracks · tip stop (median) · tip stop (every stop)\ncan11@0.2    0.10   0.31         0.29 (0.61)    0.034   -1.35   ✓        ✓        ✓\ncan11@0.4    0.08   0.27         0.16 (1.29)    0.225   -0.42   ✓        ✓        ✗\ncan11@0.6    0.06   0.20         0.22 (0.58)    0.136   -0.16   ✓        ✓        ✓\ncan11@0.8    0.10   0.32         0.25 (0.71)    0.010   -0.43   ✓        ✓        ✓\ncan11@0.9    0.13   0.38         0.37 (1.14)    0.044   -0.59   ✓        ✓        ✗\ncan11@1      0.16   0.60         0.56 (1.32)    0.000   -0.71   ✓        ✓        ✗\ncan12@0.2    0.07   0.28         0.03 (0.05)    0.111    0.26   ✓        ✓        ✓\ncan12@0.4    0.13   0.32         0.02 (0.03)    0.070    0.32   ✓        ✓        ✓\ncan12@0.6    0.18   0.54         0.04 (0.09)    0.059    0.24   ✓        ✓        ✓\ncan12@0.8    0.23   0.51         0.09 (0.13)    0.000    0.09   ✓        ✓        ✓\ncan12@0.9    0.25   0.56         0.10 (0.14)    0.000    0.07   ✓        ✓        ✓\ncan12@1      0.93   2.62         0.12 (0.16)    0.000    0.81   ✗        ✓        ✓\ntracks: 31 of 36 · tracking RMS <= 0.5 deg (agent (pendulum_goal.Thresholds)); tracking peak <= 1.5 deg (agent (pendulum_goal.Thresholds)); limiter share <= 2 % (agent (pendulum_goal.Thresholds)); faults <= 0  (agent (pendulum_goal.Thresholds))\ntip stop (median): 36 of 36 · tip stop error <= 1 mm (Zach 2026-11-11 ('final tool error sub 1mm')); tip settle <= 0.3 s (agent (pendulum_goal.Thresholds))\ntip stop (every stop): 33 of 36 · tip stop worst <= 1 mm (proposed: Zach's 1 mm on every stop)\nhighest rung tracked: can1 0.9, can11 1, can12 0.9, can13 0.9, can14 0.9, can15 0.9\n(Gate(alias='tip stop worst', target=1.0),)\n{'tracks': True, 'tip stop (median)': True, 'tip stop (every stop)': False}",
+  "seconds": "2.42",
+  "statements": [
+   {
+    "code": "real_plays, real_rungs = score(\"real\")",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "len(real_plays), len(real_rungs)",
+    "output": "(252, 36)",
+    "gap": false
+   },
+   {
+    "code": "verdicts = judged(real_rungs)",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "print(summary(real_rungs, verdicts, stations=(\"can11\", \"can12\")))",
+    "output": "cell         RMS°  peak°  tip stop mm (worst)  oversh°  lag ms   tracks · tip stop (median) · tip stop (every stop)\ncan11@0.2    0.10   0.31         0.29 (0.61)    0.034   -1.35   ✓        ✓        ✓\ncan11@0.4    0.08   0.27         0.16 (1.29)    0.225   -0.42   ✓        ✓        ✗\ncan11@0.6    0.06   0.20         0.22 (0.58)    0.136   -0.16   ✓        ✓        ✓\ncan11@0.8    0.10   0.32         0.25 (0.71)    0.010   -0.43   ✓        ✓        ✓\ncan11@0.9    0.13   0.38         0.37 (1.14)    0.044   -0.59   ✓        ✓        ✗\ncan11@1      0.16   0.60         0.56 (1.32)    0.000   -0.71   ✓        ✓        ✗\ncan12@0.2    0.07   0.28         0.03 (0.05)    0.111    0.26   ✓        ✓        ✓\ncan12@0.4    0.13   0.32         0.02 (0.03)    0.070    0.32   ✓        ✓        ✓\ncan12@0.6    0.18   0.54         0.04 (0.09)    0.059    0.24   ✓        ✓        ✓\ncan12@0.8    0.23   0.51         0.09 (0.13)    0.000    0.09   ✓        ✓        ✓\ncan12@0.9    0.25   0.56         0.10 (0.14)    0.000    0.07   ✓        ✓        ✓\ncan12@1      0.93   2.62         0.12 (0.16)    0.000    0.81   ✗        ✓        ✓\ntracks: 31 of 36 · tracking RMS <= 0.5 deg (agent (pendulum_goal.Thresholds)); tracking peak <= 1.5 deg (agent (pendulum_goal.Thresholds)); limiter share <= 2 % (agent (pendulum_goal.Thresholds)); faults <= 0  (agent (pendulum_goal.Thresholds))\ntip stop (median): 36 of 36 · tip stop error <= 1 mm (Zach 2026-11-11 ('final tool error sub 1mm')); tip settle <= 0.3 s (agent (pendulum_goal.Thresholds))\ntip stop (every stop): 33 of 36 · tip stop worst <= 1 mm (proposed: Zach's 1 mm on every stop)\nhighest rung tracked: can1 0.9, can11 1, can12 0.9, can13 0.9, can14 0.9, can15 0.9",
+    "gap": false
+   },
+   {
+    "code": "every_stop = DEPLOYMENT.verdicts[\"tip stop (every stop)\"]",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "every_stop",
+    "output": "(Gate(alias='tip stop worst', target=1.0),)",
+    "gap": false
+   },
+   {
+    "code": "DEPLOYMENT.judge(real_rungs[(\"can11\", 0.9)])",
+    "output": "{'tracks': True, 'tip stop (median)': True, 'tip stop (every stop)': False}",
+    "gap": false
+   }
+  ]
  },
  {
   "label": "the twin's output (sim vs target)",
   "caption": "The same Metrics on the twin's answer to every play.",
-  "code": "sim = score(\"sim\")\nsim_verdicts = judged(sim[1])\nfor rung in RUNGS:\n    r, s = real[1][(\"can11\", rung)], sim[1][(\"can11\", rung)]\n    print(f\"CAN 11 @{rung:.1f}: tracking RMS real {r['tracking RMS']:.3f}° sim {s['tracking RMS']:.3f}° · tip stop real {r['tip stop error']:.3f} sim {s['tip stop error']:.3f} mm\")\nprint(\"sim tip stop (median):\", sum(bool(c[\"tip stop (median)\"]) for c in sim_verdicts[\"cells\"].values()), \"of 36\")",
-  "output": "CAN 11 @0.2: tracking RMS real 0.095° sim 0.091° · tip stop real 0.291 sim 0.146 mm\nCAN 11 @0.4: tracking RMS real 0.079° sim 0.114° · tip stop real 0.163 sim 0.225 mm\nCAN 11 @0.6: tracking RMS real 0.061° sim 0.138° · tip stop real 0.220 sim 0.154 mm\nCAN 11 @0.8: tracking RMS real 0.099° sim 0.180° · tip stop real 0.250 sim 0.174 mm\nCAN 11 @0.9: tracking RMS real 0.135° sim 0.213° · tip stop real 0.374 sim 0.344 mm\nCAN 11 @1.0: tracking RMS real 0.163° sim 0.257° · tip stop real 0.558 sim 0.538 mm\nsim tip stop (median): 36 of 36",
-  "seconds": "2.35"
+  "kind": "session",
+  "code": "sim_plays, sim_rungs = score(\"sim\")\nsim_verdicts = judged(sim_rungs)\n\nprint(\"CAN 11 rung   RMS real °   RMS sim °   stop real mm   stop sim mm\")\nfor rung in RUNGS:\n    real_values = real_rungs[(\"can11\", rung)]\n    sim_values = sim_rungs[(\"can11\", rung)]\n    rms = (real_values[\"tracking RMS\"], sim_values[\"tracking RMS\"])\n    stop = (real_values[\"tip stop error\"], sim_values[\"tip stop error\"])\n    print(f\"{rung:11.1f} {rms[0]:12.3f} {rms[1]:11.3f} {stop[0]:14.3f} {stop[1]:13.3f}\")\n\nsim_cells = sim_verdicts[\"cells\"].values()\nsum(bool(cell[\"tip stop (median)\"]) for cell in sim_cells)",
+  "output": "CAN 11 rung   RMS real °   RMS sim °   stop real mm   stop sim mm\n        0.2        0.095       0.091          0.291         0.146\n        0.4        0.079       0.114          0.163         0.225\n        0.6        0.061       0.138          0.220         0.154\n        0.8        0.099       0.180          0.250         0.174\n        0.9        0.135       0.213          0.374         0.344\n        1.0        0.163       0.257          0.558         0.538\n36",
+  "seconds": "2.55",
+  "statements": [
+   {
+    "code": "sim_plays, sim_rungs = score(\"sim\")",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "sim_verdicts = judged(sim_rungs)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "print(\"CAN 11 rung   RMS real °   RMS sim °   stop real mm   stop sim mm\")",
+    "output": "CAN 11 rung   RMS real °   RMS sim °   stop real mm   stop sim mm",
+    "gap": true
+   },
+   {
+    "code": "for rung in RUNGS:\n    real_values = real_rungs[(\"can11\", rung)]\n    sim_values = sim_rungs[(\"can11\", rung)]\n    rms = (real_values[\"tracking RMS\"], sim_values[\"tracking RMS\"])\n    stop = (real_values[\"tip stop error\"], sim_values[\"tip stop error\"])\n    print(f\"{rung:11.1f} {rms[0]:12.3f} {rms[1]:11.3f} {stop[0]:14.3f} {stop[1]:13.3f}\")",
+    "output": "        0.2        0.095       0.091          0.291         0.146\n        0.4        0.079       0.114          0.163         0.225\n        0.6        0.061       0.138          0.220         0.154\n        0.8        0.099       0.180          0.250         0.174\n        0.9        0.135       0.213          0.374         0.344\n        1.0        0.163       0.257          0.558         0.538",
+    "gap": false
+   },
+   {
+    "code": "sim_cells = sim_verdicts[\"cells\"].values()",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "sum(bool(cell[\"tip stop (median)\"]) for cell in sim_cells)",
+    "output": "36",
+    "gap": false
+   }
+  ]
  },
  {
   "label": "the chain, a view, a new metric",
   "caption": "The five-bar's Metrics over the same ErrorStat base; a view of one alias to matplotlib, W&B and Rerun; a configured alias and a subclass added.",
-  "code": "for key, values in chain_values().items():\n    print(f\"{key:<34} \" + \" · \".join(f\"{name} {value:.3f}\" for name, value in values.items()))\nstation = ARMS[\"can11\"].clone()\nfor episode_ in episodes(\"real\"):\n    if episode_.labels[\"station\"] == \"can11\":\n        station.update(episode_); station.end_run()\nimport _viz\nshown = view(station, \"tip stop worst\", \"CAN 11 · every stop at the tip, round 8\", target=1.0)\ntry:\n    _viz.plot(shown, path=MEDIA / \"v2-tip-stops.png\"); print(\"plot ->\", MEDIA / \"v2-tip-stops.png\")\nexcept ImportError:\n    print(\"plot: matplotlib not installed (the viz extra)\")\nprint(\"W&B:\", _viz.wandb_payload(shown, \"can11/tip_stop_mm\")[\"summary\"])\nprint(\"Rerun:\", len(_viz.rerun_calls(shown, \"metrics/can11/tip_stop_mm\")), \"calls ->\", _viz.write_rrd(_viz.rerun_calls(shown, \"metrics/can11/tip_stop_mm\"), MEDIA / \"v2-tip-stops.rrd\"))\nmore = arm + (VELOCITY_ERROR, Alias(\"feedback share (model ff)\", FeedbackShare(), \"joint\", \"%\", 100.0))\nvalues = more(episode)\nprint(f\"velocity error RMS {values['velocity error RMS']:.3f} deg/s · feedback share {values['feedback share (model ff)']:.1f} %\")",
-  "output": "real:vertical.0.10mps.gravity_ff   j2 tracking RMS 0.625 · c1 tracking RMS 0.556 · tool tracking RMS 5.145 · tool worst 23.798\nreal:vertical.0.10mps.full_ff      j2 tracking RMS 0.652 · c1 tracking RMS 0.597 · tool tracking RMS 5.035 · tool worst 24.793\nreal:vertical.0.20mps.gravity_ff   j2 tracking RMS 0.910 · c1 tracking RMS 0.692 · tool tracking RMS 6.804 · tool worst 33.068\nreal:vertical.0.20mps.full_ff      j2 tracking RMS 0.762 · c1 tracking RMS 0.555 · tool tracking RMS 5.290 · tool worst 26.208\nreal:vertical.0.35mps.full_ff      j2 tracking RMS 0.977 · c1 tracking RMS 0.582 · tool tracking RMS 5.967 · tool worst 22.907\nsim:vertical.0.10mps.gravity_ff    j2 tracking RMS 0.908 · c1 tracking RMS 0.514 · tool tracking RMS 4.829 · tool worst 17.896\nsim:vertical.0.10mps.full_ff       j2 tracking RMS 0.844 · c1 tracking RMS 0.435 · tool tracking RMS 3.960 · tool worst 9.464\nsim:vertical.0.20mps.gravity_ff    j2 tracking RMS 1.083 · c1 tracking RMS 0.651 · tool tracking RMS 6.469 · tool worst 27.011\nsim:vertical.0.20mps.full_ff       j2 tracking RMS 0.871 · c1 tracking RMS 0.422 · tool tracking RMS 4.066 · tool worst 10.546\nsim:vertical.0.35mps.full_ff       j2 tracking RMS 0.888 · c1 tracking RMS 0.429 · tool tracking RMS 4.236 · tool worst 9.392\nplot -> /home/bam/robot_models/reports/media/robot-models-metrics-api-proposals-2026-11-17/v2-tip-stops.png\nW&B: {'can11/tip_stop_mm/max': 1.3171758816081196, 'can11/tip_stop_mm/n': 84, 'can11/tip_stop_mm/target': 1.0}\nRerun: 85 calls -> /home/bam/robot_models/reports/media/robot-models-metrics-api-proposals-2026-11-17/v2-tip-stops.rrd\nvelocity error RMS 4.345 deg/s · feedback share 73.2 %",
-  "seconds": "3.45"
+  "kind": "session",
+  "code": "chain = chain_values()\nfor run_id, values in chain.items():\n    rounded = {name: round(value, 3) for name, value in values.items()}\n    print(run_id, rounded)\n\nstation = ARMS[\"can11\"].clone()\nfor play in episodes(\"real\"):\n    if play.labels[\"station\"] == \"can11\":\n        station.update(play)\n        station.end_run()\n\nimport _viz\ntitle = \"CAN 11 · every stop at the tip, round 8\"\nshown = view(station, \"tip stop worst\", title, target=1.0)\n_viz.plot(shown, path=MEDIA / \"v2-tip-stops.png\")\n\npayload = _viz.wandb_payload(shown, \"can11/tip_stop_mm\")\npayload[\"summary\"]\n\ncalls = _viz.rerun_calls(shown, \"metrics/can11/tip_stop_mm\")\nlen(calls)\n_viz.write_rrd(calls, MEDIA / \"v2-tip-stops.rrd\")\n\nfeedback_share = Alias(\"feedback share (model ff)\", FeedbackShare(), \"joint\", \"%\", 100.0)\nmore = arm + (VELOCITY_ERROR, feedback_share)\nmore\nmore_values = more(episode)\nmore_values[\"velocity error RMS\"]\nmore_values[\"feedback share (model ff)\"]",
+  "output": "real:vertical.0.10mps.gravity_ff {'j2 tracking RMS': 0.625, 'c1 tracking RMS': 0.556, 'tool tracking RMS': 5.145, 'tool worst': 23.798}\nreal:vertical.0.10mps.full_ff {'j2 tracking RMS': 0.652, 'c1 tracking RMS': 0.597, 'tool tracking RMS': 5.035, 'tool worst': 24.793}\nreal:vertical.0.20mps.gravity_ff {'j2 tracking RMS': 0.91, 'c1 tracking RMS': 0.692, 'tool tracking RMS': 6.804, 'tool worst': 33.068}\nreal:vertical.0.20mps.full_ff {'j2 tracking RMS': 0.762, 'c1 tracking RMS': 0.555, 'tool tracking RMS': 5.29, 'tool worst': 26.208}\nreal:vertical.0.35mps.full_ff {'j2 tracking RMS': 0.977, 'c1 tracking RMS': 0.582, 'tool tracking RMS': 5.967, 'tool worst': 22.907}\nsim:vertical.0.10mps.gravity_ff {'j2 tracking RMS': 0.908, 'c1 tracking RMS': 0.514, 'tool tracking RMS': 4.829, 'tool worst': 17.896}\nsim:vertical.0.10mps.full_ff {'j2 tracking RMS': 0.844, 'c1 tracking RMS': 0.435, 'tool tracking RMS': 3.96, 'tool worst': 9.464}\nsim:vertical.0.20mps.gravity_ff {'j2 tracking RMS': 1.083, 'c1 tracking RMS': 0.651, 'tool tracking RMS': 6.469, 'tool worst': 27.011}\nsim:vertical.0.20mps.full_ff {'j2 tracking RMS': 0.871, 'c1 tracking RMS': 0.422, 'tool tracking RMS': 4.066, 'tool worst': 10.546}\nsim:vertical.0.35mps.full_ff {'j2 tracking RMS': 0.888, 'c1 tracking RMS': 0.429, 'tool tracking RMS': 4.236, 'tool worst': 9.392}\n(<Figure size 936x442 with 1 Axes>,\n <Axes: title={'center': 'CAN 11 · every stop at the tip, round 8'}, xlabel='stop', ylabel='mm'>)\n{'can11/tip_stop_mm/max': 1.3171758816081196,\n 'can11/tip_stop_mm/n': 84,\n 'can11/tip_stop_mm/target': 1.0}\n85\nPosixPath('/home/bam/robot_models/reports/media/robot-models-metrics-api-proposals-2026-11-17/v2-tip-stops.rrd')\nMetrics(14 aliases, 13 members)\n4.3445365411852865\n73.21731571237076",
+  "seconds": "4.23",
+  "statements": [
+   {
+    "code": "chain = chain_values()",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "for run_id, values in chain.items():\n    rounded = {name: round(value, 3) for name, value in values.items()}\n    print(run_id, rounded)",
+    "output": "real:vertical.0.10mps.gravity_ff {'j2 tracking RMS': 0.625, 'c1 tracking RMS': 0.556, 'tool tracking RMS': 5.145, 'tool worst': 23.798}\nreal:vertical.0.10mps.full_ff {'j2 tracking RMS': 0.652, 'c1 tracking RMS': 0.597, 'tool tracking RMS': 5.035, 'tool worst': 24.793}\nreal:vertical.0.20mps.gravity_ff {'j2 tracking RMS': 0.91, 'c1 tracking RMS': 0.692, 'tool tracking RMS': 6.804, 'tool worst': 33.068}\nreal:vertical.0.20mps.full_ff {'j2 tracking RMS': 0.762, 'c1 tracking RMS': 0.555, 'tool tracking RMS': 5.29, 'tool worst': 26.208}\nreal:vertical.0.35mps.full_ff {'j2 tracking RMS': 0.977, 'c1 tracking RMS': 0.582, 'tool tracking RMS': 5.967, 'tool worst': 22.907}\nsim:vertical.0.10mps.gravity_ff {'j2 tracking RMS': 0.908, 'c1 tracking RMS': 0.514, 'tool tracking RMS': 4.829, 'tool worst': 17.896}\nsim:vertical.0.10mps.full_ff {'j2 tracking RMS': 0.844, 'c1 tracking RMS': 0.435, 'tool tracking RMS': 3.96, 'tool worst': 9.464}\nsim:vertical.0.20mps.gravity_ff {'j2 tracking RMS': 1.083, 'c1 tracking RMS': 0.651, 'tool tracking RMS': 6.469, 'tool worst': 27.011}\nsim:vertical.0.20mps.full_ff {'j2 tracking RMS': 0.871, 'c1 tracking RMS': 0.422, 'tool tracking RMS': 4.066, 'tool worst': 10.546}\nsim:vertical.0.35mps.full_ff {'j2 tracking RMS': 0.888, 'c1 tracking RMS': 0.429, 'tool tracking RMS': 4.236, 'tool worst': 9.392}",
+    "gap": false
+   },
+   {
+    "code": "station = ARMS[\"can11\"].clone()",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "for play in episodes(\"real\"):\n    if play.labels[\"station\"] == \"can11\":\n        station.update(play)\n        station.end_run()",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "import _viz",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "title = \"CAN 11 · every stop at the tip, round 8\"",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "shown = view(station, \"tip stop worst\", title, target=1.0)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "_viz.plot(shown, path=MEDIA / \"v2-tip-stops.png\")",
+    "output": "(<Figure size 936x442 with 1 Axes>,\n <Axes: title={'center': 'CAN 11 · every stop at the tip, round 8'}, xlabel='stop', ylabel='mm'>)",
+    "gap": false
+   },
+   {
+    "code": "payload = _viz.wandb_payload(shown, \"can11/tip_stop_mm\")",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "payload[\"summary\"]",
+    "output": "{'can11/tip_stop_mm/max': 1.3171758816081196,\n 'can11/tip_stop_mm/n': 84,\n 'can11/tip_stop_mm/target': 1.0}",
+    "gap": false
+   },
+   {
+    "code": "calls = _viz.rerun_calls(shown, \"metrics/can11/tip_stop_mm\")",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "len(calls)",
+    "output": "85",
+    "gap": false
+   },
+   {
+    "code": "_viz.write_rrd(calls, MEDIA / \"v2-tip-stops.rrd\")",
+    "output": "PosixPath('/home/bam/robot_models/reports/media/robot-models-metrics-api-proposals-2026-11-17/v2-tip-stops.rrd')",
+    "gap": false
+   },
+   {
+    "code": "feedback_share = Alias(\"feedback share (model ff)\", FeedbackShare(), \"joint\", \"%\", 100.0)",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "more = arm + (VELOCITY_ERROR, feedback_share)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "more",
+    "output": "Metrics(14 aliases, 13 members)",
+    "gap": false
+   },
+   {
+    "code": "more_values = more(episode)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "more_values[\"velocity error RMS\"]",
+    "output": "4.3445365411852865",
+    "gap": false
+   },
+   {
+    "code": "more_values[\"feedback share (model ff)\"]",
+    "output": "73.21731571237076",
+    "gap": false
+   }
+  ]
  },
  {
   "label": "other inputs: repeats and a calibration",
   "caption": "Each class declares what update() takes; an Episode is only the common case. The gain reuses the alias by identity on the calibration's held-out runs.",
-  "code": "print({cls.__name__: cls.Input for cls in (ErrorStat, Dwell, TimeOffset, Repeatability, PerformanceGain)})\nrp, repeats = repeatability(\"can11\", 0.9)\nprint(f\"CAN 11 @0.9: RP (k=3) over {repeats} real repeats: {rp.compute() * 1e3 * TIPS['can11']:.3f} mm at the tip\")\noutcome = calibration.outcome()                       # the record: robot_models.metrics.CalibrationOutcome\ngain = performance_gain()\nprint(f\"PerformanceGain({FF_RESIDUAL.name!r}) on {outcome.held_out}: nominal {gain.sides[0]:.4f}, fitted {gain.sides[1]:.4f}, gain {gain.compute():.4f} N·m\")",
-  "output": "{'ErrorStat': 'TrackedPair', 'Dwell': 'TrackedPair', 'TimeOffset': 'TrackedPair (plan, state)', 'Repeatability': 'Repeat', 'PerformanceGain': 'HeldOutPair'}\nCAN 11 @0.9: RP (k=3) over 5 real repeats: 0.387 mm at the tip\nPerformanceGain('feed-forward residual RMS') on plateaus 2, 4, 6, 8, 10, both directions: nominal 0.2220, fitted 0.0042, gain 0.2178 N·m",
-  "seconds": "0.10"
+  "kind": "session",
+  "code": "inputs = (ErrorStat, Dwell, TimeOffset, Repeatability, PerformanceGain)\n{cls.__name__: cls.Input for cls in inputs}\n\nrepeatability_metric, repeats = repeatability(\"can11\", 0.9)\nrepeats\ntip_mm = 1e3 * TIPS[\"can11\"]\nrepeatability_metric.compute() * tip_mm          # mm at the tip\n\noutcome = calibration.outcome()                  # robot_models.metrics.CalibrationOutcome\noutcome.held_out\n\ngain = performance_gain()\nFF_RESIDUAL.name\ngain.sides                         # nominal, fitted: N·m on the held-out runs\ngain.compute()",
+  "output": "{'ErrorStat': 'TrackedPair',\n 'Dwell': 'TrackedPair',\n 'TimeOffset': 'TrackedPair (plan, state)',\n 'Repeatability': 'Repeat',\n 'PerformanceGain': 'HeldOutPair'}\n5\n0.38729537480154735\n'plateaus 2, 4, 6, 8, 10, both directions'\n'feed-forward residual RMS'\n(0.22196952061068506, 0.004184752627886934)\n0.21778476798279814",
+  "seconds": "0.08",
+  "statements": [
+   {
+    "code": "inputs = (ErrorStat, Dwell, TimeOffset, Repeatability, PerformanceGain)",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "{cls.__name__: cls.Input for cls in inputs}",
+    "output": "{'ErrorStat': 'TrackedPair',\n 'Dwell': 'TrackedPair',\n 'TimeOffset': 'TrackedPair (plan, state)',\n 'Repeatability': 'Repeat',\n 'PerformanceGain': 'HeldOutPair'}",
+    "gap": false
+   },
+   {
+    "code": "repeatability_metric, repeats = repeatability(\"can11\", 0.9)",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "repeats",
+    "output": "5",
+    "gap": false
+   },
+   {
+    "code": "tip_mm = 1e3 * TIPS[\"can11\"]",
+    "output": "",
+    "gap": false
+   },
+   {
+    "code": "repeatability_metric.compute() * tip_mm          # mm at the tip",
+    "output": "0.38729537480154735",
+    "gap": false
+   },
+   {
+    "code": "outcome = calibration.outcome()                  # robot_models.metrics.CalibrationOutcome",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "outcome.held_out",
+    "output": "'plateaus 2, 4, 6, 8, 10, both directions'",
+    "gap": false
+   },
+   {
+    "code": "gain = performance_gain()",
+    "output": "",
+    "gap": true
+   },
+   {
+    "code": "FF_RESIDUAL.name",
+    "output": "'feed-forward residual RMS'",
+    "gap": false
+   },
+   {
+    "code": "gain.sides                         # nominal, fitted: N·m on the held-out runs",
+    "output": "(0.22196952061068506, 0.004184752627886934)",
+    "gap": false
+   },
+   {
+    "code": "gain.compute()",
+    "output": "0.21778476798279814",
+    "gap": false
+   }
+  ]
  }
 ]

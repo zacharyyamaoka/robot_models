@@ -7,7 +7,7 @@ holding each reply until the next command knot arrives. Aliases compile into a `
 config) once.
 
 ```bash
-/home/bam/robot_models/.venv/bin/python /home/bam/robot_models/docs/proposals/metrics-api-2026-11-17/v3_signals/scenario.py
+uv run --offline --project /home/bam/robot_models --with matplotlib --with rerun-sdk==0.40.0 python /home/bam/robot_models/docs/proposals/metrics-api-2026-11-17/v3_signals/scenario.py
 ```
 
 `check_scenario.py v3_signals` → **PASS** (scorecard parity at float round-off). The live aligner reproduces the

@@ -1,9 +1,8 @@
 """v2 · Family metrics: the shared scenario as one REPL session on round 8's real runs.
 
-    /home/bam/robot_models/.venv/bin/python /home/bam/robot_models/docs/proposals/metrics-api-2026-11-17/v2_family_metrics/scenario.py
+    uv run --offline --project /home/bam/robot_models --with matplotlib --with rerun-sdk==0.40.0 python /home/bam/robot_models/docs/proposals/metrics-api-2026-11-17/v2_family_metrics/scenario.py
 
-Writes scenario.out.txt and session.json beside this file (the view cell needs the viz extra, matplotlib; see v1's
-docstring for the uv line). ``run()`` is what the frozen check calls: the same API, no transcript.
+Writes scenario.out.txt and session.json beside this file (the view cell needs the viz extra: matplotlib, rerun-sdk). ``run()`` is what the frozen check calls: the same API, no transcript.
 """
 
 from __future__ import annotations
@@ -21,7 +20,8 @@ from families import (DEPLOYMENT, METRICS_BY_TYPE, RIGID_BODY_CHAIN_METRICS, RUN
 from robot_models import IntegratedServo  # noqa: E402
 import calibration  # noqa: E402
 from robot_models_metrics import (DEGREES, MEMO, STOP_PASSES, Alias, CodeShare, Dwell, Episode, ErrorStat,  # noqa: E402
-                                  HeldOutPair, Metrics, PerformanceGain, Repeat, Repeatability, TimeOffset, view)
+                                  Gate, HeldOutPair, Metrics, PerformanceGain, Repeat, Repeatability, TimeOffset,
+                                  at_most, view)
 
 MEDIA = pathlib.Path("/home/bam/robot_models/reports/media/robot-models-metrics-api-proposals-2026-11-17")
 TIPS = {station: facts["tip_length_m"] for station, facts in fixture.stations().items()}
@@ -178,82 +178,179 @@ def run() -> dict:
     return check_dict(score("real"), score("sim"), chain_values(), live_block, dedup)
 
 
+def plays_of(station: str, rung: float) -> list[Episode]:
+    """One rung cell's real plays, as the roll-up groups them."""
+
+    return [episode for episode in episodes("real")
+            if episode.labels["station"] == station and episode.labels["rung"] == rung]
+
+
+# WHY the same seven headings in every variant: the five glances are compared side by side, row by row.
+GLANCE = ("API at a glance", "The design's shape before any detail: a metric, an alias, a part type's .metrics, "
+          "live, offline, a gate kept outside compute(), and a rung summarised across runs.", '''
+# a metric: one base, its constructor is the config (a buffer + a functional twin)
+stop_worst = Dwell(quantity="error", statistic="max")
+
+# an alias: a name, the signal it reads, a display unit
+tip_stop_worst = Alias("tip stop worst", stop_worst, "joint", unit="mm", factor=339.0)
+tip_stop_worst
+
+# a part type's metrics, beside its models: both on the ModelFamily
+IntegratedServo
+IntegratedServo.metrics
+arm = pendulum_arm(tip_length_m=0.339)
+list(arm.aliases)
+
+# live: chunks appended to the buffer, compute() re-reads it
+episode = Episode.from_run(fixture.pendulum_runs("real")[32])
+live = arm.clone()
+for chunk in episode.chunks(rows=7):
+    live.update(chunk)
+live.end_run()
+live.compute()["tip stop worst"]
+
+# offline: call the family's Metrics on the whole episode
+offline = arm(episode)
+offline["tip stop worst"]
+
+# a gate: an alias against a robot_msgs Value that carries its source
+within_1mm = Gate("tip stop worst", at_most(1.0, "mm", "Zach 2026-11-11"))
+within_1mm.check(offline)
+
+# across runs: one Metrics fed every play of the rung, run after run
+rung = arm.clone()
+for play in plays_of("can11", rung=0.9):
+    rung.update(play)
+    rung.end_run()
+rung_values = rung.compute()
+rung_values["tip stop worst"]
+within_1mm.check(rung_values)
+''')
+
 CELLS = [
     ("a part's metrics", "The family IS the part type's models; its metrics are declared beside them. The arm is the "
      "servo's Metrics plus tip aliases; the chain's are keyed by type id until it has a family.", '''
-print(IntegratedServo, "->", IntegratedServo.keys()[:4], "...")          # .models: the family itself
+IntegratedServo                                  # .models: the family itself
 print(IntegratedServo.metrics.table("IntegratedServo"))
-arm = pendulum_arm(tip_length_m=TIPS["can11"])
+
+arm = pendulum_arm(tip_length_m=TIPS["can11"])    # CAN 11: the 339 mm heavy pendulum
 print(arm.table("1-DOF pendulum arm (CAN 11, 339 mm)"))
-print(METRICS_BY_TYPE["rigid_body_chain"].table("rigid_body_chain"))
-card = arm.aliases["tip stop error"].card()
-{key: card[key] for key in ("name", "base", "config", "unit", "description", "references", "value_type")}
+
+chain_metrics = METRICS_BY_TYPE["rigid_body_chain"]
+print(chain_metrics.table("rigid_body_chain"))
+
+arm.aliases["tip stop error"].card()
 '''),
     ("one recording, offline and live", "update() appends chunks and compute() runs the functional twin over the "
      "buffer, so live is offline by construction; the memo shows the arm's aliases that the servo already computed.", '''
-episode = Episode.from_run(fixture.pendulum_runs("real")[32])          # CAN 11, rung 0.9, repeat
+run = fixture.pendulum_runs("real")[32]           # CAN 11, rung 0.9, a repeat
+episode = Episode.from_run(run)
+
 offline = arm(episode)
+
 live = arm.clone()
 for number, chunk in enumerate(episode.chunks(rows=7)):
     live.update(chunk)
     if number == 40:
-        print(f"after 280 rows: tip stop worst so far {live.compute()['tip stop worst']:.3f} mm")
+        so_far = live.compute()["tip stop worst"]
+        print(f"after 280 rows: worst stop so far {so_far:.3f} mm")
 live.end_run()
-for name in ("tracking RMS", "tracking peak", "tip stop error", "tip stop worst", "tip settle", "overshoot", "lag", "stops"):
-    print(f"{name:<15} offline {offline[name]:10.6f}   live {live.compute()[name]:10.6f}   {arm.aliases[name].unit}")
-print("dedup:", dedup_on(episode))
-print("functional twin:", ErrorStat.functional(ErrorStat.Config(statistic="rms", rows="moving"), [(episode.streams["target"], episode.streams["state"])]) * DEGREES, "deg")
+live_values = live.compute()
+
+names = ["tracking RMS", "tracking peak", "tip stop error", "tip stop worst",
+         "tip settle", "overshoot", "lag", "stops"]
+for name in names:
+    print(f"{name:<15} offline {offline[name]:10.6f}   live {live_values[name]:10.6f}")
+
+dedup_on(episode)
+
+rms_config = ErrorStat.Config(statistic="rms", rows="moving")
+one_run = [(episode.streams["target"], episode.streams["state"])]
+ErrorStat.functional(rms_config, one_run) * DEGREES      # the functional twin, in degrees
 '''),
     ("runs to a deployment, gates applied", "A rung is one Metrics object fed its plays; the deployment record holds the "
      "targets as robot_msgs Values with their source; verdicts read the computed values.", '''
-real = score("real")
-verdicts = judged(real[1])
-print(summary(real[1], verdicts, stations=("can11", "can12")))
+real_plays, real_rungs = score("real")
+len(real_plays), len(real_rungs)
+
+verdicts = judged(real_rungs)
+print(summary(real_rungs, verdicts, stations=("can11", "can12")))
+
+every_stop = DEPLOYMENT.verdicts["tip stop (every stop)"]
+every_stop
+DEPLOYMENT.judge(real_rungs[("can11", 0.9)])
 '''),
     ("the twin's output (sim vs target)", "The same Metrics on the twin's answer to every play.", '''
-sim = score("sim")
-sim_verdicts = judged(sim[1])
+sim_plays, sim_rungs = score("sim")
+sim_verdicts = judged(sim_rungs)
+
+print("CAN 11 rung   RMS real °   RMS sim °   stop real mm   stop sim mm")
 for rung in RUNGS:
-    r, s = real[1][("can11", rung)], sim[1][("can11", rung)]
-    print(f"CAN 11 @{rung:.1f}: tracking RMS real {r['tracking RMS']:.3f}° sim {s['tracking RMS']:.3f}° · tip stop real {r['tip stop error']:.3f} sim {s['tip stop error']:.3f} mm")
-print("sim tip stop (median):", sum(bool(c["tip stop (median)"]) for c in sim_verdicts["cells"].values()), "of 36")
+    real_values = real_rungs[("can11", rung)]
+    sim_values = sim_rungs[("can11", rung)]
+    rms = (real_values["tracking RMS"], sim_values["tracking RMS"])
+    stop = (real_values["tip stop error"], sim_values["tip stop error"])
+    print(f"{rung:11.1f} {rms[0]:12.3f} {rms[1]:11.3f} {stop[0]:14.3f} {stop[1]:13.3f}")
+
+sim_cells = sim_verdicts["cells"].values()
+sum(bool(cell["tip stop (median)"]) for cell in sim_cells)
 '''),
     ("the chain, a view, a new metric", "The five-bar's Metrics over the same ErrorStat base; a view of one alias to "
      "matplotlib, W&B and Rerun; a configured alias and a subclass added.", '''
-for key, values in chain_values().items():
-    print(f"{key:<34} " + " · ".join(f"{name} {value:.3f}" for name, value in values.items()))
+chain = chain_values()
+for run_id, values in chain.items():
+    rounded = {name: round(value, 3) for name, value in values.items()}
+    print(run_id, rounded)
+
 station = ARMS["can11"].clone()
-for episode_ in episodes("real"):
-    if episode_.labels["station"] == "can11":
-        station.update(episode_); station.end_run()
+for play in episodes("real"):
+    if play.labels["station"] == "can11":
+        station.update(play)
+        station.end_run()
+
 import _viz
-shown = view(station, "tip stop worst", "CAN 11 · every stop at the tip, round 8", target=1.0)
-try:
-    _viz.plot(shown, path=MEDIA / "v2-tip-stops.png"); print("plot ->", MEDIA / "v2-tip-stops.png")
-except ImportError:
-    print("plot: matplotlib not installed (the viz extra)")
-print("W&B:", _viz.wandb_payload(shown, "can11/tip_stop_mm")["summary"])
-print("Rerun:", len(_viz.rerun_calls(shown, "metrics/can11/tip_stop_mm")), "calls ->", _viz.write_rrd(_viz.rerun_calls(shown, "metrics/can11/tip_stop_mm"), MEDIA / "v2-tip-stops.rrd"))
-more = arm + (VELOCITY_ERROR, Alias("feedback share (model ff)", FeedbackShare(), "joint", "%", 100.0))
-values = more(episode)
-print(f"velocity error RMS {values['velocity error RMS']:.3f} deg/s · feedback share {values['feedback share (model ff)']:.1f} %")
+title = "CAN 11 · every stop at the tip, round 8"
+shown = view(station, "tip stop worst", title, target=1.0)
+_viz.plot(shown, path=MEDIA / "v2-tip-stops.png")
+
+payload = _viz.wandb_payload(shown, "can11/tip_stop_mm")
+payload["summary"]
+
+calls = _viz.rerun_calls(shown, "metrics/can11/tip_stop_mm")
+len(calls)
+_viz.write_rrd(calls, MEDIA / "v2-tip-stops.rrd")
+
+feedback_share = Alias("feedback share (model ff)", FeedbackShare(), "joint", "%", 100.0)
+more = arm + (VELOCITY_ERROR, feedback_share)
+more
+more_values = more(episode)
+more_values["velocity error RMS"]
+more_values["feedback share (model ff)"]
+'''),
+    ("other inputs: repeats and a calibration", "Each class declares what update() takes; an Episode is only the "
+     "common case. The gain reuses the alias by identity on the calibration's held-out runs.", '''
+inputs = (ErrorStat, Dwell, TimeOffset, Repeatability, PerformanceGain)
+{cls.__name__: cls.Input for cls in inputs}
+
+repeatability_metric, repeats = repeatability("can11", 0.9)
+repeats
+tip_mm = 1e3 * TIPS["can11"]
+repeatability_metric.compute() * tip_mm          # mm at the tip
+
+outcome = calibration.outcome()                  # robot_models.metrics.CalibrationOutcome
+outcome.held_out
+
+gain = performance_gain()
+FF_RESIDUAL.name
+gain.sides                         # nominal, fitted: N·m on the held-out runs
+gain.compute()
 '''),
 ]
 
 
-CELLS.append(("other inputs: repeats and a calibration", "Each class declares what update() takes; an Episode is "
-    "only the common case. The gain reuses the alias by identity on the calibration's held-out runs.", '''
-print({cls.__name__: cls.Input for cls in (ErrorStat, Dwell, TimeOffset, Repeatability, PerformanceGain)})
-rp, repeats = repeatability("can11", 0.9)
-print(f"CAN 11 @0.9: RP (k=3) over {repeats} real repeats: {rp.compute() * 1e3 * TIPS['can11']:.3f} mm at the tip")
-outcome = calibration.outcome()                       # the record: robot_models.metrics.CalibrationOutcome
-gain = performance_gain()
-print(f"PerformanceGain({FF_RESIDUAL.name!r}) on {outcome.held_out}: nominal {gain.sides[0]:.4f}, fitted {gain.sides[1]:.4f}, gain {gain.compute():.4f} N·m")
-'''))
-
-
 def main() -> None:
     session = Session(dict(globals()))
+    session.cell(*GLANCE, kind="glance")
     for label, caption, code in CELLS:
         session.cell(label, caption, code)
     session.write(HERE)

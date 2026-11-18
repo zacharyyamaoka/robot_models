@@ -7,7 +7,7 @@ with no extra code. Gates are OpenSLO occurrence objectives ("100 % of stops <= 
 RobotDx's own `Result`.
 
 ```bash
-/home/bam/robot_models/.venv/bin/python /home/bam/robot_models/docs/proposals/metrics-api-2026-11-17/v4_folded_values/scenario.py
+uv run --offline --project /home/bam/robot_models --with matplotlib --with rerun-sdk==0.40.0 python /home/bam/robot_models/docs/proposals/metrics-api-2026-11-17/v4_folded_values/scenario.py
 ```
 
 `check_scenario.py v4_folded_values` → **PASS** (scorecard parity at float round-off). Transcript:

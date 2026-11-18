@@ -1,10 +1,8 @@
 """v1 · robot_metrics: the shared scenario as one REPL session on round 8's real runs.
 
-    /home/bam/robot_models/.venv/bin/python /home/bam/robot_models/docs/proposals/metrics-api-2026-11-17/v1_robot_metrics/scenario.py
+    uv run --offline --project /home/bam/robot_models --with matplotlib --with rerun-sdk==0.40.0 python /home/bam/robot_models/docs/proposals/metrics-api-2026-11-17/v1_robot_metrics/scenario.py
 
-Writes scenario.out.txt and session.json beside this file. The view cell draws with matplotlib and logs Rerun when
-they are importable (the optional extras); run it with them through
-``uv run --project /home/bam/robot_models --with matplotlib --with rerun-sdk==0.40.0 python <this file>``.
+Writes scenario.out.txt and session.json beside this file (the view cell needs the viz extra: matplotlib, rerun-sdk).
 ``run()`` is what the frozen check calls: the same API, no transcript.
 """
 
@@ -22,8 +20,9 @@ import fixture  # noqa: E402
 from _session import Session  # noqa: E402
 from parts import GATES, INTEGRATED_SERVO, RIGID_BODY_CHAIN, RUNGS, pendulum_arm  # noqa: E402
 import calibration  # noqa: E402
-from robot_metrics import (DEGREES, Alias, CodeShare, DwellError, ErrorStat, HeldOutPair, MetricCollection,  # noqa: E402
-                           PerformanceGain, Repeat, Repeatability, RunRecording, TimeOffset)
+from robot_metrics import (DEGREES, Alias, CodeShare, Diagnostic, DwellError, ErrorStat, Gate,  # noqa: E402
+                           HeldOutPair, Limits, MetricCollection, PerformanceGain, Repeat, Repeatability,
+                           RunRecording, TimeOffset)
 
 MEDIA = pathlib.Path("/home/bam/robot_models/reports/media/robot-models-metrics-api-proposals-2026-11-17")
 TIPS = {station: facts["tip_length_m"] for station, facts in fixture.stations().items()}
@@ -177,94 +176,196 @@ def run() -> dict:
     return check_dict(score("real"), score("sim"), chain_values(), live_block, collection)
 
 
+def plays_of(station: str, rung: float) -> list[RunRecording]:
+    """One rung cell's real plays, as the roll-up groups them."""
+
+    return [recording for recording in recordings("real")
+            if recording.labels["station"] == station and recording.labels["rung"] == rung]
+
+
+# WHY the same seven headings in every variant: the five glances are compared side by side, row by row.
+GLANCE = ("API at a glance", "The design's shape before any detail: a metric, an alias, a part type's .metrics, "
+          "live, offline, a gate kept outside compute(), and a rung summarised across runs.", '''
+# a metric: a stock base class, configured by its constructor
+stop_worst = DwellError(statistic="max")
+
+# an alias: a name, the signal it reads, a display unit
+tip_stop_worst = Alias("tip stop worst", stop_worst, "joint", unit="mm", factor=339.0)
+tip_stop_worst
+
+# a part type's metrics, beside its models
+INTEGRATED_SERVO.models
+arm = pendulum_arm(tip_length_m=0.339)
+[alias.name for alias in arm.metrics]
+
+# live: chunks in as they arrive, a value out at any time
+recording = RunRecording.from_run(fixture.pendulum_runs("real")[32])
+live = arm.collection()
+for chunk in recording.chunks(rows=7):
+    live.update(chunk)
+live.end_run()
+live.compute()["tip stop worst"]
+
+# offline: one call on the whole recording
+offline = arm.collection()(recording)
+offline["tip stop worst"]
+
+# a gate: a threshold with an owner, outside compute()
+within_1mm = Diagnostic("tip stop worst", Limits.at_most(1.0), owner="Zach 2026-11-11")
+every_stop = Gate("every stop within 1 mm", (within_1mm,))
+every_stop.judge(offline)
+
+# across runs: a rung is its plays' states merged
+rung = arm.collection()
+for play in plays_of("can11", rung=0.9):
+    one_play = arm.collection()
+    one_play(play)
+    rung.merge_state(one_play)
+rung_values = rung.compute()
+rung_values["tip stop worst"]
+every_stop.judge(rung_values)
+''')
+
 CELLS = [
     ("a part's metrics", "A part type lists configured stock metrics beside its models; the pendulum arm adds tip "
      "aliases over the SAME bases (the lever is a display factor), the chain the same ErrorStat on its tool.", '''
 print(INTEGRATED_SERVO.table())
-arm = pendulum_arm(tip_length_m=TIPS["can11"])          # CAN 11: the 339 mm heavy pendulum
+
+arm = pendulum_arm(tip_length_m=TIPS["can11"])    # CAN 11: the 339 mm heavy pendulum
 print(arm.table())
+
 print(RIGID_BODY_CHAIN.table())
-card = arm.metrics[7].card()                            # "tip stop error": an alias of DwellError(statistic="median")
-{key: card[key] for key in ("name", "base", "config", "unit", "description", "references", "value_type")}
+
+aliases = {alias.name: alias for alias in arm.metrics}
+aliases["tip stop error"].card()
 '''),
     ("one recording, offline and live", "The same collection fed the whole recording, and fed it 7 rows at a time with "
      "a peek mid-run: identical numbers, and 12 aliases cost 5 computations (dwell metrics share one stop tracker).", '''
-recording = RunRecording.from_run(fixture.pendulum_runs("real")[32])   # CAN 11, rung 0.9, repeat
-offline = arm.collection()(recording)                   # update + end_run + compute
+run = fixture.pendulum_runs("real")[32]   # CAN 11, rung 0.9, a repeat
+recording = RunRecording.from_run(run)
+
+offline = arm.collection()(recording)     # update + end_run + compute
+
 live = arm.collection()
 for number, chunk in enumerate(recording.chunks(rows=7)):
     live.update(chunk)
     if number == 40:
-        print(f"after 280 rows: tip stop worst so far {live.compute()['tip stop worst']:.3f} mm, stops {live.compute()['stops']:.0f}")
+        so_far = live.compute()["tip stop worst"]
+        print(f"after 280 rows: worst stop so far {so_far:.3f} mm")
 live.end_run()
-for name in ("tracking RMS", "tracking peak", "tip stop error", "tip stop worst", "tip settle", "overshoot", "lag", "stops"):
-    print(f"{name:<15} offline {offline[name]:10.6f}   live {live.compute()[name]:10.6f}   {arm.metrics[[a.name for a in arm.metrics].index(name)].unit}")
-print(live, "· states fed per update:", live.computations)
-print(live.to_msg("rack/can11").as_dict()["tip stop error [mm]"])
+live_values = live.compute()
+
+names = ["tracking RMS", "tracking peak", "tip stop error", "tip stop worst",
+         "tip settle", "overshoot", "lag", "stops"]
+for name in names:
+    print(f"{name:<15} offline {offline[name]:10.6f}   live {live_values[name]:10.6f}")
+
+live
+live.computations
+
+message = live.to_msg("rack/can11")
+message.as_dict()["tip stop error [mm]"]
 '''),
     ("runs to a deployment, gates applied", "Each play scored alone, each rung its plays merged, the gates judged on the "
      "values outside compute(). The median tip stop passes 36 of 36; the worst stop fails 3 CAN 11 rungs.", '''
-real = score("real")                                    # 252 plays -> 36 rung cells
-verdicts = judged(real[1])
-print(summary({k: v for k, v in real[1].items() if k[0] in ("can11", "can12")}, {"cells": {k: v for k, v in verdicts["cells"].items() if k[0] in ("can11", "can12")}, "highest": verdicts["highest"]}, "real vs target · CAN 11 and CAN 12 shown, all six judged"))
-print("deployment: gates", {g.name: sum(c[g.name].verdict == "pass" for c in verdicts["cells"].values()) for g in GATES}, "of 36")
+real_plays, real_rungs = score("real")
+len(real_plays), len(real_rungs)
+
+verdicts = judged(real_rungs)
+shown_stations = ("can11", "can12")
+shown = {key: values for key, values in real_rungs.items() if key[0] in shown_stations}
+title = "real vs target · CAN 11 and CAN 12 shown, all six judged"
+print(summary(shown, verdicts, title))
+
+every_stop = GATES[2]
+every_stop
+every_stop.judge(real_rungs[("can11", 0.9)])
 '''),
     ("the twin's output (sim vs target)", "The same aliases on the twin's answer to every play: the sim's own tip stop "
      "and tracking, never compared with the real run here (that is fidelity).", '''
-sim = score("sim")
-sim_verdicts = judged(sim[1])
+sim_plays, sim_rungs = score("sim")
+sim_verdicts = judged(sim_rungs)
+
+print("CAN 11 rung   RMS real °   RMS sim °   stop real mm   stop sim mm")
 for rung in RUNGS:
-    real_v, sim_v = real[1][("can11", rung)], sim[1][("can11", rung)]
-    print(f"CAN 11 rung {rung:.1f}: tracking RMS real {real_v['tracking RMS']:.3f}° sim {sim_v['tracking RMS']:.3f}° · "
-          f"tip stop real {real_v['tip stop error']:.3f} mm sim {sim_v['tip stop error']:.3f} mm")
-print("sim tip stop gate (median):", sum(c["tip stop (median)"].verdict == "pass" for c in sim_verdicts["cells"].values()), "of 36")
+    real_values = real_rungs[("can11", rung)]
+    sim_values = sim_rungs[("can11", rung)]
+    rms = (real_values["tracking RMS"], sim_values["tracking RMS"])
+    stop = (real_values["tip stop error"], sim_values["tip stop error"])
+    print(f"{rung:11.1f} {rms[0]:12.3f} {rms[1]:11.3f} {stop[0]:14.3f} {stop[1]:13.3f}")
+
+sim_cells = sim_verdicts["cells"].values()
+sum(cell["tip stop (median)"].verdict == "pass" for cell in sim_cells)
 '''),
     ("the chain, a view, a new metric", "The five-bar through the same ErrorStat base; one alias plotted to matplotlib, "
      "the same result as a W&B payload and Rerun calls; a new metric is one more configured alias.", '''
-for key, values in chain_values().items():
-    print(f"{key:<34} " + " · ".join(f"{name} {value:.3f}" for name, value in values.items()))
+chain = chain_values()
+for run_id, values in chain.items():
+    rounded = {name: round(value, 3) for name, value in values.items()}
+    print(run_id, rounded)
+
 station = ARMS["can11"].collection()
-for recording in recordings("real"):
-    if recording.labels["station"] == "can11":
-        station.update(recording)
-        station.end_run()
-member = station.members[ARMS["can11"].metrics[8].key()]   # tip stop worst: the station's 84 stops
+for play in recordings("real"):
+    if play.labels["station"] == "can11":
+        station(play)
+
+tip_stop_worst = aliases["tip stop worst"]
+every_stop_state = station.members[tip_stop_worst.key()]    # the station's 84 stops
+tip_mm = 1e3 * TIPS["can11"]
+title = "CAN 11 · every stop at the tip"
+view = every_stop_state.view(scale=tip_mm, unit="mm", title=title)
+view = replace(view, target=1.0, target_label="Zach's 1 mm")
+
 import _viz
-view = member.view(scale=1e3 * TIPS["can11"], unit="mm", title="CAN 11 · every stop at the tip, round 8")
-view = _viz.View(**{**view.__dict__, "target": 1.0, "target_label": "Zach's 1 mm"})
-try:
-    _viz.plot(view, path=MEDIA / "v1-tip-stops.png"); print("plot ->", MEDIA / "v1-tip-stops.png")
-except ImportError:
-    print("plot: matplotlib not installed (the viz extra)")
+_viz.plot(view, path=MEDIA / "v1-tip-stops.png")
+
 payload = _viz.wandb_payload(view, "can11/tip_stop_mm")
-print("W&B:", payload["summary"], "·", len(payload["table"]["data"]), "table rows ·", payload["chart"])
+payload["summary"]
+len(payload["table"]["data"])
+
 calls = _viz.rerun_calls(view, "metrics/can11/tip_stop_mm")
-print("Rerun:", len(calls), "calls, first", calls[0], "->", _viz.write_rrd(calls, MEDIA / "v1-tip-stops.rrd"))
-faster = replace(ARMS["can11"], metrics=ARMS["can11"].metrics + (VELOCITY_ERROR,))
-print(VELOCITY_ERROR.name, f"{faster.collection()(recordings('real')[32])['velocity error RMS']:.3f} deg/s")
+len(calls)
+_viz.write_rrd(calls, MEDIA / "v1-tip-stops.rrd")
+
+VELOCITY_ERROR
+can11_metrics = ARMS["can11"].metrics
+with_velocity = replace(ARMS["can11"], metrics=can11_metrics + (VELOCITY_ERROR,))
+with_velocity.collection()(recording)["velocity error RMS"]
 '''),
-]
+    ("other inputs: repeats and a calibration", "A class declares what update() takes: Repeatability one real repeat "
+     "at a time, PerformanceGain a held-out pair; RunRecording is only the common case.", '''
+inputs = (ErrorStat, DwellError, TimeOffset, Repeatability, PerformanceGain)
+{cls.__name__: cls.Input for cls in inputs}
 
+repeatability_metric, repeats = repeatability("can11", 0.9)
+repeats
+repeatability_metric.compute() * tip_mm                 # mm at the tip
 
-CELLS.append(("other inputs: repeats and a calibration", "A class declares what update() takes: Repeatability one "
-    "real repeat at a time, PerformanceGain a held-out pair; RunRecording is only the common case.", '''
-print({cls.__name__: cls.Input for cls in (ErrorStat, DwellError, TimeOffset, Repeatability, PerformanceGain)})
-rp, repeats = repeatability("can11", 0.9)
-print(f"CAN 11 @0.9: RP (k=3) over {repeats} real repeats, worst stop: {rp.compute() * 1e3 * TIPS['can11']:.3f} mm at the tip ({rp.compute() * DEGREES:.4f}°)")
+wrong_command = Repeat(command=("can11", 1.0), target=recording.streams["target"],
+                       measured=recording.streams["state"])
 try:
-    rp.update(Repeat(command=("can11", 1.0), target=recording.streams["target"], measured=recording.streams["state"]))
+    repeatability_metric.update(wrong_command)
 except ValueError as refused:
     print("refused:", refused)
-outcome = calibration.outcome()                       # the record: robot_metrics.records.CalibrationOutcome
-print(outcome.model, {name: round(interval.value, 4) for name, interval in outcome.recovered.items()}, "fitted on", outcome.fitted_on)
+
+outcome = calibration.outcome()           # robot_metrics.records.CalibrationOutcome
+outcome.model
+{name: round(interval.value, 4) for name, interval in outcome.recovered.items()}
+outcome.fitted_on
+
 gain, nominal, fitted = performance_gain()
-print(f"PerformanceGain({FF_RESIDUAL.name!r}): nominal {nominal:.4f} N·m, fitted {fitted:.4f} N·m, gain {gain.compute():.4f} N·m on {outcome.held_out}")
-'''))
+FF_RESIDUAL.name
+nominal, fitted                           # N·m on the held-out runs
+gain.compute()
+outcome.held_out
+'''),
+]
 
 
 def main() -> None:
     namespace = dict(globals())
     session = Session(namespace)
+    session.cell(*GLANCE, kind="glance")
     for label, caption, code in CELLS:
         session.cell(label, caption, code)
     session.write(HERE)

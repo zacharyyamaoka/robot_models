@@ -1,11 +1,17 @@
 """Build the babble gallery for the five metrics-API proposals from their real session transcripts.
 
-    /home/bam/robot_models/.venv/bin/python /home/bam/robot_models/docs/proposals/metrics-api-2026-11-17/build_gallery.py
+    uv run --offline --project /home/bam/robot_models --with pygments python /home/bam/robot_models/docs/proposals/metrics-api-2026-11-17/build_gallery.py
 
 Reads each vN_*/session.json (the code that ran and what it printed), check.out.txt (the frozen check's verdicts) and
 the view PNGs in reports/media/, and writes reports/robot-models-metrics-api-proposals-2026-11-17.html through the
 babble skill's gallery.py (deck shell). WHY a script: the gallery is regenerated when a variant or a score changes,
 never hand-edited. The scores and the pick are the AI's judgment, written here beside their evidence.
+
+Code is highlighted at build time with Pygments (PythonLexer, the 'default' light style, CSS inlined), each
+statement drawn with its own output under it; outputs stay plain and quieter. The first exhibit is each variant's
+"API at a glance" cell, so the deck's filmstrip, flip and split compare the five designs on the same seven steps.
+WHY (Zach, /rate bad 2026-11-18): "please show this python text with syntax highlighting ... I am not seeing the
+API design at a glance".
 """
 
 from __future__ import annotations
@@ -18,11 +24,14 @@ import re
 import subprocess
 import sys
 
+from pygments import highlight
+from pygments.formatters import HtmlFormatter
+from pygments.lexers import PythonLexer
+
 HERE = pathlib.Path(__file__).resolve().parent
 GALLERY = pathlib.Path.home() / ".claude/skills/babble/scripts/gallery.py"
 OUT = pathlib.Path("/home/bam/robot_models/reports/robot-models-metrics-api-proposals-2026-11-17.html")
 MEDIA = pathlib.Path("/home/bam/robot_models/reports/media/robot-models-metrics-api-proposals-2026-11-17")
-STORY_STEPS = 5      # the deck's stepper; the session's sixth cell folds into the fifth
 ACCENTS = {"v1": "#3f7be0", "v2": "#2e9e6b", "v3": "#c9822b", "v4": "#b5487a", "v5": "#7a5bd1"}
 FOLDERS = {"v1": "v1_robot_metrics", "v2": "v2_family_metrics", "v3": "v3_signals", "v4": "v4_folded_values",
            "v5": "v5_part_tree"}
@@ -245,49 +254,125 @@ def esc(text: str) -> str:
     return html.escape(text or "", quote=True)
 
 
-def story_state(index: int) -> str:
-    return f"s{min(index, STORY_STEPS)}"
-
+PYGMENTS = HtmlFormatter(style="default", nowrap=True)
+LEXER = PythonLexer()
+# The glance's seven headed groups, folded into the deck's five story steps (two to five allowed).
+GLANCE_STEPS = ((0, 1), (2,), (3, 4), (5,), (6,))
+GLANCE_STEP_LABELS = ("a metric and its alias", "a part type's metrics", "live = offline", "a gate, outside compute()",
+                      "across runs")
+OUTPUT_LIMIT = 6000
 
 STYLE = """<style>
-.api-repl{font:13px/1.45 ui-sans-serif,system-ui,sans-serif;color:var(--ink,#1d232b);padding:14px;display:grid;grid-template-columns:minmax(0,1fr);gap:10px;width:0;min-width:100%;box-sizing:border-box}
-.api-repl .repl-head{display:flex;justify-content:space-between;gap:8px;font-size:12px;opacity:.8}
-.api-repl ol{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr);gap:6px}
-.api-repl .cell{all:unset;box-sizing:border-box;display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;width:100%;cursor:pointer;border:1px solid color-mix(in srgb,currentColor 18%,transparent);border-radius:8px;padding:7px 9px;background:color-mix(in srgb,currentColor 4%,transparent)}
-.api-repl .cell:hover{border-color:var(--accent,#3f7be0)}
-.api-repl .cell .n{font-weight:700;color:var(--accent,#3f7be0)}
-.api-repl pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}
-.api-repl ol,.api-repl li{min-width:0}
-.api-repl .out{display:none;white-space:pre;overflow-x:auto;margin:2px 0 4px 30px;padding:8px 10px;border-left:3px solid var(--accent,#3f7be0);background:color-mix(in srgb,var(--accent,#3f7be0) 8%,transparent);border-radius:0 6px 6px 0}
-.api-repl .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.65;grid-column:2}
-.shape-tree{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;margin:0;padding:12px}
+.api-repl{font:13px/1.45 ui-sans-serif,system-ui,sans-serif;color:#1d232b;padding:14px 16px;display:grid;grid-template-columns:minmax(0,1fr);gap:0;width:0;min-width:100%;box-sizing:border-box;background:#fff}
+.api-repl *{box-sizing:border-box;min-width:0}
+.api-repl .repl-head{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#57606a;margin-bottom:8px}
+.api-repl .repl-head b{color:#1d232b}
+.api-repl .concept{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;padding:6px 0 6px 10px;border-left:3px solid transparent;border-radius:2px}
+.api-repl .concept+.concept{margin-top:10px}
+.api-repl .group{display:grid;grid-template-columns:minmax(0,1fr);gap:4px}
+.api-repl .group+.group{margin-top:12px}
+.api-repl .stmt{display:grid;grid-template-columns:minmax(0,1fr);gap:2px;margin-top:4px}
+.api-repl .stmt.gap{margin-top:18px}
+.api-repl pre{margin:0;max-width:100%}
+.api-repl pre.code{font:13.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#1f2328;background:#f6f8fa;border:1px solid #e1e5ea;border-radius:6px;padding:5px 10px;white-space:pre;overflow-x:auto}
+.api-repl pre.out{font:12.5px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#59636e;background:transparent;border-left:2px solid #d0d7de;margin:2px 0 4px 12px;padding:2px 10px 2px 10px;white-space:pre;overflow-x:auto}
+.api-repl.glance pre.out,.api-repl.glance pre.code{white-space:pre-wrap;overflow-wrap:anywhere}
+.api-repl .cell-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:22px 0 2px;padding-top:12px;border-top:1px solid #e1e5ea}
+.api-repl .cell-head.first{margin-top:4px;border-top:0;padding-top:0}
+.api-repl .cell-head b{font-size:14px;color:var(--accent,#3f7be0)}
+.api-repl .cell-head span{font-size:11px;color:#6e7781}
+.api-repl .caption{margin:0 0 8px;color:#57606a;font-size:12.5px;max-width:110ch}
+.shape-tree{font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;margin:0;padding:6px 12px 12px}
+.shape-head{font:600 12px/1.4 ui-sans-serif,system-ui,sans-serif;margin:12px 12px 0;color:#57606a;text-transform:uppercase;letter-spacing:.04em}
 .pa{border-collapse:collapse;font:13px/1.4 ui-sans-serif,system-ui,sans-serif;margin:12px}
 .pa td,.pa th{border-bottom:1px solid color-mix(in srgb,currentColor 15%,transparent);padding:5px 10px;text-align:left;vertical-align:top}
 .pa .yes{color:#2e7d4f;font-weight:600}.pa .no{color:#b03a2e;font-weight:600}.pa .partial{color:#a6762a;font-weight:600}
 .shot{max-width:100%;display:block;margin:8px auto}
-</style>"""
+""" + PYGMENTS.get_style_defs(".api-repl pre.code") + "\n</style>"
 
 
-def preview(variant_id: str, cells: list[dict]) -> str:
-    states, items = [], []
-    for index, cell in enumerate(cells, start=1):
-        state = story_state(index)
-        if state not in states:
-            states.append(state)
-        output = cell["output"].rstrip()
-        if len(output) > 6000:
-            output = output[:6000] + "\n... (full output in scenario.out.txt)"
-        items.append(f'<li><button type="button" class="cell" data-story-to="{state}" title="Show this step\'s output">'
-                     f'<span class="n">{index}</span><pre>{esc(cell["code"].strip())}</pre>'
-                     f'<span class="lbl">{esc(cell["label"])} · {cell["seconds"]} s</span></button>'
-                     f'<pre class="out" data-out="{state}">{esc(output)}</pre></li>')
-    rules = "".join(f'.prototype[data-story-state="{s}"] .api-repl .out[data-out="{s}"]{{display:block}}'
-                    f'.prototype[data-story-state="{s}"] .api-repl .cell[data-story-to="{s}"]{{border-color:var(--accent);'
-                    f'box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 25%,transparent)}}' for s in states)
-    rules += '.prototype:not([data-story-state]) .api-repl .out[data-out="s1"]{display:block}'
-    return (f'{STYLE}<style>{rules}</style><div class="api-repl" style="--accent:{ACCENTS[variant_id]}">'
+def code_html(code: str) -> str:
+    return highlight(code, LEXER, PYGMENTS).rstrip("\n")
+
+
+def flow_html(statements: list[dict]) -> str:
+    """Statements as a REPL reads: consecutive lines share one code block, and each output breaks it right under the
+    statement that printed it. A blank line in the source (``gap``) starts a new block with space above it."""
+
+    chunks: list[dict] = []
+    for statement in statements:
+        if not chunks or statement["gap"] or chunks[-1]["output"]:
+            chunks.append({"gap": statement["gap"] and bool(chunks), "code": [], "output": ""})
+        chunks[-1]["code"].append(statement["code"])
+        chunks[-1]["output"] = statement["output"].rstrip()
+    html_parts = []
+    for chunk in chunks:
+        output = chunk["output"]
+        if len(output) > OUTPUT_LIMIT:
+            output = output[:OUTPUT_LIMIT] + "\n... (full output in scenario.out.txt)"
+        out = f'<pre class="out">{esc(output)}</pre>' if output else ""
+        gap = " gap" if chunk["gap"] else ""
+        html_parts.append(f'<div class="stmt{gap}"><pre class="code">{code_html(chr(10).join(chunk["code"]))}</pre>'
+                          f'{out}</div>')
+    return "".join(html_parts)
+
+
+def concept_groups(cell: dict) -> list[list[dict]]:
+    """The cell's statements split at its blank lines: one group per concept."""
+
+    groups: list[list[dict]] = []
+    for statement in cell["statements"]:
+        if statement["gap"] or not groups:
+            groups.append([])
+        groups[-1].append({**statement, "gap": False})
+    return groups
+
+
+def glance_parts(cell: dict) -> tuple[list[list[dict]], list[str]]:
+    groups = concept_groups(cell)
+    headings = [group[0]["code"].splitlines()[0].lstrip("# ").strip() for group in groups]
+    if len(groups) != 7 or not all(group[0]["code"].startswith("# ") for group in groups):
+        raise ValueError(f"the glance needs seven blank-line groups, each under a heading comment: {headings}")
+    return groups, headings
+
+
+def glance_html(variant_id: str, cell: dict) -> str:
+    """The API at a glance: seven concept groups, each a story step's target, every output shown."""
+
+    groups, _ = glance_parts(cell)
+    blocks = []
+    for step_number, members in enumerate(GLANCE_STEPS, start=1):
+        body = "".join(f'<div class="group">{flow_html(groups[index])}</div>' for index in members)
+        blocks.append(f'<section class="concept" data-concept="s{step_number}">{body}</section>')
+    rules = "".join(f'.prototype[data-story-state="s{n}"] .api-repl .concept[data-concept="s{n}"]'
+                    f'{{border-left-color:var(--accent)}}' for n in range(1, len(GLANCE_STEPS) + 1))
+    return (f'{STYLE}<style>{rules}</style><div class="api-repl glance" style="--accent:{ACCENTS[variant_id]}">'
+            f'<div class="repl-head"><b>API at a glance · {esc(VARIANTS[variant_id]["name"])}</b>'
+            f'<span>ran on CAN 11 play 32 and rung 0.9 · round 8, real</span></div>{"".join(blocks)}</div>')
+
+
+def glance_steps(cell: dict) -> list[dict]:
+    _, headings = glance_parts(cell)
+    steps = []
+    for step_number, (members, label) in enumerate(zip(GLANCE_STEPS, GLANCE_STEP_LABELS), start=1):
+        caption = " · ".join(headings[index] for index in members)
+        steps.append({"label": label, "caption": caption[:1].upper() + caption[1:] + ".",
+                      "state": f"s{step_number}", "target": f'[data-concept="s{step_number}"]'})
+    return steps
+
+
+def session_html(variant_id: str, cells: list[dict]) -> str:
+    """The whole session as a notebook: each cell's label and caption, then statement -> output, repeated."""
+
+    parts = []
+    for number, cell in enumerate(cells, start=1):
+        body = flow_html(cell["statements"])
+        first = " first" if number == 1 else ""
+        parts.append(f'<div class="cell-head{first}"><b>{number} · {esc(cell["label"])}</b><span>{cell["seconds"]} s</span></div>'
+                     f'<p class="caption">{esc(cell["caption"])}</p>{body}')
+    return (f'{STYLE}<div class="api-repl" style="--accent:{ACCENTS[variant_id]}">'
             f'<div class="repl-head"><b>round 8 · real runs · {esc(VARIANTS[variant_id]["name"])}</b>'
-            f'<span>session on 252 real plays, 252 twin answers, 10 five-bar rungs</span></div><ol>{"".join(items)}</ol></div>')
+            f'<span>session on 252 real plays, 252 twin answers, 10 five-bar rungs</span></div>{"".join(parts)}</div>')
 
 
 def image(path: pathlib.Path) -> str:
@@ -319,15 +404,8 @@ def main() -> int:
     for variant_id, meta in VARIANTS.items():
         folder = HERE / FOLDERS[variant_id]
         cells = json.loads((folder / "session.json").read_text(encoding="utf-8"))
-        steps = []
-        for index, cell in enumerate(cells, start=1):
-            state = story_state(index)
-            if steps and steps[-1]["state"] == state:
-                steps[-1]["label"] += " · " + cell["label"]
-                steps[-1]["caption"] += " " + cell["caption"]
-            else:
-                steps.append({"label": cell["label"], "caption": cell["caption"], "state": state,
-                              "target": f'[data-story-to="{state}"]'})
+        glance = next(cell for cell in cells if cell.get("kind") == "glance")
+        session_cells = [cell for cell in cells if cell.get("kind") != "glance"]
         passed = checks.get(variant_id, ["no check output"])[0].startswith("PASS")
         deviation = next((l for l in checks.get(variant_id, []) if "max |deviation|" in l), "")
         gate_results = {g: {"pass": passed, "evidence": "check_scenario.py: " + checks.get(variant_id, ["?"])[0]}
@@ -348,17 +426,21 @@ def main() -> int:
                       "is a real or twin run file"],
             "scores": {fr: {"score": s, "evidence": e, "confidence": c} for fr, (s, e, c) in meta["scores"].items()},
             "gateResults": gate_results,
-            "previewLabel": "the session that ran · click a cell or step",
-            "preview": preview(variant_id, cells),
-            "story": {"title": "Walk the session", "steps": steps},
+            "previewLabel": "API at a glance",
+            "preview": glance_html(variant_id, glance),
+            "story": {"title": "The API at a glance", "steps": glance_steps(glance)},
             "media": [
+                {"label": "The session that ran", "caption": "Every statement with its own output, on round 8's "
+                 "real runs: the part's metrics, live vs offline, the deployment's gates, the twin, a view, other "
+                 "inputs. The code shown is the code that ran.", "html": session_html(variant_id, session_cells)},
                 {"label": "A standard view", "caption": "Metric.plot() / the shared adapter on every CAN 11 stop at the "
                  "tip, with Zach's 1 mm; the same points went to a W&B payload and an .rrd.",
                  "html": image(MEDIA / f"{variant_id}-tip-stops.png")},
-                {"label": "Where it lives", "caption": "The dependency direction and the run-data type it follows.",
-                 "html": f'{STYLE}<pre class="shape-tree">{esc(meta["where"])}</pre>'},
-                {"label": "RobotDx and sim2real", "caption": "What happens to the three copies of the formulas today.",
-                 "html": f'{STYLE}<pre class="shape-tree">{esc(meta["fate"])}</pre>'},
+                {"label": "Where it lives", "caption": "The dependency direction and the run-data type it follows, "
+                 "and what happens to the three copies of the formulas in RobotDx and sim2real today.",
+                 "html": f'{STYLE}<div class="shape-head">where it lives</div><pre class="shape-tree">'
+                         f'{esc(meta["where"])}</pre><div class="shape-head">RobotDx and sim2real</div>'
+                         f'<pre class="shape-tree">{esc(meta["fate"])}</pre>'},
                 {"label": "Prior-art check", "caption": "Which of the prior-art note's findings this variant meets "
                  "(amendment 5: a check, not a reweighting).", "html": prior_art_table(meta)},
             ],

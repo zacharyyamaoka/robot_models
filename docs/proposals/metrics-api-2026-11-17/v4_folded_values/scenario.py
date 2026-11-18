@@ -1,6 +1,6 @@
 """v4 · Folded values: the shared scenario as one REPL session on round 8's real runs.
 
-    /home/bam/robot_models/.venv/bin/python /home/bam/robot_models/docs/proposals/metrics-api-2026-11-17/v4_folded_values/scenario.py
+    uv run --offline --project /home/bam/robot_models --with matplotlib --with rerun-sdk==0.40.0 python /home/bam/robot_models/docs/proposals/metrics-api-2026-11-17/v4_folded_values/scenario.py
 
 Writes scenario.out.txt and session.json beside this file (the view cell needs the viz extra). ``run()`` is what the
 frozen check calls: the same API, no transcript.
@@ -150,84 +150,215 @@ def run() -> dict:
     return check_dict(score("real"), score("sim"), chain_values(), live_block)
 
 
+def plays_of(station: str, rung: float) -> list[Run]:
+    """One rung cell's real plays, as the roll-up groups them."""
+
+    return [run for run in runs("real") if run.labels["station"] == station and run.labels["rung"] == rung]
+
+
+def rung_table(strata: dict, verdicts: dict, stations: tuple[str, ...]) -> str:
+    """The rung cells of ``stations`` as a table, with each cell's three verdicts (display only)."""
+
+    mark = {"pass": "✓", "fail": "✗", "not_run": "?"}
+    lines = ["station rung   RMS °  peak °  stop mm  worst mm   tracks · median · every stop"]
+    for (station, rung), stratum in sorted(strata.items()):
+        if station not in stations:
+            continue
+        values, cell = stratum["values"], verdicts["cells"][(station, rung)]
+        lines.append(f"{station:<7}{rung:5.1f}{values['tracking RMS']:8.2f}{values['tracking peak']:8.2f}"
+                     f"{values['tip stop error']:9.2f}{values['tip stop worst']:10.2f}   "
+                     + "        ".join(mark[cell[name]] for name in VERDICTS))
+    return "\n".join(lines)
+
+
+# WHY the same seven headings in every variant: the five glances are compared side by side, row by row.
+GLANCE = ("API at a glance", "The design's shape before any detail: a frozen metric whose state is a value, an alias, "
+          "a part type's .metrics, live as a fold, offline as the same fold once, an OpenSLO objective judged into "
+          "RobotDx's Result, and a rung as its plays' states merged.", '''
+# a metric: a frozen config (its identity); its state is a plain value
+stop_worst = Dwell(of="error", statistic="max")
+stop_worst.empty()
+
+# an alias: a name, the signal pair it reads, a display unit
+tip_stop_worst = Alias("tip stop worst", stop_worst, ("target", "state"), "mm", 339.0)
+tip_stop_worst
+
+# a part type's metrics, beside its models
+INTEGRATED_SERVO.models
+arm = pendulum_arm(tip_length_m=0.339)
+[alias.name for alias in arm.metrics]
+
+# live: a fold, each chunk returns a new state value
+run = Run.from_fixture(fixture.pendulum_runs("real")[32])
+collection = arm.collection()
+state = collection.empty()
+for chunk in run.chunks(7):
+    state = collection.update(state, chunk)
+live = collection.values(collection.close(state))
+live["tip stop worst"]
+
+# offline: the same fold, once
+offline = collection.values(collection.fold(run))
+offline["tip stop worst"]
+
+# a gate: an OpenSLO occurrence objective on every stop, judged into RobotDx's Result
+owner = "Zach 2026-11-11"
+gate = Objective("tip stop worst", "le", 1.0, share=1.0, on="items", owner=owner)
+this_play = summarize(collection, [run], by=())[()]
+result = gate.judge(collection, this_play)
+result.verdict, result.message
+
+# across runs: a rung is its plays' states merged, every stop kept
+rungs = summarize(collection, plays_of("can11", rung=0.9), by=("station", "rung"))
+rung = rungs[("can11", 0.9)]
+rung["values"]["tip stop worst"]
+result = gate.judge(collection, rung)
+result.verdict, result.message
+''')
+
 CELLS = [
     ("a part's metrics", "Each metric is a frozen config (hashable: its identity); the part lists aliases; equal "
      "identities share one state, and every dwell metric on a signal shares one stop pass.", '''
-print(INTEGRATED_SERVO.table(), "\\n  models:", INTEGRATED_SERVO.models)
-arm = pendulum_arm(tip_length_m=TIPS["can11"])
+print(INTEGRATED_SERVO.table())
+INTEGRATED_SERVO.models
+
+arm = pendulum_arm(tip_length_m=TIPS["can11"])    # CAN 11: the 339 mm heavy pendulum
 print(arm.table())
+
 print(RIGID_BODY_CHAIN.table())
-print("same identity:", ErrorStat(statistic="rms", rows="moving") == arm.metrics[6].metric, "· hash equal:", hash(ErrorStat(statistic="rms", rows="moving")) == hash(arm.metrics[0].metric))
-card = arm.metrics[7].card()
-{key: card[key] for key in ("name", "base", "config", "unit", "description", "references", "value_type", "live", "version")}
+
+aliases = {alias.name: alias for alias in arm.metrics}
+rms_while_moving = ErrorStat(statistic="rms", rows="moving")
+rms_while_moving == aliases["tip tracking RMS"].metric
+hash(rms_while_moving) == hash(aliases["tracking RMS"].metric)
+
+aliases["tip stop error"].card()
 '''),
     ("one recording, offline and live", "Live is a fold over 7-row chunks of new state VALUES; offline the same fold "
      "once. Stream is the torchmetrics face over it.", '''
-run = Run.from_fixture(fixture.pendulum_runs("real")[32])        # CAN 11, rung 0.9, repeat
+run = Run.from_fixture(fixture.pendulum_runs("real")[32])    # CAN 11, rung 0.9, a repeat
 offline, live = live_vs_offline(run)
-for name in ("tracking RMS", "tracking peak", "tip stop error", "tip stop worst", "tip settle", "overshoot", "lag", "stops"):
-    print(f"{name:<15} offline {offline[name]:10.6f}   live {live[name]:10.6f}   |diff| {abs(offline[name] - live[name]):.1e}")
-stream = Stream(ErrorStat(statistic="rms", rows="moving"))       # update / compute / reset, as torchmetrics
+
+names = ["tracking RMS", "tracking peak", "tip stop error", "tip stop worst",
+         "tip settle", "overshoot", "lag", "stops"]
+print(f"{'':<15} {'offline':>10} {'live':>10}")
+for name in names:
+    difference = abs(offline[name] - live[name])
+    print(f"{name:<15} {offline[name]:10.6f} {live[name]:10.6f}  diff {difference:.1e}")
+
+stream = Stream(ErrorStat(statistic="rms", rows="moving"))    # update / compute / reset
 for chunk in run.chunks(7):
     stream.update(chunk.streams["target"], chunk.streams["state"])
-print("Stream:", stream.compute() * DEGREES, "deg · its state is a value:", stream.state[:2])
-print("stored:", {"alias": "tip stop error", "value": offline["tip stop error"], "unit": "mm", **{k: arm.metrics[7].card()[k] for k in ("base", "config", "version")}, "provenance": run.provenance, "rrd": run.links["rrd"]})
+stream.compute() * DEGREES
+stream.state          # a plain value: (sum of squares, rows, max |error|, sum |error|)
+
+card = aliases["tip stop error"].card()
+stored = {"alias": "tip stop error", "value": offline["tip stop error"], "unit": "mm",
+          "base": card["base"], "config": card["config"], "version": card["version"],
+          "provenance": run.provenance, "rrd": run.links["rrd"]}
+stored
 '''),
     ("runs to a deployment, gates applied", "Strata are station x rung; each verdict is OpenSLO objectives judged by "
      "RobotDx's own Result. The same alias carries the median gate and the every-stop gate.", '''
-real = score("real")
-verdicts = judged(real[1])
-mark = {"pass": "✓", "fail": "✗", "not_run": "?"}
-for (station, rung), stratum in sorted(real[1].items()):
-    if station in ("can11", "can12"):
-        v = stratum["values"]
-        print(f"{station}@{rung:<4g} RMS {v['tracking RMS']:.2f}° peak {v['tracking peak']:.2f}° · tip stop {v['tip stop error']:.2f} (worst {v['tip stop worst']:.2f}) mm · " + " ".join(mark[verdicts["cells"][(station, rung)][n]] for n in VERDICTS))
-print({name: sum(c[name] == "pass" for c in verdicts["cells"].values()) for name in VERDICTS}, "of 36 ·", verdicts["highest"])
-station = summarize(COLLECTIONS["can11"], [r for r in runs("real") if r.labels["station"] == "can11"], ("station",))[("can11",)]
-result = Objective("tip stop error", "le", 1.0, share=0.99, on="items", owner="proposed").judge(COLLECTIONS["can11"], station)
-print("RobotDx Result:", result.verdict, result.title, "·", result.message)
-settled = sum(COLLECTIONS["can11"].value(state, "all stops settled") for state in station["states"])
-print(f"CAN 11 runs with every stop settled: {settled} of {len(station['states'])}, Wilson 95 % {wilson(settled, len(station['states']))}")
+real_plays, real_strata = score("real")
+len(real_plays), len(real_strata)
+
+verdicts = judged(real_strata)
+print(rung_table(real_strata, verdicts, stations=("can11", "can12")))
+
+cells = verdicts["cells"].values()
+{name: sum(cell[name] == "pass" for cell in cells) for name in VERDICTS}
+verdicts["highest"]
+
+VERDICTS["tip stop (every stop)"]
+
+can11_collection = COLLECTIONS["can11"]
+can11_runs = [run for run in runs("real") if run.labels["station"] == "can11"]
+station = summarize(can11_collection, can11_runs, by=("station",))[("can11",)]
+gate_99 = Objective("tip stop error", "le", 1.0, share=0.99, on="items", owner="proposed")
+result = gate_99.judge(can11_collection, station)
+result.verdict, result.title
+result.message
+
+settled = 0
+for state in station["states"]:
+    settled += can11_collection.value(state, "all stops settled")
+settled, len(station["states"])
+wilson(settled, len(station["states"]))       # 95 % interval on the share of settled runs
 '''),
     ("the twin's output (sim vs target)", "The same collections on the twin's answers.", '''
-sim = score("sim")
+sim_plays, sim_strata = score("sim")
+
+print("CAN 11 rung   RMS real °   RMS sim °   stop real mm   stop sim mm")
 for rung in RUNGS:
-    r, s = real[1][("can11", rung)]["values"], sim[1][("can11", rung)]["values"]
-    print(f"CAN 11 @{rung:.1f}: tracking RMS real {r['tracking RMS']:.3f}° sim {s['tracking RMS']:.3f}° · tip stop real {r['tip stop error']:.3f} sim {s['tip stop error']:.3f} mm")
-print("sim tip stop (median):", sum(c["tip stop (median)"] == "pass" for c in judged(sim[1])["cells"].values()), "of 36")
+    real_values = real_strata[("can11", rung)]["values"]
+    sim_values = sim_strata[("can11", rung)]["values"]
+    rms = (real_values["tracking RMS"], sim_values["tracking RMS"])
+    stop = (real_values["tip stop error"], sim_values["tip stop error"])
+    print(f"{rung:11.1f} {rms[0]:12.3f} {rms[1]:11.3f} {stop[0]:14.3f} {stop[1]:13.3f}")
+
+sim_cells = judged(sim_strata)["cells"].values()
+sum(cell["tip stop (median)"] == "pass" for cell in sim_cells)
 '''),
     ("the chain, a view, a new metric", "The five-bar through the same ErrorStat; a view of every CAN 11 stop to "
      "matplotlib, W&B and Rerun; a new alias is one more frozen config.", '''
-for key, values in chain_values().items():
-    print(f"{key:<34} " + " · ".join(f"{name} {value:.3f}" for name, value in values.items()))
-import _viz
-stops, groups = [], []
+chain = chain_values()
+for run_id, values in chain.items():
+    rounded = {name: round(value, 3) for name, value in values.items()}
+    print(run_id, rounded)
+
+stops, rung_labels = [], []
 for rung in RUNGS:
-    items = COLLECTIONS["can11"].items(real[1][("can11", rung)]["merged"], "tip stop error")
-    stops += items; groups += [f"{rung:g}"] * len(items)
-shown = _viz.View(title="CAN 11 · every stop at the tip, by rung", unit="mm", hint="distribution", x=list(range(len(stops))), y=stops, group=groups, target=1.0, target_label="Zach's 1 mm", x_label="stop", y_label="mm")
-try:
-    _viz.plot(shown, path=MEDIA / "v4-tip-stops.png"); print("plot ->", MEDIA / "v4-tip-stops.png")
-except ImportError:
-    print("plot: matplotlib not installed (the viz extra)")
-print("W&B:", _viz.wandb_payload(shown, "can11/tip_stop_mm")["summary"], "· Rerun ->", _viz.write_rrd(_viz.rerun_calls(shown, "metrics/can11/tip_stop_mm"), MEDIA / "v4-tip-stops.rrd"))
-faster = Collection(arm.metrics + (VELOCITY_ERROR,))
-print(f"velocity error RMS {faster.values(faster.fold(run))['velocity error RMS']:.3f} deg/s · states {faster.computations}")
+    merged = real_strata[("can11", rung)]["merged"]
+    rung_stops = can11_collection.items(merged, "tip stop error")
+    stops += rung_stops
+    rung_labels += [f"{rung:g}"] * len(rung_stops)
+len(stops)
+
+import _viz
+title = "CAN 11 · every stop at the tip, by rung"
+view = _viz.View(title=title, unit="mm", hint="distribution",
+                 x=list(range(len(stops))), y=stops, group=rung_labels,
+                 target=1.0, target_label="Zach's 1 mm", x_label="stop", y_label="mm")
+_viz.plot(view, path=MEDIA / "v4-tip-stops.png")
+
+payload = _viz.wandb_payload(view, "can11/tip_stop_mm")
+payload["summary"]
+
+calls = _viz.rerun_calls(view, "metrics/can11/tip_stop_mm")
+_viz.write_rrd(calls, MEDIA / "v4-tip-stops.rrd")
+
+VELOCITY_ERROR
+with_velocity = Collection(arm.metrics + (VELOCITY_ERROR,))
+velocity_values = with_velocity.values(with_velocity.fold(run))
+velocity_values["velocity error RMS"]
+with_velocity.computations
 '''),
     ("other inputs: repeats and a calibration", "Each class declares its Input; a Run is the common case. "
      "Repeatability folds one real repeat at a time; PerformanceGain folds the alias's metric over both sides.", '''
-print({cls.__name__: cls.Input for cls in (ErrorStat, Dwell, TimeOffset, Repeatability, PerformanceGain)})
-rp, rp_state, repeats = repeatability("can11", 0.9)
-print(f"CAN 11 @0.9: RP (k=3) over {repeats} real repeats: {rp.compute(rp_state) * 1e3 * TIPS['can11']:.3f} mm at the tip")
-outcome = calibration.outcome()                       # the record: robot_msgs (a CalibrationOutcome message)
-gain, state = performance_gain()
-print(f"PerformanceGain(metric={gain.metric!r}): nominal {state[0]:.4f}, fitted {state[1]:.4f}, gain {gain.compute(state):.4f} N·m")
+inputs = (ErrorStat, Dwell, TimeOffset, Repeatability, PerformanceGain)
+{cls.__name__: cls.Input for cls in inputs}
+
+repeatability_metric, repeatability_state, repeats = repeatability("can11", 0.9)
+repeats
+tip_mm = 1e3 * TIPS["can11"]
+repeatability_metric.compute(repeatability_state) * tip_mm    # mm at the tip
+
+outcome = calibration.outcome()           # a robot_msgs CalibrationOutcome message
+outcome.model
+
+gain, gain_state = performance_gain()
+gain
+nominal, fitted = gain_state
+nominal, fitted                           # N·m on the held-out runs
+gain.compute(gain_state)
 '''),
 ]
 
 
 def main() -> None:
     session = Session(dict(globals()))
+    session.cell(*GLANCE, kind="glance")
     for label, caption, code in CELLS:
         session.cell(label, caption, code)
     session.write(HERE)

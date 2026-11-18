@@ -6,7 +6,7 @@ declared with `add_state(name, default, reduce)` (sum / max / min / cat), `updat
 package on robot_msgs; robotparts' part type lists configured aliases as `.metrics` beside `.models`.
 
 ```bash
-/home/bam/robot_models/.venv/bin/python /home/bam/robot_models/docs/proposals/metrics-api-2026-11-17/v1_robot_metrics/scenario.py
+uv run --offline --project /home/bam/robot_models --with matplotlib --with rerun-sdk==0.40.0 python /home/bam/robot_models/docs/proposals/metrics-api-2026-11-17/v1_robot_metrics/scenario.py
 ```
 
 `check_scenario.py v1_robot_metrics` → **PASS**: every per-play and per-rung number equals round 8's scorecard within

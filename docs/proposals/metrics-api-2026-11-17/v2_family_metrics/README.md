@@ -6,7 +6,7 @@
 rung's runs computes the rung by the `across_runs=` rule in its constructor.
 
 ```bash
-/home/bam/robot_models/.venv/bin/python /home/bam/robot_models/docs/proposals/metrics-api-2026-11-17/v2_family_metrics/scenario.py
+uv run --offline --project /home/bam/robot_models --with matplotlib --with rerun-sdk==0.40.0 python /home/bam/robot_models/docs/proposals/metrics-api-2026-11-17/v2_family_metrics/scenario.py
 ```
 
 `check_scenario.py v2_family_metrics` → **PASS** (scorecard parity within 2.8e-17 mm and float round-off in degrees;

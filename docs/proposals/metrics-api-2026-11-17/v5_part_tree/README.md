@@ -7,7 +7,7 @@ vault note's open question "a 1-joint chain judged at its tip, or a servo with a
 is segment events (every move and dwell, with its statistics and its stop), the things a drill-down opens.
 
 ```bash
-/home/bam/robot_models/.venv/bin/python /home/bam/robot_models/docs/proposals/metrics-api-2026-11-17/v5_part_tree/scenario.py
+uv run --offline --project /home/bam/robot_models --with matplotlib --with rerun-sdk==0.40.0 python /home/bam/robot_models/docs/proposals/metrics-api-2026-11-17/v5_part_tree/scenario.py
 ```
 
 `check_scenario.py v5_part_tree` → **PASS** (scorecard parity within 2.2e-16 deg; the chain to 2.8e-15 relative, the
