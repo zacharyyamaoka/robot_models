@@ -81,8 +81,16 @@ formulas live in three places today". Revise them and the ranking moves.
 - **G5 Light, black-box core:** numpy + robot_msgs + stdlib at runtime (matplotlib, W&B and Rerun only as lazy
   adapters); no metric reads a model; real, sim and replay differ only by a label; every number is target vs one
   source (no sim-vs-real row).
+- **G6 Math-only base metrics, meaning from the data** (Zach, "# Ok homing in on this..."): a base metric carries only
+  its mathematical meaning; one RMS-error metric serves servo tracking, tip tracking and the chain's tool error by
+  the streams it is given. Most metrics are a base class + a frozen config; a subclass only where config cannot say it.
+- **G7 Aliases, identity and units:** a semantic name ("tip stop error", "T4 stop error p90") is an alias: a configured
+  instance with a display name, a display unit and the signal it reads. A metric's identity is its base class + its
+  frozen config; the alias is only a label. Units and degrees belong to the alias, never to the base math.
+- **G8 Computed once:** two aliases with the same (base, config) on the same data compute once; the scenario shows it
+  with a counter or a cache hit.
 
-## Amendments (each before any variant was built)
+## Amendments (each before any variant was built; the criteria weights did not change after amendment 2)
 
 1. **2026-11-17 20:03 MST, Zach's `Metric` design** (Daily Note Nov 17, "# pErformance metrics per type... where are
    they."): "everything is just signals", functional, live and offline, robot_msgs in and out, a `Metric` domain type
@@ -94,6 +102,12 @@ formulas live in three places today". Revise them and the ranking moves.
    similar to robot diagnostics ... separate the metric from the data", "the semantic meaning ... from the actual data
    you pass in ... we can always create alias for the metrics". → G2, fr1, fr6, fr7; the five directions re-allocated
    so each is torchmetrics-shaped and they differ on the remaining axes. Torch itself is not a runtime dependency.
+3. **2026-11-17 20:15 MST, configurable math-only metrics and aliases** ("# Ok homing in on this...": "most metrics
+   has the mathematical meaning but the semantic meaning ... from the actual data you end up passing into them";
+   "Configurable metrics ... base metric type plus a configuration and then for those you cannot you can just extend
+   it"; "100% agreed keep the target outside of compute"). → G6, G7, G8. His closing question, "What does run data
+   look like? ... History, DataStream, Run, Episode, Result ... do we also carry in the rerun thing?", is answered
+   per variant (each names its recording type and how it points at the run's `.rrd`).
 
 ## The five directions (assigned before building)
 

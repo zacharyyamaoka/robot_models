@@ -23,6 +23,8 @@ Each variant folder vN_<name>/ has scenario.py with run() -> dict holding:
     metric_cards  [{"name", "description", "references": [...], "function", "unit", "target", "value_type"}, ...]
     declared      {"integrated_servo": [metric names], "rigid_body_chain": [metric names]}
     added         {"name": metric added in the session, "values": {play id: number}}
+    aliases       [{"name", "base", "config", "unit", "signal"}, ...]   amendment 3: a part's aliases, base = the class
+    dedup         {"aliases": aliases evaluated on one recording, "computed": base computations actually run}
 
 Definitions the numbers follow (the scorecard's, plus two rows it lacks):
 - play tracking: RMS of measured - target over the moving rows; peak: the worst |error| of the episode; degrees.
@@ -257,6 +259,19 @@ def check(folder: pathlib.Path, oracle: dict, chain: dict) -> tuple[list[str], l
     if not added.get("name") or len(added.get("values") or {}) != len(runs) or not all(
             math.isfinite(float(v)) for v in added["values"].values()):
         problems.append("added: the new metric must have a finite value on every real play")
+    # amendment 3 (2026-11-17 20:15 MST, before any variant was built): aliases over math-only bases, computed once
+    aliases = out.get("aliases") or []
+    if not aliases or any(not {"name", "base", "config", "unit", "signal"} <= set(alias) for alias in aliases):
+        problems.append("G7 aliases need name, base, config, unit and signal")
+    else:
+        bases = [alias["base"] for alias in aliases]
+        if len(set(bases)) == len(bases):
+            problems.append("G6 no base metric serves two aliases: the meaning must come from the data, not the class")
+        if any(alias["unit"] in alias["base"] for alias in aliases if alias["unit"]):
+            problems.append("G7 a unit is in a base class name: units belong to the alias")
+    dedup = out.get("dedup") or {}
+    if not dedup or not (0 < int(dedup.get("computed", 0)) < int(dedup.get("aliases", 0))):
+        problems.append(f"G8 dedup {dedup!r}: aliases sharing (base, config) and data must compute once")
     notes.append("max |deviation|: " + ", ".join(f"{k} {v:.2e}" for k, v in sorted(worst.items())))
     return problems, notes
 
