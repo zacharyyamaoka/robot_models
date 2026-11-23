@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "robot-models-lib"
-version = "0.2.0"
+version = "0.3.0"
 description = "Generic physical models of robot part types (no maker, no SKU): each type a ladder of models from ideal to learned, every rung with its parameters, equation and references."
 readme = "README.md"
 authors = [{ name = "Zach Yamaoka" }]

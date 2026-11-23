@@ -19,7 +19,7 @@ Each part type's models, a ModelFamily (PEP 0004 amendment 2), loaded on first u
 
 # WHY a literal, kept equal to pyproject.toml's version (CI asserts it against the built metadata): reading
 # importlib.metadata here costs ~11 ms on every import and returns a stale editable install's number.
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 # WHY lazy (PEP 562): a model family runs on numpy, but the ladders and the datasheets import neither numpy nor
 # robot_msgs (README), so `import robot_models.ladder` or a robotparts source file must not pay for the types.
