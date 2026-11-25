@@ -5,6 +5,15 @@ schema = "robot-sdk-declaration/1"
 role = "library"
 layer = "models"
 one_line = "Generic models by type: actuators, arms, sensors, homing procedures"
+summary = "Generic physical models of part *types* (servos, arms, conveyors, end effectors, sensors), each a ladder of models from ideal to learned (M0 ideal → M1 datasheet → M2 Coulomb + viscous → M3 friction …). Every rung states its parameters, equation and references. No maker, no SKU. Imports robot_msgs and numpy only."
+use_when = "What parameters a model of an actuator or arm needs, which friction or dynamics model to use, how parameter names map."
+
+# Where to read more. github and pypi are required; the rest are what this package has.
+[links]
+github = "https://github.com/zacharyyamaoka/robot_models"
+pypi = "https://pypi.org/project/robot-models-lib/"
+docs = "https://github.com/zacharyyamaoka/robot_models/tree/main/docs/peps"
+issues = "https://github.com/zacharyyamaoka/robot_models/issues"
 
 [[consumes]]
 type = "robot_msgs.control.JointCommandSequence"
