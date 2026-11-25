@@ -1,0 +1,27 @@
+# robot-sdk declaration: the shared types this package's public API takes (consumes) and gives (produces),
+# each with the symbols that are the contract. Checked against the code by robot_sdk's
+# `python -m tools.sdk_graph check` (docs/graph-schema.md in github.com/zacharyyamaoka/robot_sdk).
+schema = "robot-sdk-declaration/1"
+role = "library"
+layer = "models"
+one_line = "Generic models by type: actuators, arms, sensors, homing procedures"
+
+[[consumes]]
+type = "robot_msgs.control.JointCommandSequence"
+symbols = [
+  "robot_models.homing.protocols.HomingProcedure.plan",
+  "robot_models.homing.protocols.Phase.sequence",
+]
+
+[[produces]]
+type = "robot_msgs.control.ServoCommand"
+symbols = [
+  "robot_models.homing.protocols.HomingPlant.tick",
+]
+
+[[consumes]]
+type = "robot_msgs.sensor.JointState"
+symbols = [
+  "robot_models.homing.protocols.HomingPlant.reset",
+  "robot_models.homing.protocols.HomingPlant.tick",
+]
